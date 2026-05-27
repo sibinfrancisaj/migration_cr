@@ -1,0 +1,138 @@
+export enum UserRole {
+  USER = 'USER',
+  VERIFIED = 'VERIFIED',
+  FOUNDING_MEMBER = 'FOUNDING_MEMBER',
+  SUSPENDED = 'SUSPENDED',
+}
+
+export enum AdminRole {
+  SUPERADMIN = 'SUPERADMIN',
+  OPS = 'OPS',
+  MODERATOR = 'MODERATOR',
+  ANALYST = 'ANALYST',
+}
+
+export enum Gender {
+  MALE = 'MALE',
+  FEMALE = 'FEMALE',
+  NON_BINARY = 'NON_BINARY',
+  PREFER_NOT_TO_SAY = 'PREFER_NOT_TO_SAY',
+}
+
+export enum VerificationStatus {
+  PENDING = 'PENDING',
+  UNDER_REVIEW = 'UNDER_REVIEW',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
+  EXPIRED = 'EXPIRED',
+}
+
+export enum ConnectionStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+  EXPIRED = 'EXPIRED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum GroupStatus {
+  FORMING = 'FORMING',
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  ARCHIVED = 'ARCHIVED',
+}
+
+export enum MessageType {
+  TEXT = 'TEXT',
+  VOICE = 'VOICE',
+  SYSTEM = 'SYSTEM',
+}
+
+export enum MembershipPlan {
+  FOUNDING_MEMBER = 'FOUNDING_MEMBER',
+  STANDARD = 'STANDARD',
+}
+
+export enum MembershipStatus {
+  ACTIVE = 'ACTIVE',
+  CANCELLED = 'CANCELLED',
+  EXPIRED = 'EXPIRED',
+  PAST_DUE = 'PAST_DUE',
+}
+
+export enum PaymentProvider {
+  STRIPE = 'STRIPE',
+  RAZORPAY = 'RAZORPAY',
+}
+
+export enum PaymentStatus {
+  PENDING = 'PENDING',
+  SUCCEEDED = 'SUCCEEDED',
+  FAILED = 'FAILED',
+  REFUNDED = 'REFUNDED',
+}
+
+export enum NotificationChannel {
+  PUSH = 'PUSH',
+  EMAIL = 'EMAIL',
+  SMS = 'SMS',
+  IN_APP = 'IN_APP',
+}
+
+export enum NotificationStatus {
+  PENDING = 'PENDING',
+  SENT = 'SENT',
+  DELIVERED = 'DELIVERED',
+  FAILED = 'FAILED',
+}
+
+export enum FlagStatus {
+  OPEN = 'OPEN',
+  UNDER_REVIEW = 'UNDER_REVIEW',
+  RESOLVED = 'RESOLVED',
+  DISMISSED = 'DISMISSED',
+}
+
+export enum DiamondReason {
+  PURCHASE = 'PURCHASE',
+  ADMIN_GRANT = 'ADMIN_GRANT',
+  REFUND = 'REFUND',
+  FEATURE_UNLOCK = 'FEATURE_UNLOCK',
+  EXPIRY = 'EXPIRY',
+}
+
+export enum EventStatus {
+  UPCOMING = 'UPCOMING',
+  LIVE = 'LIVE',
+  COMPLETED = 'COMPLETED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum MediaType {
+  PHOTO = 'PHOTO',
+  VOICE_INTRO = 'VOICE_INTRO',
+  VIDEO_INTRO = 'VIDEO_INTRO',
+  ID_DOCUMENT = 'ID_DOCUMENT',
+  SELFIE = 'SELFIE',
+}
+
+export enum RealLifeQuestionKey {
+  PARENTS_INVOLVEMENT = 'PARENTS_INVOLVEMENT',
+  FAMILY_STRUCTURE = 'FAMILY_STRUCTURE',
+  KIDS = 'KIDS',
+  FAITH_IN_PRACTICE = 'FAITH_IN_PRACTICE',
+  DIET = 'DIET',
+  LANGUAGE_AT_HOME = 'LANGUAGE_AT_HOME',
+  CAREER = 'CAREER',
+  MONEY = 'MONEY',
+  BODY_AND_HEALTH = 'BODY_AND_HEALTH',
+  MIND_AND_EMOTIONAL = 'MIND_AND_EMOTIONAL',
+  MINDSET_AND_AMBITION = 'MINDSET_AND_AMBITION',
+  WHERE_TO_SETTLE = 'WHERE_TO_SETTLE',
+}
+
+export enum StoryPromptKey {
+  PARENTS_LOVE = 'PARENTS_LOVE',
+  DEAL_BREAKER = 'DEAL_BREAKER',
+  TYPICAL_SUNDAY = 'TYPICAL_SUNDAY',
+}

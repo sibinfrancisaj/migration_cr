@@ -1,0 +1,67 @@
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  path_filters:
+    - "!node_modules/**"
+    - "!yarn.lock"
+    - "!dist/**"
+    - "!.nx/**"
+    - "!coverage/**"
+    - "!libs/db/prisma/migrations/**"
+  path_instructions:
+    - path: "apps/gateway/**"
+      instructions: |
+        Review for: security vulnerabilities, input validation (Zod), rate limiting, error handling.
+        Ensure no raw SQL. All inputs must be validated. Errors must use structured ApiError format.
+        Check for missing authentication middleware on protected routes.
+    - path: "apps/admin-api/**"
+      instructions: |
+        Extra scrutiny: admin routes must require admin JWT + RBAC middleware.
+        All destructive operations need audit log entries.
+        No admin endpoint should be callable by regular user tokens.
+    - path: "libs/auth/**"
+      instructions: |
+        Maximum scrutiny. JWT handling, token expiry, refresh rotation.
+        Ensure no token data leaks in logs or error responses.
+        OTP must be rate-limited. Refresh tokens must be one-time-use.
+    - path: "libs/payment/**"
+      instructions: |
+        Currency amounts must be integers (paise/cents), never floats.
+        All Stripe/Razorpay operations need idempotency keys.
+        Webhooks must verify signatures before processing.
+        Diamond ledger must be append-only (no updates, only inserts).
+    - path: "libs/matching/**"
+      instructions: |
+        Verify algorithm correctness: weights must sum to 1.0.
+        Check for division by zero, null pointer cases.
+        New algorithm variants must be feature-flag gated.
+        Ensure matching is symmetric (score A→B equals B→A where applicable).
+    - path: "libs/db/**"
+      instructions: |
+        Check Prisma queries for N+1 issues. Use include/select appropriately.
+        Migrations must be reversible. Check for missing indexes on FK columns
+        and frequently filtered fields. No raw SQL without parameterization.
+    - path: "libs/event-bus/**"
+      instructions: |
+        Events must follow CloudEvents 1.0.2 schema.
+        WAL events must be idempotent — duplicate delivery must be safe.
+        Ensure graceful shutdown flushes the WAL buffer.
+    - path: "libs/notification/**"
+      instructions: |
+        Ensure PII is not logged. Template strings must be sanitized.
+        Email must have unsubscribe links. Push tokens must be refreshed on failure.
+
+chat:
+  auto_reply: true
