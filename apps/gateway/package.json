@@ -1,0 +1,23 @@
+{
+  "name": "@abroad-matrimony/gateway",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "ts-node -r tsconfig-paths/register src/server.ts",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@abroad-matrimony/auth": "*",
+    "@abroad-matrimony/cache": "*",
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/event-bus": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0"
+  }
+}

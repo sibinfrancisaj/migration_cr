@@ -1,0 +1,691 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Auth & Identity ─────────────────────────────────────────────────────────
+
+model User {
+  id              String   @id @default(uuid())
+  phone           String   @unique
+  email           String?  @unique
+  role            UserRole @default(USER)
+  isPhoneVerified Boolean  @default(false)
+  isEmailVerified Boolean  @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  profile              Profile?
+  devices              Device[]
+  refreshTokens        RefreshToken[]
+  realLifeAnswers      RealLifeAnswer[]
+  storyPromptAnswers   StoryPromptAnswer[]
+  media                Media[]
+  groupMemberships     GroupMember[]
+  connectionsSent      Connection[]       @relation("ConnectionSender")
+  connectionsReceived  Connection[]       @relation("ConnectionReceiver")
+  matchesAsA           Match[]            @relation("MatchUserA")
+  matchesAsB           Match[]            @relation("MatchUserB")
+  checkIns             CheckIn[]
+  verificationRequests VerificationRequest[]
+  memberships          Membership[]
+  diamondLedger        DiamondLedger[]
+  paymentIntents       PaymentIntent[]
+  notifications        Notification[]
+  flagsReported        Flag[]             @relation("FlagReporter")
+  flagsReceived        Flag[]             @relation("FlagTarget")
+  eventRsvps           EventRsvp[]
+  messagesSent         Message[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([role])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Device {
+  id            String   @id @default(uuid())
+  userId        String
+  fingerprint   String
+  name          String?
+  platform      String?
+  pushToken     String?
+  isTrusted     Boolean  @default(false)
+  lastSeenAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
+  @@map("devices")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  deviceId  String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("refresh_tokens")
+}
+
+model AdminUser {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          AdminRole @default(MODERATOR)
+  isTotpEnabled Boolean   @default(false)
+  totpSecret    String?
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  auditLogs     AuditLog[]
+  verificationReviews VerificationRequest[] @relation("VerificationReviewer")
+  flagReviews   Flag[]     @relation("FlagModerator")
+
+  @@index([email])
+  @@map("admin_users")
+}
+
+// ─── Profile & Content ───────────────────────────────────────────────────────
+
+model Profile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  name               String
+  dateOfBirth        DateTime
+  gender             Gender
+  currentCity        String
+  currentCountry     String
+  settlementIntent   String
+  bio                String?
+  completionScore    Int      @default(0)
+  verificationStatus VerificationStatus @default(PENDING)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([currentCountry])
+  @@index([verificationStatus])
+  @@map("profiles")
+}
+
+model RealLifeAnswer {
+  id          String              @id @default(uuid())
+  userId      String
+  questionKey RealLifeQuestionKey
+  value       Json
+  updatedAt   DateTime            @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionKey])
+  @@index([userId])
+  @@map("real_life_answers")
+}
+
+model StoryPromptAnswer {
+  id        String          @id @default(uuid())
+  userId    String
+  promptKey StoryPromptKey
+  answer    String
+  updatedAt DateTime        @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, promptKey])
+  @@index([userId])
+  @@map("story_prompt_answers")
+}
+
+model Media {
+  id         String    @id @default(uuid())
+  userId     String
+  type       MediaType
+  s3Key      String    @unique
+  url        String
+  order      Int?
+  isVerified Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([type])
+  @@map("media")
+}
+
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+model Group {
+  id            String      @id @default(uuid())
+  name          String
+  region        String
+  status        GroupStatus @default(FORMING)
+  launchDate    DateTime
+  introDayOfWeek Int        @default(0)
+  capacity      Int         @default(20)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  members       GroupMember[]
+  events        Event[]
+  introDrops    IntroDropLog[]
+
+  @@index([status])
+  @@index([region])
+  @@map("groups")
+}
+
+model GroupMember {
+  id        String   @id @default(uuid())
+  userId    String
+  groupId   String
+  status    String   @default("ACTIVE")
+  joinedAt  DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([groupId])
+  @@index([userId])
+  @@map("group_members")
+}
+
+model IntroDropLog {
+  id          String   @id @default(uuid())
+  groupId     String
+  weekKey     String
+  droppedAt   DateTime @default(now())
+  pairCount   Int      @default(0)
+
+  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, weekKey])
+  @@map("intro_drop_logs")
+}
+
+// ─── Matching ────────────────────────────────────────────────────────────────
+
+model MatchScore {
+  id          String   @id @default(uuid())
+  userAId     String
+  userBId     String
+  totalScore  Float
+  breakdown   Json
+  algorithmV  String   @default("v1")
+  computedAt  DateTime @default(now())
+
+  @@unique([userAId, userBId, algorithmV])
+  @@index([userAId])
+  @@index([userBId])
+  @@index([totalScore])
+  @@map("match_scores")
+}
+
+model Connection {
+  id         String           @id @default(uuid())
+  senderId   String
+  receiverId String
+  status     ConnectionStatus @default(PENDING)
+  message    String?
+  expiresAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  sender     User             @relation("ConnectionSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver   User             @relation("ConnectionReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  match      Match?
+
+  @@unique([senderId, receiverId])
+  @@index([senderId])
+  @@index([receiverId])
+  @@index([status])
+  @@map("connections")
+}
+
+model Match {
+  id           String       @id @default(uuid())
+  userAId      String
+  userBId      String
+  connectionId String       @unique
+  matchedAt    DateTime     @default(now())
+
+  userA        User         @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB        User         @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  connection   Connection   @relation(fields: [connectionId], references: [id])
+  conversation Conversation?
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@map("matches")
+}
+
+// ─── Messaging ────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id            String    @id @default(uuid())
+  matchId       String    @unique
+  lastMessageAt DateTime?
+  isArchived    Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+
+  match         Match     @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id @default(uuid())
+  conversationId String
+  senderId       String
+  type           MessageType @default(TEXT)
+  content        String
+  readAt         DateTime?
+  createdAt      DateTime    @default(now())
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@index([createdAt])
+  @@map("messages")
+}
+
+// ─── Engagement ───────────────────────────────────────────────────────────────
+
+model CheckIn {
+  id          String   @id @default(uuid())
+  userId      String
+  weekKey     String
+  answers     Json
+  submittedAt DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekKey])
+  @@index([userId])
+  @@index([weekKey])
+  @@map("check_ins")
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  groupId     String
+  title       String
+  description String?
+  status      EventStatus @default(UPCOMING)
+  startAt     DateTime
+  endAt       DateTime?
+  location    String?
+  capacity    Int?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  group       Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  rsvps       EventRsvp[]
+
+  @@index([groupId])
+  @@index([startAt])
+  @@index([status])
+  @@map("events")
+}
+
+model EventRsvp {
+  id        String   @id @default(uuid())
+  userId    String
+  eventId   String
+  status    String   @default("GOING")
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@map("event_rsvps")
+}
+
+// ─── Verification ────────────────────────────────────────────────────────────
+
+model VerificationRequest {
+  id            String             @id @default(uuid())
+  userId        String
+  idDocType     String
+  idDocS3Key    String
+  selfieS3Key   String
+  status        VerificationStatus @default(PENDING)
+  reviewerId    String?
+  reviewNote    String?
+  submittedAt   DateTime           @default(now())
+  reviewedAt    DateTime?
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer      AdminUser?         @relation("VerificationReviewer", fields: [reviewerId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@index([submittedAt])
+  @@map("verification_requests")
+}
+
+// ─── Payments ────────────────────────────────────────────────────────────────
+
+model Membership {
+  id                String           @id @default(uuid())
+  userId            String
+  plan              MembershipPlan
+  provider          PaymentProvider
+  providerSubId     String?          @unique
+  status            MembershipStatus @default(ACTIVE)
+  currentPeriodStart DateTime?
+  expiresAt         DateTime?
+  cancelledAt       DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("memberships")
+}
+
+model PaymentIntent {
+  id                String        @id @default(uuid())
+  userId            String
+  provider          PaymentProvider
+  providerPaymentId String        @unique
+  amountPaise       Int
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("payment_intents")
+}
+
+model DiamondLedger {
+  id           String       @id @default(uuid())
+  userId       String
+  delta        Int
+  reason       DiamondReason
+  balanceAfter Int
+  metadata     Json?
+  createdAt    DateTime     @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("diamond_ledger")
+}
+
+// ─── Platform ────────────────────────────────────────────────────────────────
+
+model FeatureFlag {
+  id                  String   @id @default(uuid())
+  key                 String   @unique
+  description         String
+  enabled             Boolean  @default(false)
+  rolloutPercentage   Int      @default(0)
+  allowedUserIds      String[] @default([])
+  allowedEnvironments String[] @default([])
+  metadata            Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([key])
+  @@map("feature_flags")
+}
+
+model Notification {
+  id          String              @id @default(uuid())
+  userId      String
+  channel     NotificationChannel
+  title       String
+  body        String
+  status      NotificationStatus  @default(PENDING)
+  metadata    Json?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+model Flag {
+  id               String     @id @default(uuid())
+  reporterId       String
+  targetUserId     String
+  targetEntityType String
+  targetEntityId   String?
+  reason           String
+  description      String?
+  status           FlagStatus @default(OPEN)
+  moderatorId      String?
+  resolution       String?
+  resolvedAt       DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  reporter         User       @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUser       User       @relation("FlagTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  moderator        AdminUser? @relation("FlagModerator", fields: [moderatorId], references: [id])
+
+  @@index([reporterId])
+  @@index([targetUserId])
+  @@index([status])
+  @@map("flags")
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  adminUserId String
+  action      String
+  entity      String
+  entityId    String
+  before      Json?
+  after       Json?
+  ipAddress   String
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  adminUser   AdminUser @relation(fields: [adminUserId], references: [id])
+
+  @@index([adminUserId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model EventLog {
+  id          String   @id @default(uuid())
+  cloudEventId String  @unique
+  source      String
+  type        String
+  subject     String?
+  payload     Json
+  status      String   @default("PENDING")
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+  @@map("event_logs")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  VERIFIED
+  FOUNDING_MEMBER
+  SUSPENDED
+}
+
+enum AdminRole {
+  SUPERADMIN
+  OPS
+  MODERATOR
+  ANALYST
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum VerificationStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+enum GroupStatus {
+  FORMING
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum MessageType {
+  TEXT
+  VOICE
+  SYSTEM
+}
+
+enum MembershipPlan {
+  FOUNDING_MEMBER
+  STANDARD
+}
+
+enum MembershipStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+}
+
+enum PaymentProvider {
+  STRIPE
+  RAZORPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum NotificationChannel {
+  PUSH
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum FlagStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum DiamondReason {
+  PURCHASE
+  ADMIN_GRANT
+  REFUND
+  FEATURE_UNLOCK
+  EXPIRY
+}
+
+enum EventStatus {
+  UPCOMING
+  LIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum MediaType {
+  PHOTO
+  VOICE_INTRO
+  VIDEO_INTRO
+  ID_DOCUMENT
+  SELFIE
+}
+
+enum RealLifeQuestionKey {
+  PARENTS_INVOLVEMENT
+  FAMILY_STRUCTURE
+  KIDS
+  FAITH_IN_PRACTICE
+  DIET
+  LANGUAGE_AT_HOME
+  CAREER
+  MONEY
+  BODY_AND_HEALTH
+  MIND_AND_EMOTIONAL
+  MINDSET_AND_AMBITION
+  WHERE_TO_SETTLE
+}
+
+enum StoryPromptKey {
+  PARENTS_LOVE
+  DEAL_BREAKER
+  TYPICAL_SUNDAY
+}

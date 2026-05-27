@@ -1,0 +1,8 @@
+node_modules
+dist
+build
+.nx
+coverage
+yarn.lock
+*.generated.ts
+libs/db/prisma/migrations

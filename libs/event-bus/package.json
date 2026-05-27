@@ -1,0 +1,15 @@
+{
+  "name": "@abroad-matrimony/event-bus",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@nx/react": "22.7.4",
+    "@opentelemetry/auto-instrumentations-node": "0.76.0",
+    "@opentelemetry/sdk-node": "0.218.0",
+    "bullmq": "^5.4.0",
+    "cloudevents": "^1.1.1",
+    "uuid": "^14.0.0"
+  }
+}
