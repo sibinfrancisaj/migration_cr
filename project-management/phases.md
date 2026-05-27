@@ -39,7 +39,7 @@
 | AUTH-005  | `requireAuth` middleware                         | ✅         |
 | QUAL-001  | Jest coverage config (Istanbul lcov/html)        | ✅         |
 | QUAL-002  | SonarCloud integration (CI scan + properties)    | ✅         |
-| AUTH-006  | `POST /admin/auth/login` (bcrypt + TOTP)         | ⏳         |
+| AUTH-006  | `POST /admin/auth/login` (bcrypt + TOTP)         | ✅         |
 | AUTH-007  | `requireRole()` user RBAC middleware             | ⏳         |
 | AUTH-008  | `requireAdminRole()` admin RBAC middleware       | ⏳         |
 

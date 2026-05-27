@@ -36,3 +36,20 @@ export type { TokenRefreshInput, TokenRefreshResult } from './token-refresh.serv
 
 // requireAuth middleware (used by gateway + admin-api)
 export { requireAuth } from './middleware/require-auth.middleware.js';
+
+// Admin JWT
+export { issueAdminToken, verifyAdminToken } from './jwt.service.js';
+export type { AdminTokenResult } from './jwt.service.js';
+
+// Admin rate-limit
+export { checkAdminLoginRateLimit } from './admin.rate-limit.js';
+export type { AdminRateLimitResult } from './admin.rate-limit.js';
+
+// Admin auth service
+export {
+  adminLoginService,
+  AdminCredentialsError,
+  AdminTotpRequiredError,
+  AdminTotpInvalidError,
+} from './admin-auth.service.js';
+export type { AdminLoginInput, AdminLoginResult } from './admin-auth.service.js';

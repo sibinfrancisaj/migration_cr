@@ -14,8 +14,21 @@ jest.mock('@abroad-matrimony/auth', () => {
     tokenRefreshService: (...args: unknown[]) => mockTokenRefreshService(...args),
     TokenInvalidError,
     TokenReuseError,
-    // Pass-through stub — not exercised by token refresh tests
-    requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
+    // Pass-through stubs — not exercised by token refresh tests
+    requireAuth:              (_req: unknown, _res: unknown, next: () => void) => next(),
+    checkAndIncrOtpRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    getOtpAdapter:            jest.fn().mockReturnValue({ send: jest.fn().mockResolvedValue(undefined) }),
+    otpVerifyService:         jest.fn().mockResolvedValue({}),
+    revokeForDevice:          jest.fn().mockResolvedValue(undefined),
+    revokeAllForUser:         jest.fn().mockResolvedValue(undefined),
+    OtpInvalidError:  class OtpInvalidError  extends Error { constructor() { super(); this.name = 'OtpInvalidError'; } },
+    DeviceLimitError: class DeviceLimitError extends Error { constructor() { super(); this.name = 'DeviceLimitError'; } },
+    // Admin auth stubs
+    checkAdminLoginRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    adminLoginService:        jest.fn().mockResolvedValue({}),
+    AdminCredentialsError:  class AdminCredentialsError  extends Error { constructor() { super(); this.name = 'AdminCredentialsError'; } },
+    AdminTotpRequiredError: class AdminTotpRequiredError extends Error { constructor() { super(); this.name = 'AdminTotpRequiredError'; } },
+    AdminTotpInvalidError:  class AdminTotpInvalidError  extends Error { constructor() { super(); this.name = 'AdminTotpInvalidError'; } },
   };
 });
 

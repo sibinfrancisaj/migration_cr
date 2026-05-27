@@ -12,6 +12,7 @@ export const CACHE_KEYS = {
   MATCH_SCORES: (userId: string) => `am:scores:${userId}`,
   REFRESH_TOKEN: (tokenId: string) => `am:rt:${tokenId}`,
   OTP_ATTEMPTS: (phone: string) => `am:otp:attempts:${phone}`,
+  ADMIN_LOGIN_ATTEMPTS: (email: string) => `am:admin:login:${email}`,
   RATE_LIMIT: (key: string) => `am:rl:${key}`,
 } as const;
 
