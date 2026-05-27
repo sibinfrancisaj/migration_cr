@@ -21,10 +21,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: yarn
-      - run: yarn install --frozen-lockfile
+          cache: npm
+      - run: npm ci --legacy-peer-deps
       - uses: nrwl/nx-set-shas@v4
-      - run: yarn nx affected -t lint --parallel=3
+      - run: npx nx affected -t lint --parallel=3
 
   typecheck:
     name: Typecheck (affected)
@@ -36,13 +36,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: yarn
-      - run: yarn install --frozen-lockfile
+          cache: npm
+      - run: npm ci --legacy-peer-deps
       - uses: nrwl/nx-set-shas@v4
-      - run: yarn nx affected -t typecheck --parallel=3
+      - run: npx nx affected -t typecheck --parallel=3
 
   test:
-    name: Test (affected)
+    name: Test + Coverage + Sonar
     runs-on: ubuntu-latest
     services:
       redis:
@@ -57,14 +57,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # required by SonarCloud for blame data and NX affected SHAs
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: yarn
-      - run: yarn install --frozen-lockfile
+          cache: npm
+      - run: npm ci --legacy-peer-deps
       - uses: nrwl/nx-set-shas@v4
-      - run: yarn nx affected -t test --parallel=3 --coverage
+
+      - name: Run tests with coverage
+        run: npx jest --projects libs/auth apps/gateway --coverage --ci
         env:
           NODE_ENV: test
           REDIS_URL: redis://localhost:6379
@@ -77,6 +79,16 @@ jobs:
           ADMIN_JWT_EXPIRES_IN: 8h
           FEATURE_FLAGS_CACHE_TTL_SECONDS: 0
 
+      # SonarCloud scan — reads sonar-project.properties + coverage/*/lcov.info
+      # Requires SONAR_TOKEN in GitHub repo → Settings → Secrets → Actions.
+      # See sonar-project.properties for one-time setup instructions.
+      - name: SonarCloud Scan
+        if: ${{ !cancelled() }}
+        uses: SonarSource/sonarcloud-github-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   build:
     name: Build (affected)
     runs-on: ubuntu-latest
@@ -88,7 +100,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: yarn
-      - run: yarn install --frozen-lockfile
+          cache: npm
+      - run: npm ci --legacy-peer-deps
       - uses: nrwl/nx-set-shas@v4
-      - run: yarn nx affected -t build --parallel=3
+      - run: npx nx affected -t build --parallel=3

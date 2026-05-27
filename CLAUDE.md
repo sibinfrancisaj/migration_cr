@@ -200,6 +200,8 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | **AUTH-003** | `POST /api/v1/auth/token/refresh` — one-time rotation + reuse detection | ✅ Done |
 | **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | ✅ Done |
 | **AUTH-005** | `requireAuth` middleware | ✅ Done |
+| **QUAL-001** | Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom) | ✅ Done |
+| **QUAL-002** | SonarCloud integration (`sonar-project.properties` + CI scan step) | ✅ Done |
 | **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | 🔄 Next |
 | **AUTH-007** | `requireRole()` user RBAC | ⏳ |
 | **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ⏳ |
@@ -425,17 +427,29 @@ AUTH-001 ✅ DONE — POST /api/v1/auth/otp/request, 24 tests passing.
 AUTH-002 ✅ DONE — POST /api/v1/auth/otp/verify, 63 tests passing.
 AUTH-003 ✅ DONE — POST /api/v1/auth/token/refresh, 82 tests passing (10 suites).
 AUTH-004 ✅ DONE — POST /logout + POST /logout/all, 105 tests passing (12 suites).
-AUTH-005 ✅ DONE — requireAuth middleware (built alongside AUTH-004).
+AUTH-001 through AUTH-005 ✅ DONE — OTP request/verify, JWT refresh, logout, requireAuth.
+QUAL-001 ✅ DONE — Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom).
+QUAL-002 ✅ DONE — SonarCloud integration (sonar-project.properties + CI scan step).
 Next task: AUTH-006 — POST /admin/auth/login (bcrypt + TOTP).
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001) — after DB upsert confirms user created. See BUG-001 in bugs.md.
 
-Key files for logout + requireAuth (AUTH-004/005):
-- libs/auth/src/middleware/require-auth.middleware.ts — reads Bearer token, 401/403
-- libs/auth/src/refresh-token.service.ts — revokeForDevice() added (by userId+deviceId)
+Key files added in AUTH-003–005 + QUAL-001/002:
+- libs/auth/src/token-refresh.service.ts — token rotation + reuse detection
+- libs/auth/src/middleware/require-auth.middleware.ts — Bearer token → req.user
+- libs/auth/src/refresh-token.service.ts — revokeForDevice() + revokeAllForUser()
 - apps/gateway/src/controllers/auth/logout.controller.ts — logout + logoutAll handlers
+- apps/gateway/src/controllers/auth/token.controller.ts — refresh endpoint
 - apps/gateway/src/types/express.d.ts — req.user augmented
-- requireAuth sends JSON directly (not AppError) to keep libs/auth decoupled from gateway
+- libs/auth/jest.config.ts + apps/gateway/jest.config.ts — coverage config (95%/90% thresholds)
+- sonar-project.properties — SonarCloud project config
+- .github/workflows/ci.yml — SonarCloud scan step (requires SONAR_TOKEN secret)
+
+SonarCloud one-time setup (user must do this):
+1. Sign in at https://sonarcloud.io with GitHub
+2. "+" → "Analyze new project" → import sibinfrancisaj/migration_cr
+3. Choose "With GitHub Actions" → copy the SONAR_TOKEN
+4. GitHub repo → Settings → Secrets → Actions → add SONAR_TOKEN
 
 We are working locally. Do NOT push to Supabase or run prisma db push.
 Ask before opening a PR — user tests locally first.
