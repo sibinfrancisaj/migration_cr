@@ -189,24 +189,20 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 
 ---
 
-## 6. Active Sprint — Phase 2: Auth
+## 6. Active Sprint — Phase 3: Profile
 
 > Full story specs → `project-management/epics-stories.md`
 
 | Task ID | Endpoint / Feature | Status |
 |---------|-------------------|--------|
-| **AUTH-001** | `POST /api/v1/auth/otp/request` — validate E.164, Redis rate-limit 3/hr, Twilio Verify | ✅ Done |
-| **AUTH-002** | `POST /api/v1/auth/otp/verify` — verify code, upsert user, issue JWT pair, publish USER_REGISTERED | ✅ Done |
-| **AUTH-003** | `POST /api/v1/auth/token/refresh` — one-time rotation + reuse detection | ✅ Done |
-| **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | ✅ Done |
-| **AUTH-005** | `requireAuth` middleware | ✅ Done |
-| **QUAL-001** | Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom) | ✅ Done |
-| **QUAL-002** | SonarCloud integration (`sonar-project.properties` + CI scan step) | ✅ Done |
-| **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | ✅ Done |
-| **AUTH-007** | `requireRole()` user RBAC | ✅ Done |
-| **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ✅ Done |
+| **PROF-001** | `POST /api/v1/profile` — create profile (name, DOB, gender, city, country, settlementIntent, bio?) | ✅ Done |
+| **PROF-002** | `PUT /api/v1/profile/real-life/:questionKey` — upsert real-life answer | ⏳ |
+| **PROF-003** | `PUT /api/v1/profile/story/:promptKey` — upsert story prompt | ⏳ |
+| **PROF-004** | `POST /api/v1/profile/media` — S3 photo upload (requires libs/storage) | ⏳ |
+| **PROF-005** | Profile completion score calculation | ⏳ |
+| **PROF-006** | `GET /api/v1/profile/me` + `GET /api/v1/profiles/:id` | ⏳ |
 
-**Key decisions already made:**
+**Key decisions already made (Phase 2 Auth — complete):**
 - `USER_REGISTERED` CloudEvent fires in AUTH-002 (not AUTH-001) — after the user row is confirmed written to DB. See BUG-001 in `project-management/bugs.md`. ✅ Implemented.
 - `DeviceLimitError` → HTTP 409 Conflict; existing fingerprint bypasses device count check.
 
@@ -434,10 +430,19 @@ AUTH-006 ✅ — POST /admin/auth/login (bcrypt + TOTP)
 AUTH-007 ✅ — requireRole() user RBAC middleware
 AUTH-008 ✅ — requireAdminRole() admin RBAC middleware + auditLog() helper
 
-Next phase: Phase 3 — Profile
-Next task: PROF-001 — POST /api/v1/profile (create profile)
+Phase 3 in progress.
+PROF-001 ✅ — POST /api/v1/profile (create profile), 199 tests, 23 suites.
+Next task: PROF-002 — PUT /api/v1/profile/real-life/:questionKey
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
+
+Key files from Phase 3 (PROF-001):
+- libs/profile/src/profile.service.ts — createProfileService() + ProfileAlreadyExistsError
+- libs/profile/src/index.ts — barrel exports
+- apps/gateway/src/schemas/profile/create-profile.schema.ts — z.coerce.date() + age guard
+- apps/gateway/src/constants/profile.constants.ts
+- apps/gateway/src/controllers/profile/profile.controller.ts
+- apps/gateway/src/routes/profile/index.ts
 
 Key files from Phase 2 (new additions in AUTH-007/008):
 - libs/auth/src/middleware/require-role.middleware.ts — requireRole(...roles) factory

@@ -45,13 +45,13 @@
 
 ---
 
-## Phase 3 — Profile ⏳
+## Phase 3 — Profile 🔄
 **Goal:** User profile creation, real-life answers, story prompts, photo upload.
-**Sprint:** 3 | **Status:** Backlog
+**Sprint:** 3 | **Status:** In Progress
 
 | Task ID   | Description                                      | Status |
 |-----------|--------------------------------------------------|--------|
-| PROF-001  | `POST /api/v1/profile` — create profile          | ⏳     |
+| PROF-001  | `POST /api/v1/profile` — create profile          | ✅     |
 | PROF-002  | `PUT /api/v1/profile/real-life/:questionKey`     | ⏳     |
 | PROF-003  | `PUT /api/v1/profile/story/:promptKey`           | ⏳     |
 | PROF-004  | `POST /api/v1/profile/media` — S3 photo upload   | ⏳     |

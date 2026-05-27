@@ -281,19 +281,37 @@
 
 ## PHASE 3 — Profile
 
-### PROF-001 · Create Profile ⏳
+### PROF-001 · Create Profile ✅
 **Story:** As a verified phone user, I create my profile with basic details to join the platform.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/profile` — requires `requireAuth`
-- [ ] Body: `{ name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent, bio? }`
-- [ ] Validates: name min 2 chars, DOB ≥ 18 years ago, gender enum, city/country non-empty
-- [ ] Creates `profiles` row; returns `ProfileDto`
-- [ ] 409 if profile already exists for this user
+- [x] `POST /api/v1/profile` — requires `requireAuth`
+- [x] Body: `{ name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent, bio? }`
+- [x] Validates: name ≥ 2 chars, DOB ≥ 18 years ago (z.coerce.date + refine), gender enum, city/country/settlementIntent non-empty
+- [x] Creates `profiles` row; returns `ProfileDto` (empty arrays for photos/answers not yet created)
+- [x] 409 CONFLICT if profile already exists for this user
+- [x] 28 tests passing (10 service + 18 controller)
 
 **Implementation Subtasks:**
-- [ ] Schema + handler in `apps/gateway/src/routes/profile/`
-- [ ] Tests
+- [x] Create `libs/profile/` — new domain library
+- [x] `libs/profile/package.json` + `tsconfig.spec.json` + `jest.config.ts`
+- [x] `libs/profile/src/profile.service.ts` — `createProfileService()` + `ProfileAlreadyExistsError`
+- [x] `libs/profile/src/index.ts` — barrel exports
+- [x] `apps/gateway/src/schemas/profile/create-profile.schema.ts` — Zod schema with `z.coerce.date()` + age guard
+- [x] `apps/gateway/src/constants/profile.constants.ts` — PROFILE_ERRORS
+- [x] `apps/gateway/src/controllers/profile/profile.controller.ts` + STANDARDS.md
+- [x] `apps/gateway/src/routes/profile/index.ts` + STANDARDS.md
+- [x] Update `apps/gateway/src/routes/index.ts` — mount at `/api/v1/profile`
+- [x] Update `apps/gateway/package.json`, `tsconfig.base.json`, `jest.preset.js`, `gateway/jest.config.ts` — wire new lib
+- [x] Tests — 10 unit (profile.service) + 18 integration (profile.controller)
+
+**Decision Log:**
+- New `libs/profile/` library created, following the same structure as `libs/auth/` — business logic stays out of the gateway.
+- `z.coerce.date()` used for `dateOfBirth` — accepts ISO 8601 date strings (`"1990-05-15"`) and full datetimes (`"1990-05-15T00:00:00Z"`), converts to `Date` before the age refine runs.
+- `completionScore` starts at 0 on creation. PROF-005 will implement the recalculation function called after every profile mutation.
+- `ProfileDto.isVerified` is derived inline: `verificationStatus === VerificationStatus.APPROVED`.
+- `bio: null` from Prisma mapped to `undefined` in `ProfileDto` to satisfy the `bio?: string` type.
 
 ---
 

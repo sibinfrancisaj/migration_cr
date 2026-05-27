@@ -1,0 +1,28 @@
+export default {
+  displayName: 'profile',
+  preset: '../../jest.preset.js',
+  testEnvironment: 'node',
+  coverageDirectory: '../../coverage/libs/profile',
+  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts'],
+
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/__tests__/**',
+  ],
+
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    '/src/index\\.ts$',
+  ],
+
+  coverageReporters: ['text', 'text-summary', 'lcov', 'html'],
+
+  coverageThresholds: {
+    global: {
+      statements: 95,
+      branches: 85,
+      functions: 90,
+      lines: 95,
+    },
+  },
+};

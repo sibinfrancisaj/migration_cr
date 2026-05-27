@@ -13,6 +13,7 @@ module.exports = {
     '^@abroad-matrimony/event-bus$': '<rootDir>/../../libs/event-bus/src/index.ts',
     '^@abroad-matrimony/queue$': '<rootDir>/../../libs/queue/src/index.ts',
     '^@abroad-matrimony/auth$': '<rootDir>/../../libs/auth/src/index.ts',
+    '^@abroad-matrimony/profile$': '<rootDir>/../../libs/profile/src/index.ts',
   },
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
 };

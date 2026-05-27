@@ -33,6 +33,7 @@
       "@abroad-matrimony/event-bus": ["libs/event-bus/src/index.ts"],
       "@abroad-matrimony/queue": ["libs/queue/src/index.ts"],
       "@abroad-matrimony/auth": ["libs/auth/src/index.ts"],
+      "@abroad-matrimony/profile": ["libs/profile/src/index.ts"],
       "@abroad-matrimony/matching": ["libs/matching/src/index.ts"],
       "@abroad-matrimony/notification": ["libs/notification/src/index.ts"],
       "@abroad-matrimony/payment": ["libs/payment/src/index.ts"],

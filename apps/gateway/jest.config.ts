@@ -11,6 +11,7 @@ export default {
     '^@abroad-matrimony/db$': '<rootDir>/../../libs/db/src/index.ts',
     '^@abroad-matrimony/event-bus$': '<rootDir>/../../libs/event-bus/src/index.ts',
     '^@abroad-matrimony/auth$': '<rootDir>/../../libs/auth/src/index.ts',
+    '^@abroad-matrimony/profile$': '<rootDir>/../../libs/profile/src/index.ts',
   },
   coverageDirectory: '../../coverage/apps/gateway',
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts'],
