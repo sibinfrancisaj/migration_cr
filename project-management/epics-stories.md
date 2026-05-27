@@ -143,35 +143,49 @@
 
 ---
 
-### AUTH-004 · Logout ⏳
-**Story:** As a user, I log out of my current device or all devices.
+### AUTH-005 · requireAuth Middleware ✅
+**Story:** As any protected route, I need to verify the caller's identity before proceeding.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/auth/logout` — revokes current device refresh token
-- [ ] `POST /api/v1/auth/logout/all` — revokes all refresh tokens for user
-- [ ] Both require valid `requireAuth` middleware
-- [ ] Returns `204 No Content`
+- [x] Reads `Authorization: Bearer <token>` header
+- [x] Verifies JWT with `JWT_ACCESS_SECRET`; attaches `req.user = { id, role, deviceId }`
+- [x] Returns 401 if token missing/invalid/expired or scheme is not Bearer
+- [x] Returns 403 if `role === 'SUSPENDED'`
 
 **Implementation Subtasks:**
-- [ ] `revokeToken(tokenId)` + `revokeAllForUser(userId)` in refresh-token service
-- [ ] Route handlers + tests
+- [x] `libs/auth/src/middleware/require-auth.middleware.ts` — self-contained, sends JSON response directly (no AppError coupling so libs/auth stays framework-light)
+- [x] `libs/auth/src/index.ts` — `requireAuth` exported from barrel
+- [x] `apps/gateway/src/types/express.d.ts` — `req.user?: { id, role, deviceId }` augmentation added
+- [x] `libs/auth/src/__tests__/middleware/require-auth.middleware.test.ts` — 9 tests
+
+**Decision Log:**
+- `requireAuth` sends raw JSON directly rather than calling `next(AppError)` — keeps `libs/auth` decoupled from `apps/gateway`'s `AppError` class; the response shape still matches `ApiResponse<never>`
+- Lives in `libs/auth` (not `apps/gateway/middleware`) so it can be reused by `apps/admin-api` in a future phase
 
 ---
 
-### AUTH-005 · requireAuth Middleware ⏳
-**Story:** As any protected route, I need to verify the caller's identity before proceeding.
+### AUTH-004 · Logout ✅
+**Story:** As a user, I log out of my current device or all devices.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] Reads `Authorization: Bearer <token>` header
-- [ ] Verifies JWT with `JWT_ACCESS_SECRET`; attaches `req.user = { id, role, deviceId }`
-- [ ] Returns 401 if token missing/invalid/expired
-- [ ] Returns 403 if `role === 'SUSPENDED'`
+- [x] `POST /api/v1/auth/logout` — revokes current device refresh tokens → 204
+- [x] `POST /api/v1/auth/logout/all` — revokes all refresh tokens for user → 204
+- [x] Both protected by `requireAuth` middleware
+- [x] Returns `204 No Content` (no body)
 
 **Implementation Subtasks:**
-- [ ] `libs/auth/src/middleware/require-auth.middleware.ts`
-- [ ] Export from `libs/auth/src/index.ts`
-- [ ] Add `@types` augmentation for `req.user` on Express `Request`
-- [ ] Tests
+- [x] `revokeForDevice(userId, deviceId)` added to `refresh-token.service.ts` — revokes by (userId, deviceId) pair (Redis + DB)
+- [x] 3 new tests for `revokeForDevice` added to `refresh-token.service.test.ts`
+- [x] `apps/gateway/src/controllers/auth/logout.controller.ts` — `logout` + `logoutAll` handlers
+- [x] `apps/gateway/src/routes/auth/index.ts` — `POST /logout` + `POST /logout/all` wired with `requireAuth`
+- [x] `libs/auth/src/index.ts` — `revokeForDevice` exported from barrel
+- [x] `apps/gateway/src/controllers/auth/__tests__/logout.controller.test.ts` — 11 tests
+
+**Decision Log:**
+- Single-device logout uses `revokeForDevice(userId, deviceId)` — the `deviceId` comes from `req.user` which is set by the access token verified by `requireAuth`; no refresh token is needed in the request body
+- Existing tests for otp/verify/refresh controllers updated to stub `requireAuth` as a pass-through — prevents route registration errors when `createApp()` loads the updated auth router
 
 ---
 

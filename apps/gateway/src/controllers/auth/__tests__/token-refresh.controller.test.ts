@@ -14,6 +14,8 @@ jest.mock('@abroad-matrimony/auth', () => {
     tokenRefreshService: (...args: unknown[]) => mockTokenRefreshService(...args),
     TokenInvalidError,
     TokenReuseError,
+    // Pass-through stub — not exercised by token refresh tests
+    requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
   };
 });
 

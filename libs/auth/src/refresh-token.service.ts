@@ -53,6 +53,21 @@ export async function revokeToken(tokenId: string): Promise<void> {
   ]);
 }
 
+export async function revokeForDevice(userId: string, deviceId: string): Promise<void> {
+  const tokens = await prisma.refreshToken.findMany({
+    where: { userId, deviceId, revokedAt: null },
+    select: { id: true },
+  });
+
+  await Promise.all([
+    ...tokens.map((t) => cacheDel(CACHE_KEYS.REFRESH_TOKEN(t.id))),
+    prisma.refreshToken.updateMany({
+      where: { userId, deviceId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
+}
+
 export async function revokeAllForUser(userId: string): Promise<void> {
   const tokens = await prisma.refreshToken.findMany({
     where: { userId, revokedAt: null },

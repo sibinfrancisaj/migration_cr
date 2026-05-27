@@ -20,6 +20,7 @@ export {
   storeRefreshToken,
   getStoredRefreshToken,
   revokeToken,
+  revokeForDevice,
   revokeAllForUser,
   hashToken,
 } from './refresh-token.service.js';
@@ -32,3 +33,6 @@ export type { OtpVerifyInput, OtpVerifyResult } from './otp-verify.service.js';
 // Token refresh service (one-time rotation + reuse detection)
 export { tokenRefreshService, TokenInvalidError, TokenReuseError } from './token-refresh.service.js';
 export type { TokenRefreshInput, TokenRefreshResult } from './token-refresh.service.js';
+
+// requireAuth middleware (used by gateway + admin-api)
+export { requireAuth } from './middleware/require-auth.middleware.js';

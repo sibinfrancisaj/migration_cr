@@ -17,6 +17,8 @@ jest.mock('@abroad-matrimony/auth', () => {
     otpVerifyService: (...args: unknown[]) => mockOtpVerifyService(...args),
     OtpInvalidError,
     DeviceLimitError,
+    // Pass-through stub — not exercised by OTP verify tests
+    requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
   };
 });
 

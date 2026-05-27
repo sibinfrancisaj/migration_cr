@@ -2,6 +2,7 @@ import {
   storeRefreshToken,
   getStoredRefreshToken,
   revokeToken,
+  revokeForDevice,
   revokeAllForUser,
   hashToken,
 } from '../refresh-token.service.js';
@@ -180,5 +181,43 @@ describe('revokeAllForUser', () => {
       where: { userId: USER_ID, revokedAt: null },
       data: { revokedAt: expect.any(Date) },
     });
+  });
+});
+
+describe('revokeForDevice', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCacheDel.mockResolvedValue(undefined);
+    mockPrismaRefreshTokenUpdateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it('deletes only the Redis keys for the given device', async () => {
+    mockPrismaRefreshTokenFindMany.mockResolvedValueOnce([{ id: 'token-device-1' }]);
+
+    await revokeForDevice(USER_ID, DEVICE_ID);
+
+    expect(mockCacheDel).toHaveBeenCalledWith(`am:rt:token-device-1`);
+    expect(mockCacheDel).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks only device tokens as revoked in DB (scoped by userId + deviceId)', async () => {
+    mockPrismaRefreshTokenFindMany.mockResolvedValueOnce([{ id: 'token-device-1' }]);
+
+    await revokeForDevice(USER_ID, DEVICE_ID);
+
+    expect(mockPrismaRefreshTokenUpdateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID, deviceId: DEVICE_ID, revokedAt: null },
+      data: { revokedAt: expect.any(Date) },
+    });
+  });
+
+  it('does nothing when no active tokens exist for the device', async () => {
+    mockPrismaRefreshTokenFindMany.mockResolvedValueOnce([]);
+
+    await revokeForDevice(USER_ID, DEVICE_ID);
+
+    expect(mockCacheDel).not.toHaveBeenCalled();
+    // updateMany still runs — it's a no-op on the DB side when no rows match
+    expect(mockPrismaRefreshTokenUpdateMany).toHaveBeenCalledTimes(1);
   });
 });

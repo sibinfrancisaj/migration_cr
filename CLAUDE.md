@@ -198,9 +198,9 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | **AUTH-001** | `POST /api/v1/auth/otp/request` — validate E.164, Redis rate-limit 3/hr, Twilio Verify | ✅ Done |
 | **AUTH-002** | `POST /api/v1/auth/otp/verify` — verify code, upsert user, issue JWT pair, publish USER_REGISTERED | ✅ Done |
 | **AUTH-003** | `POST /api/v1/auth/token/refresh` — one-time rotation + reuse detection | ✅ Done |
-| **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | 🔄 Next |
-| **AUTH-005** | `requireAuth` middleware | ⏳ |
-| **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | ⏳ |
+| **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | ✅ Done |
+| **AUTH-005** | `requireAuth` middleware | ✅ Done |
+| **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | 🔄 Next |
 | **AUTH-007** | `requireRole()` user RBAC | ⏳ |
 | **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ⏳ |
 
@@ -424,16 +424,18 @@ Phase 1 foundation complete. Phase 2 Auth in progress.
 AUTH-001 ✅ DONE — POST /api/v1/auth/otp/request, 24 tests passing.
 AUTH-002 ✅ DONE — POST /api/v1/auth/otp/verify, 63 tests passing.
 AUTH-003 ✅ DONE — POST /api/v1/auth/token/refresh, 82 tests passing (10 suites).
-Next task: AUTH-004 — POST /api/v1/auth/logout + POST /api/v1/auth/logout/all.
+AUTH-004 ✅ DONE — POST /logout + POST /logout/all, 105 tests passing (12 suites).
+AUTH-005 ✅ DONE — requireAuth middleware (built alongside AUTH-004).
+Next task: AUTH-006 — POST /admin/auth/login (bcrypt + TOTP).
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001) — after DB upsert confirms user created. See BUG-001 in bugs.md.
 
-Key files for token refresh (AUTH-003):
-- libs/auth/src/token-refresh.service.ts — tokenRefreshService, TokenInvalidError, TokenReuseError
-- apps/gateway/src/schemas/auth/token-refresh.schema.ts
-- apps/gateway/src/controllers/auth/token.controller.ts
-- Reuse detection: getStoredRefreshToken → null → revokeAllForUser → 401 (same as invalid token)
-- Role always fetched from DB at refresh time (not from token claims)
+Key files for logout + requireAuth (AUTH-004/005):
+- libs/auth/src/middleware/require-auth.middleware.ts — reads Bearer token, 401/403
+- libs/auth/src/refresh-token.service.ts — revokeForDevice() added (by userId+deviceId)
+- apps/gateway/src/controllers/auth/logout.controller.ts — logout + logoutAll handlers
+- apps/gateway/src/types/express.d.ts — req.user augmented
+- requireAuth sends JSON directly (not AppError) to keep libs/auth decoupled from gateway
 
 We are working locally. Do NOT push to Supabase or run prisma db push.
 Ask before opening a PR — user tests locally first.

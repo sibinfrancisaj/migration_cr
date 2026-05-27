@@ -8,6 +8,8 @@ const mockSend = jest.fn();
 jest.mock('@abroad-matrimony/auth', () => ({
   checkAndIncrOtpRateLimit: (...args: unknown[]) => mockCheckAndIncrOtpRateLimit(...args),
   getOtpAdapter: () => mockGetOtpAdapter(),
+  // Pass-through stub — not exercised by OTP request tests
+  requireAuth: (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 jest.mock('@abroad-matrimony/config', () => ({
