@@ -232,33 +232,50 @@
 
 ---
 
-### AUTH-007 · requireRole Middleware ⏳
+### AUTH-007 · requireRole Middleware ✅
 **Story:** As a route that needs a specific user role, I block access if the caller doesn't qualify.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `requireRole(...roles: UserRole[])` — checks `req.user.role`
-- [ ] Returns 403 if role not in allowed list
-- [ ] Composes with `requireAuth` (must come after)
+- [x] `requireRole(...roles: UserRole[])` — factory returns middleware that checks `req.user.role`
+- [x] Returns 401 if `req.user` is not set (requireAuth missing from chain)
+- [x] Returns 403 FORBIDDEN if role not in allowed list
+- [x] Composes with `requireAuth` (must come after in chain)
+- [x] Works with single role or multiple roles (OR semantics)
+- [x] Logs warning with userId + attempted role on 403
 
 **Implementation Subtasks:**
-- [ ] `libs/auth/src/middleware/require-role.middleware.ts`
-- [ ] Tests
+- [x] `libs/auth/src/middleware/require-role.middleware.ts`
+- [x] `libs/auth/src/types/express.d.ts` — Express Request augmentation for req.user / req.admin / req.requestId in libs/auth context
+- [x] Tests — 12 tests covering 401 (no req.user), 403 (wrong role, multi-role list, SUSPENDED), next() calls
+
+**Decision Log:**
+- Added `libs/auth/src/types/express.d.ts` to mirror the gateway's Express augmentation.  TypeScript merges declarations — having it in both places is safe and required so ts-jest can compile auth middleware without TS errors inside the lib's own tsconfig context.
 
 ---
 
-### AUTH-008 · requireAdminRole Middleware ⏳
+### AUTH-008 · requireAdminRole Middleware ✅
 **Story:** As an admin route, I verify the caller has a valid admin JWT with the required AdminRole.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] Reads `Authorization: Bearer <token>`, verifies with `ADMIN_JWT_SECRET`
-- [ ] Attaches `req.admin = { id, role, email }`
-- [ ] Returns 401/403 as appropriate
-- [ ] All admin mutations must write to `audit_logs` (enforced via separate `auditLog()` helper)
+- [x] Reads `Authorization: Bearer <token>`, verifies with `ADMIN_JWT_SECRET` via `verifyAdminToken()`
+- [x] Attaches `req.admin = { id, role, email }` on success
+- [x] Returns 401 if header missing/malformed or token invalid/expired
+- [x] Returns 403 if `roles` list provided and admin's role is not in it
+- [x] No role list → any authenticated admin is allowed
+- [x] All admin mutations must write to `audit_logs` via `auditLog()` helper
+- [x] `auditLog()` re-throws on DB failure so callers can decide whether to abort
 
 **Implementation Subtasks:**
-- [ ] `libs/auth/src/middleware/require-admin-role.middleware.ts`
-- [ ] `libs/auth/src/audit.service.ts` — `auditLog()` helper
-- [ ] Tests
+- [x] `libs/auth/src/middleware/require-admin-role.middleware.ts`
+- [x] `libs/auth/src/audit.service.ts` — `auditLog(input: AuditLogInput): Promise<void>`
+- [x] Tests — 15 tests (requireAdminRole: 13 tests, auditLog: 6 tests)
+- [x] Barrel exports added to `libs/auth/src/index.ts`
+
+**Decision Log:**
+- `auditLog()` awaits the DB write and re-throws on failure.  Fire-and-forget was considered but rejected — silent audit failures would create compliance blind spots.  Controllers that call `auditLog()` should decide whether to abort the operation or log + continue.
+- `Prisma.InputJsonValue` cast required for `before`/`after` JSON fields — Prisma's generated types are overly strict about `Record<string, unknown>` → `InputJsonValue`.  Using an explicit cast keeps the service signature ergonomic without widening to `any`.
 
 ---
 

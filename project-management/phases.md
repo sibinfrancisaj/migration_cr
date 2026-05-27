@@ -26,9 +26,9 @@
 
 ---
 
-## Phase 2 — Auth 🔄
+## Phase 2 — Auth ✅
 **Goal:** Full phone OTP auth flow, JWT tokens, device tracking, RBAC.
-**Sprint:** 2 | **Status:** In Progress
+**Sprint:** 2 | **Status:** Complete (commit pending)
 
 | Task ID   | Description                                      | Status     |
 |-----------|--------------------------------------------------|------------|
@@ -40,8 +40,8 @@
 | QUAL-001  | Jest coverage config (Istanbul lcov/html)        | ✅         |
 | QUAL-002  | SonarCloud integration (CI scan + properties)    | ✅         |
 | AUTH-006  | `POST /admin/auth/login` (bcrypt + TOTP)         | ✅         |
-| AUTH-007  | `requireRole()` user RBAC middleware             | ⏳         |
-| AUTH-008  | `requireAdminRole()` admin RBAC middleware       | ⏳         |
+| AUTH-007  | `requireRole()` user RBAC middleware             | ✅         |
+| AUTH-008  | `requireAdminRole()` admin RBAC middleware       | ✅         |
 
 ---
 

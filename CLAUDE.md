@@ -110,7 +110,7 @@ migration_cr/
 │   ├── db/               ← Prisma client singleton, schema at prisma/schema.prisma
 │   ├── cache/            ← ioredis client + helpers
 │   ├── event-bus/        ← CloudEvents publisher + in-memory WAL + BullMQ
-│   ├── auth/             ← JWT issue/verify, OTP, RBAC (Phase 2 — in progress)
+│   ├── auth/             ← JWT issue/verify, OTP, RBAC (Phase 2 — complete)
 │   ├── matching/         ← NOT YET BUILT (scoring algorithm)
 │   ├── notification/     ← NOT YET BUILT (Twilio, Brevo, Firebase adapters)
 │   ├── payment/          ← NOT YET BUILT (Stripe, Razorpay, diamond ledger)
@@ -203,8 +203,8 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | **QUAL-001** | Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom) | ✅ Done |
 | **QUAL-002** | SonarCloud integration (`sonar-project.properties` + CI scan step) | ✅ Done |
 | **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | ✅ Done |
-| **AUTH-007** | `requireRole()` user RBAC | 🔄 Next |
-| **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ⏳ |
+| **AUTH-007** | `requireRole()` user RBAC | ✅ Done |
+| **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ✅ Done |
 
 **Key decisions already made:**
 - `USER_REGISTERED` CloudEvent fires in AUTH-002 (not AUTH-001) — after the user row is confirmed written to DB. See BUG-001 in `project-management/bugs.md`. ✅ Implemented.
@@ -422,35 +422,38 @@ Project: Abroad Matrimony backend (NX monorepo, Express, TypeScript, Supabase, R
 Repo: sibinfrancisaj/migration_cr
 Active branch: claude/modest-albattani-BJ7yn (or check git status)
 
-Phase 1 foundation complete. Phase 2 Auth in progress.
-AUTH-001 ✅ DONE — POST /api/v1/auth/otp/request, 24 tests passing.
-AUTH-002 ✅ DONE — POST /api/v1/auth/otp/verify, 63 tests passing.
-AUTH-003 ✅ DONE — POST /api/v1/auth/token/refresh, 82 tests passing (10 suites).
-AUTH-004 ✅ DONE — POST /logout + POST /logout/all, 105 tests passing (12 suites).
-AUTH-001 through AUTH-005 ✅ DONE — OTP request/verify, JWT refresh, logout, requireAuth.
-QUAL-001 ✅ DONE — Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom).
-QUAL-002 ✅ DONE — SonarCloud integration (sonar-project.properties + CI scan step).
-AUTH-006 ✅ DONE — POST /admin/auth/login (bcrypt + TOTP), 144 tests passing (18 suites).
-Next task: AUTH-007 — requireRole() user RBAC middleware.
+Phase 1 complete. Phase 2 Auth ALL DONE (171 tests, 21 suites).
+AUTH-001 ✅ — POST /api/v1/auth/otp/request
+AUTH-002 ✅ — POST /api/v1/auth/otp/verify
+AUTH-003 ✅ — POST /api/v1/auth/token/refresh
+AUTH-004 ✅ — POST /logout + POST /logout/all
+AUTH-005 ✅ — requireAuth middleware
+QUAL-001 ✅ — Jest coverage (Istanbul lcov/html, thresholds)
+QUAL-002 ✅ — SonarCloud integration (sonar-project.properties + CI scan step)
+AUTH-006 ✅ — POST /admin/auth/login (bcrypt + TOTP)
+AUTH-007 ✅ — requireRole() user RBAC middleware
+AUTH-008 ✅ — requireAdminRole() admin RBAC middleware + auditLog() helper
 
-KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001) — after DB upsert confirms user created. See BUG-001 in bugs.md.
+Next phase: Phase 3 — Profile
+Next task: PROF-001 — POST /api/v1/profile (create profile)
 
-Key files added in AUTH-003–005 + QUAL-001/002:
-- libs/auth/src/token-refresh.service.ts — token rotation + reuse detection
+KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
+
+Key files from Phase 2 (new additions in AUTH-007/008):
+- libs/auth/src/middleware/require-role.middleware.ts — requireRole(...roles) factory
+- libs/auth/src/middleware/require-admin-role.middleware.ts — requireAdminRole(...roles) factory; verifies admin JWT
+- libs/auth/src/audit.service.ts — auditLog(input) writes to audit_logs table
+- libs/auth/src/types/express.d.ts — Express Request augmentation for auth lib context (req.user, req.admin, req.requestId)
 - libs/auth/src/middleware/require-auth.middleware.ts — Bearer token → req.user
-- libs/auth/src/refresh-token.service.ts — revokeForDevice() + revokeAllForUser()
-- apps/gateway/src/controllers/auth/logout.controller.ts — logout + logoutAll handlers
-- apps/gateway/src/controllers/auth/token.controller.ts — refresh endpoint
-- apps/gateway/src/types/express.d.ts — req.user augmented
-- libs/auth/jest.config.ts + apps/gateway/jest.config.ts — coverage config (95%/90% thresholds)
-- sonar-project.properties — SonarCloud project config
-- .github/workflows/ci.yml — SonarCloud scan step (requires SONAR_TOKEN secret)
+- libs/auth/src/admin-auth.service.ts — bcrypt + TOTP admin login
+- libs/auth/src/jwt.service.ts — issueAdminToken / verifyAdminToken (ADMIN_JWT_SECRET, 8h)
+- apps/gateway/src/controllers/admin/admin-auth.controller.ts
+- apps/gateway/src/types/express.d.ts — req.user, req.admin, req.requestId augmented
+- sonar-project.properties + .github/workflows/ci.yml — SonarCloud
 
-SonarCloud one-time setup (user must do this):
-1. Sign in at https://sonarcloud.io with GitHub
-2. "+" → "Analyze new project" → import sibinfrancisaj/migration_cr
-3. Choose "With GitHub Actions" → copy the SONAR_TOKEN
-4. GitHub repo → Settings → Secrets → Actions → add SONAR_TOKEN
+SonarCloud setup (already done):
+- SONAR_TOKEN added to GitHub Secrets
+- Repo is public (required for free SonarCloud)
 
 We are working locally. Do NOT push to Supabase or run prisma db push.
 Ask before opening a PR — user tests locally first.
