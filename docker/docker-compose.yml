@@ -1,32 +1,38 @@
-version: '3.9'
+name: migration_cr
 
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: migration_cr_postgres
     restart: unless-stopped
     ports:
-      - '5432:5432'
+      - '5433:5432'            # host 5433 — avoids conflict with other dev projects on 5432
     environment:
-      POSTGRES_USER: abroad_matrimony
+      POSTGRES_USER: migration_cr
       POSTGRES_PASSWORD: local_dev_password
-      POSTGRES_DB: abroad_matrimony_dev
+      POSTGRES_DB: migration_cr_dev
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      - migration_cr_network
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U abroad_matrimony']
+      test: ['CMD-SHELL', 'pg_isready -U migration_cr -d migration_cr_dev']
       interval: 5s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
+    container_name: migration_cr_redis
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - '6382:6379'            # host 6382 — avoids conflict with other dev projects on 6379-6381
     command: redis-server /usr/local/etc/redis/redis.conf
     volumes:
       - ./redis.conf:/usr/local/etc/redis/redis.conf
       - redis_data:/data
+    networks:
+      - migration_cr_network
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -35,15 +41,25 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
+    container_name: migration_cr_redis_ui
     restart: unless-stopped
     ports:
-      - '8081:8081'
+      - '8082:8081'            # host 8082 — dedicated UI port for migration_cr
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOSTS: local:migration_cr_redis:6379
+    networks:
+      - migration_cr_network
     depends_on:
       redis:
         condition: service_healthy
 
+networks:
+  migration_cr_network:
+    name: migration_cr_network
+    driver: bridge
+
 volumes:
   postgres_data:
+    name: migration_cr_postgres_data
   redis_data:
+    name: migration_cr_redis_data

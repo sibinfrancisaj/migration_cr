@@ -19,24 +19,28 @@ export class AppError extends Error {
 
 export function errorMiddleware(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
+  const requestId = req.requestId;
+
   if (err instanceof AppError) {
     const body: ApiResponse = {
       success: false,
       error: { code: err.code, message: err.message, details: err.details },
+      requestId,
     };
     res.status(err.statusCode).json(body);
     return;
   }
 
-  log.error('Unhandled error', { err: err.message, stack: err.stack });
+  log.error('Unhandled error', { err: err.message, stack: err.stack, requestId });
 
   const body: ApiResponse = {
     success: false,
     error: { code: ERROR_CODES.INTERNAL, message: 'An unexpected error occurred' },
+    requestId,
   };
   res.status(HTTP_STATUS.INTERNAL).json(body);
 }

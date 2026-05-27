@@ -27,6 +27,7 @@ export interface ApiResponse<T = unknown> {
   data?: T;
   error?: ApiError;
   meta?: PaginationMeta;
+  requestId?: string;
 }
 
 export interface ApiError {

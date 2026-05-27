@@ -8,6 +8,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@abroad-matrimony/auth": "*",
     "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
