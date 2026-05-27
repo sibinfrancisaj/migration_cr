@@ -28,3 +28,7 @@ export type { StoredRefreshToken } from './refresh-token.service.js';
 // OTP verify service (orchestrator)
 export { otpVerifyService, OtpInvalidError, DeviceLimitError } from './otp-verify.service.js';
 export type { OtpVerifyInput, OtpVerifyResult } from './otp-verify.service.js';
+
+// Token refresh service (one-time rotation + reuse detection)
+export { tokenRefreshService, TokenInvalidError, TokenReuseError } from './token-refresh.service.js';
+export type { TokenRefreshInput, TokenRefreshResult } from './token-refresh.service.js';

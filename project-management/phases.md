@@ -34,7 +34,7 @@
 |-----------|--------------------------------------------------|------------|
 | AUTH-001  | `POST /api/v1/auth/otp/request`                  | ✅         |
 | AUTH-002  | `POST /api/v1/auth/otp/verify`                   | ✅         |
-| AUTH-003  | `POST /api/v1/auth/token/refresh`                | ⏳         |
+| AUTH-003  | `POST /api/v1/auth/token/refresh`                | ✅         |
 | AUTH-004  | `POST /api/v1/auth/logout` + logout/all          | ⏳         |
 | AUTH-005  | `requireAuth` middleware                         | ⏳         |
 | AUTH-006  | `POST /admin/auth/login` (bcrypt + TOTP)         | ⏳         |

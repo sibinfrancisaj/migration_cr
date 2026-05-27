@@ -110,19 +110,36 @@
 
 ---
 
-### AUTH-003 · Refresh Token ⏳
+### AUTH-003 · Refresh Token ✅
 **Story:** As a user with an expiring access token, I rotate my refresh token to get a new token pair.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/auth/token/refresh` accepts `{ refreshToken }` in body
-- [ ] Old token revoked immediately before issuing new pair (one-time-use)
-- [ ] If token already revoked (reuse detected): revoke ALL devices for that user
-- [ ] Returns new `{ accessToken, refreshToken, expiresIn }`
-- [ ] Returns 401 if token invalid/expired/not found
+- [x] `POST /api/v1/auth/token/refresh` accepts `{ refreshToken }` in body
+- [x] Old token revoked immediately before issuing new pair (one-time-use guarantee)
+- [x] If token already revoked (reuse detected): revoke ALL devices for that user via `revokeAllForUser()`
+- [x] Returns new `{ accessToken, refreshToken, expiresIn }`
+- [x] Returns 401 if token invalid/expired/not found
+- [x] Returns 401 (not 409 or 403) on reuse — same response as invalid to avoid leaking information
 
 **Implementation Subtasks:**
-- [ ] Reuse detection logic in `refresh-token.service.ts`
-- [ ] Route handler + tests
+- [x] `libs/auth/src/token-refresh.service.ts` — `tokenRefreshService()`, `TokenInvalidError`, `TokenReuseError`
+- [x] Reuse detection: `getStoredRefreshToken()` returns null → call `revokeAllForUser()` → throw `TokenReuseError`
+- [x] DB user lookup on every refresh to pick up current role (e.g. upgraded to FOUNDING_MEMBER)
+- [x] Deleted-account guard: user not found in DB → throw `TokenInvalidError`
+- [x] `apps/gateway/src/schemas/auth/token-refresh.schema.ts` — Zod schema
+- [x] `apps/gateway/src/controllers/auth/token.controller.ts` — `refreshToken` handler
+- [x] `apps/gateway/src/routes/auth/index.ts` — `POST /token/refresh` wired
+- [x] `libs/auth/src/index.ts` — barrel exports for new service + error classes
+
+*Tests — 19 new tests (82 total):*
+- [x] `libs/auth/src/__tests__/token-refresh.service.test.ts` — 12 tests
+- [x] `apps/gateway/src/controllers/auth/__tests__/token-refresh.controller.test.ts` — 7 tests
+
+**Decision Log:**
+- Reuse detection returns identical 401 response as invalid token — callers cannot distinguish the two, preventing enumeration of security events
+- Role is always fetched from DB at refresh time, not from token claims — ensures suspended/promoted users see correct access level on the very next refresh cycle
+- Old token is revoked atomically (Redis + DB) *before* new pair is issued — if issue/store fails, the old token is already dead, preventing double-spend
 
 ---
 

@@ -197,8 +197,8 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 |---------|-------------------|--------|
 | **AUTH-001** | `POST /api/v1/auth/otp/request` — validate E.164, Redis rate-limit 3/hr, Twilio Verify | ✅ Done |
 | **AUTH-002** | `POST /api/v1/auth/otp/verify` — verify code, upsert user, issue JWT pair, publish USER_REGISTERED | ✅ Done |
-| **AUTH-003** | `POST /api/v1/auth/token/refresh` — one-time rotation + reuse detection | 🔄 Next |
-| **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | ⏳ |
+| **AUTH-003** | `POST /api/v1/auth/token/refresh` — one-time rotation + reuse detection | ✅ Done |
+| **AUTH-004** | `POST /api/v1/auth/logout` + `logout/all` | 🔄 Next |
 | **AUTH-005** | `requireAuth` middleware | ⏳ |
 | **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | ⏳ |
 | **AUTH-007** | `requireRole()` user RBAC | ⏳ |
@@ -421,18 +421,19 @@ Repo: sibinfrancisaj/migration_cr
 Active branch: claude/modest-albattani-BJ7yn (or check git status)
 
 Phase 1 foundation complete. Phase 2 Auth in progress.
-AUTH-001 ✅ DONE — POST /api/v1/auth/otp/request implemented, 24 tests passing.
-AUTH-002 ✅ DONE — POST /api/v1/auth/otp/verify implemented, 63 tests passing (all auth + gateway suites).
-Next task: AUTH-003 — POST /api/v1/auth/token/refresh (one-time rotation + reuse detection → revoke ALL devices).
+AUTH-001 ✅ DONE — POST /api/v1/auth/otp/request, 24 tests passing.
+AUTH-002 ✅ DONE — POST /api/v1/auth/otp/verify, 63 tests passing.
+AUTH-003 ✅ DONE — POST /api/v1/auth/token/refresh, 82 tests passing (10 suites).
+Next task: AUTH-004 — POST /api/v1/auth/logout + POST /api/v1/auth/logout/all.
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001) — after DB upsert confirms user created. See BUG-001 in bugs.md.
 
-AUTH-002 key files:
-- libs/auth/src/jwt.service.ts — issueTokenPair, verifyAccessToken, verifyRefreshToken
-- libs/auth/src/refresh-token.service.ts — store/get/revoke/revokeAll + hashToken
-- libs/auth/src/otp-verify.service.ts — orchestrator, OtpInvalidError, DeviceLimitError
-- apps/gateway/src/schemas/auth/otp-verify.schema.ts
-- apps/gateway/src/controllers/auth/otp.controller.ts (verifyOtp handler added here)
+Key files for token refresh (AUTH-003):
+- libs/auth/src/token-refresh.service.ts — tokenRefreshService, TokenInvalidError, TokenReuseError
+- apps/gateway/src/schemas/auth/token-refresh.schema.ts
+- apps/gateway/src/controllers/auth/token.controller.ts
+- Reuse detection: getStoredRefreshToken → null → revokeAllForUser → 401 (same as invalid token)
+- Role always fetched from DB at refresh time (not from token claims)
 
 We are working locally. Do NOT push to Supabase or run prisma db push.
 Ask before opening a PR — user tests locally first.
