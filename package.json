@@ -9,6 +9,8 @@
   "scripts": {
     "build": "nx run-many -t build",
     "test": "nx run-many -t test",
+    "test:unit": "jest --projects libs/auth apps/gateway --no-coverage",
+    "test:coverage": "jest --projects libs/auth apps/gateway --coverage",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .prettierignore",

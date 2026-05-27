@@ -14,4 +14,29 @@ export default {
   },
   coverageDirectory: '../../coverage/apps/gateway',
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts'],
+
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/__tests__/**',
+  ],
+
+  // coveragePathIgnorePatterns uses regex matched against absolute file paths.
+  // More reliable than collectCoverageFrom negation globs across Jest versions.
+  coveragePathIgnorePatterns: [
+    '/node_modules/',
+    'server\\.ts$',            // HTTP listener entry point — not unit-testable
+    'health\\.route\\.ts$',    // DB/Redis health checks — integration/E2E territory
+    '/types/',                 // type-only declarations (express.d.ts), no runtime code
+  ],
+
+  coverageReporters: ['text', 'text-summary', 'lcov', 'html'],
+
+  coverageThresholds: {
+    global: {
+      statements: 90,
+      branches: 80,
+      functions: 85,
+      lines: 90,
+    },
+  },
 };
