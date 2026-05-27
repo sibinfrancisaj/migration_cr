@@ -189,22 +189,46 @@
 
 ---
 
-### AUTH-006 · Admin Login ⏳
+### AUTH-006 · Admin Login ✅
 **Story:** As an admin, I log in with email + password + TOTP to get an admin JWT.
+**Started:** 2026-05-27
 
 **Acceptance Criteria:**
 - [ ] `POST /admin/auth/login` accepts `{ email, password, totpCode? }`
-- [ ] bcrypt password verify against `admin_users.passwordHash`
-- [ ] If `isTotpEnabled`: validate TOTP via speakeasy
-- [ ] Issues admin JWT signed with `ADMIN_JWT_SECRET` (8h expiry)
-- [ ] JWT payload: `{ sub: adminId, role: AdminRole, email }`
-- [ ] Returns 401 on wrong credentials; 403 if TOTP required but missing/wrong
+- [ ] Email validated as valid email; password min 1 char — 400 if invalid
+- [ ] Rate-limited to 10 attempts per email per 15 minutes via Redis → 429 + `retryAfterSeconds`
+- [ ] Looks up `admin_users` by email; runs `bcrypt.compare` even when email not found (timing-safe)
+- [ ] Returns 401 `INVALID_CREDENTIALS` on wrong email **or** wrong password (no enumeration)
+- [ ] If `isTotpEnabled === true` and `totpCode` absent → 403 `TOTP_REQUIRED`
+- [ ] If `isTotpEnabled === true` and `totpCode` present but wrong → 403 `TOTP_INVALID`
+- [ ] On success: update `lastLoginAt`; issue admin JWT (`ADMIN_JWT_SECRET`, 8h); return `{ accessToken, expiresIn: 28800, admin: { id, email, name, role } }`
 
 **Implementation Subtasks:**
-- [ ] Install `speakeasy` + `bcrypt`
-- [ ] `libs/auth/src/admin-auth.service.ts`
-- [ ] Route under `apps/gateway/src/routes/admin/`
-- [ ] Tests
+- [x] `npm install bcrypt speakeasy` + dev types
+- [x] `libs/shared/src/constants/index.ts` — add `ADMIN_LOGIN_ATTEMPTS` cache key
+- [x] `libs/auth/src/jwt.service.ts` — add `issueAdminToken()`, `verifyAdminToken()`, `AdminTokenResult`
+- [x] `libs/auth/src/admin.rate-limit.ts` — `checkAdminLoginRateLimit(email)`, 10 req/15 min
+- [x] `libs/auth/src/admin-auth.service.ts` — `adminLoginService()`, `AdminCredentialsError`, `AdminTotpRequiredError`, `AdminTotpInvalidError`
+- [x] `libs/auth/src/index.ts` — barrel exports for new service + error classes
+- [x] `apps/gateway/src/constants/admin.constants.ts` — `ADMIN_ERRORS`, `ADMIN_MESSAGES`
+- [x] `apps/gateway/src/schemas/admin/admin-login.schema.ts` — Zod schema
+- [x] `apps/gateway/src/controllers/admin/admin-auth.controller.ts`
+- [x] `apps/gateway/src/controllers/admin/STANDARDS.md`
+- [x] `apps/gateway/src/routes/admin/index.ts`
+- [x] `apps/gateway/src/routes/admin/STANDARDS.md`
+- [x] `apps/gateway/src/routes/index.ts` — mount `/admin` router
+- [x] `apps/gateway/src/types/express.d.ts` — add `req.admin?` augmentation
+- [x] `libs/auth/src/__tests__/admin-auth.service.test.ts` — 9 unit tests
+- [x] `libs/auth/src/__tests__/admin.rate-limit.test.ts` — 5 unit tests
+- [x] `apps/gateway/src/controllers/admin/__tests__/admin-auth.controller.test.ts` — 9 integration tests
+- [x] `libs/auth/src/__tests__/jwt.service.test.ts` — added 5 tests for admin JWT functions
+
+**Decision Log:**
+- 401 returned for both unknown email AND wrong password — prevents admin email enumeration
+- `bcrypt.compare` always runs (with a lazy-cached dummy hash when email not found) — constant-time response prevents timing-based enumeration
+- 403 `TOTP_REQUIRED` vs `TOTP_INVALID` are intentionally distinct: 403 only fires after password validates, so it reveals the password was correct — this is standard 2FA UX (same as AWS Console, GitHub) and acceptable for admin panels where email+password are already known to the attacker if they can guess one
+- No refresh token for admin — 8h access token is the full session; admin sessions don't rotate
+- Route mounted at `/admin/auth/login` (not `/api/v1/admin`) — separate namespace keeps admin and user APIs clearly distinct
 
 ---
 

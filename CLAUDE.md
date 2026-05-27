@@ -202,8 +202,8 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | **AUTH-005** | `requireAuth` middleware | ✅ Done |
 | **QUAL-001** | Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom) | ✅ Done |
 | **QUAL-002** | SonarCloud integration (`sonar-project.properties` + CI scan step) | ✅ Done |
-| **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | 🔄 Next |
-| **AUTH-007** | `requireRole()` user RBAC | ⏳ |
+| **AUTH-006** | `POST /admin/auth/login` — bcrypt + TOTP | ✅ Done |
+| **AUTH-007** | `requireRole()` user RBAC | 🔄 Next |
 | **AUTH-008** | `requireAdminRole()` admin RBAC + audit log helper | ⏳ |
 
 **Key decisions already made:**
@@ -430,7 +430,8 @@ AUTH-004 ✅ DONE — POST /logout + POST /logout/all, 105 tests passing (12 sui
 AUTH-001 through AUTH-005 ✅ DONE — OTP request/verify, JWT refresh, logout, requireAuth.
 QUAL-001 ✅ DONE — Jest coverage (Istanbul lcov/html, thresholds, collectCoverageFrom).
 QUAL-002 ✅ DONE — SonarCloud integration (sonar-project.properties + CI scan step).
-Next task: AUTH-006 — POST /admin/auth/login (bcrypt + TOTP).
+AUTH-006 ✅ DONE — POST /admin/auth/login (bcrypt + TOTP), 144 tests passing (18 suites).
+Next task: AUTH-007 — requireRole() user RBAC middleware.
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001) — after DB upsert confirms user created. See BUG-001 in bugs.md.
 

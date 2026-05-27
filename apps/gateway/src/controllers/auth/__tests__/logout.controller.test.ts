@@ -26,10 +26,16 @@ jest.mock('@abroad-matrimony/auth', () => ({
   getOtpAdapter: jest.fn().mockReturnValue({ send: jest.fn().mockResolvedValue(undefined) }),
   otpVerifyService: jest.fn().mockResolvedValue({}),
   tokenRefreshService: jest.fn().mockResolvedValue({}),
-  OtpInvalidError: class OtpInvalidError extends Error { constructor() { super(); this.name = 'OtpInvalidError'; } },
-  DeviceLimitError: class DeviceLimitError extends Error { constructor() { super(); this.name = 'DeviceLimitError'; } },
-  TokenInvalidError: class TokenInvalidError extends Error { constructor() { super(); this.name = 'TokenInvalidError'; } },
-  TokenReuseError: class TokenReuseError extends Error { constructor() { super(); this.name = 'TokenReuseError'; } },
+  OtpInvalidError:   class OtpInvalidError   extends Error { constructor() { super(); this.name = 'OtpInvalidError'; } },
+  DeviceLimitError:  class DeviceLimitError   extends Error { constructor() { super(); this.name = 'DeviceLimitError'; } },
+  TokenInvalidError: class TokenInvalidError  extends Error { constructor() { super(); this.name = 'TokenInvalidError'; } },
+  TokenReuseError:   class TokenReuseError    extends Error { constructor() { super(); this.name = 'TokenReuseError'; } },
+  // Admin auth stubs
+  checkAdminLoginRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+  adminLoginService:        jest.fn().mockResolvedValue({}),
+  AdminCredentialsError:  class AdminCredentialsError  extends Error { constructor() { super(); this.name = 'AdminCredentialsError'; } },
+  AdminTotpRequiredError: class AdminTotpRequiredError extends Error { constructor() { super(); this.name = 'AdminTotpRequiredError'; } },
+  AdminTotpInvalidError:  class AdminTotpInvalidError  extends Error { constructor() { super(); this.name = 'AdminTotpInvalidError'; } },
 }));
 
 jest.mock('@abroad-matrimony/config', () => ({
