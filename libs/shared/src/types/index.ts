@@ -157,6 +157,26 @@ export interface GroupMemberDto {
 
 // ─── Matching ────────────────────────────────────────────────────────────────
 
+export interface DiscoveryItemDto {
+  userId: string;
+  name: string;
+  age: number;
+  currentCity: string;
+  currentCountry: string;
+  settlementIntent: string;
+  completionScore: number;
+  verificationStatus: VerificationStatus;
+  photoUrl?: string;
+  totalScore: number;
+  scoreBreakdown: ScoreBreakdown;
+}
+
+export interface DiscoveryFeedDto {
+  items: DiscoveryItemDto[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 export interface MatchScoreDto {
   userAId: string;
   userBId: string;

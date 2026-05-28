@@ -189,22 +189,49 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 
 ---
 
-## 6. Active Sprint — Phase 3: Profile
+## 6. Completed — Phase 3: Profile ✅
 
 > Full story specs → `project-management/epics-stories.md`
 
 | Task ID | Endpoint / Feature | Status |
 |---------|-------------------|--------|
 | **PROF-001** | `POST /api/v1/profile` — create profile (name, DOB, gender, city, country, settlementIntent, bio?) | ✅ Done |
-| **PROF-002** | `PUT /api/v1/profile/real-life/:questionKey` — upsert real-life answer | ⏳ |
-| **PROF-003** | `PUT /api/v1/profile/story/:promptKey` — upsert story prompt | ⏳ |
-| **PROF-004** | `POST /api/v1/profile/media` — S3 photo upload (requires libs/storage) | ⏳ |
-| **PROF-005** | Profile completion score calculation | ⏳ |
-| **PROF-006** | `GET /api/v1/profile/me` + `GET /api/v1/profiles/:id` | ⏳ |
+| **PROF-002** | `PUT /api/v1/profile/real-life/:questionKey` — upsert real-life answer | ✅ Done |
+| **PROF-003** | `PUT /api/v1/profile/story/:promptKey` — upsert story prompt | ✅ Done |
+| **PROF-004** | `POST /api/v1/profile/media` — S3 photo upload (multer + `libs/storage`) | ✅ Done |
+| **PROF-005** | Profile completion score calculation | ✅ Done |
+| **PROF-006** | `GET /api/v1/profile/me` + `GET /api/v1/profiles/:id` | ✅ Done |
+
+**Phase 3 complete: 344 tests, 29 suites all green.**
 
 **Key decisions already made (Phase 2 Auth — complete):**
 - `USER_REGISTERED` CloudEvent fires in AUTH-002 (not AUTH-001) — after the user row is confirmed written to DB. See BUG-001 in `project-management/bugs.md`. ✅ Implemented.
 - `DeviceLimitError` → HTTP 409 Conflict; existing fingerprint bypasses device count check.
+
+---
+
+## 6b. Complete — Phase 4: Matching ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|-------------------|--------|
+| **MATCH-001** | `libs/matching` — scoring algorithm v1 (9 dimensions) + DB persistence | ✅ Done |
+| **MATCH-002** | BullMQ worker — batch-compute all user pairs | ✅ Done |
+| **MATCH-003** | Redis-cached score lookup | ✅ Done |
+| **MATCH-004** | `GET /api/v1/discover` — paginated discovery feed | ✅ Done |
+| **MATCH-005** | Feature-flag gate for algorithm v2 | ✅ Done |
+
+**Phase 4 complete: 497 tests, 35 suites all green (+36 tests from MATCH-004/005).**
+
+**Key files from MATCH-004/005:**
+- `libs/matching/src/discover.service.ts` — `getDiscoveryFeed()`, `encodeCursor()`, `decodeCursor()`, `computeAge()`
+- `apps/gateway/src/controllers/discover/discover.controller.ts` — lazy `FeatureFlagService` singleton + `discoverController.getFeed`
+- `apps/gateway/src/routes/discover/index.ts` — GET / with `requireAuth` + `validateQuery(discoverQuerySchema)`
+- `apps/gateway/src/schemas/discover/discover.schema.ts` — `discoverQuerySchema` (cursor + limit 1–100)
+- `apps/gateway/src/lib/feature-flag-store.ts` — `PrismaFeatureFlagStore`
+- `libs/connections/src/index.ts` + `libs/groups/src/index.ts` — Phase 5 stub packages (created to unblock tests)
+- `apps/gateway/src/routes/connections/index.ts` — empty router stub (Phase 5 placeholder)
 
 ---
 
@@ -245,6 +272,16 @@ Never floats. Display layer divides by 100.
 ### ADR-008: OTP CloudEvent Deferred to Verification Step
 `USER_REGISTERED` event fires in AUTH-002 after DB upsert confirms a new user row,
 not in AUTH-001. Rationale: avoid false events for phones that never complete verification.
+
+### ADR-009: S3 Media Storage — Private Bucket + CloudFront
+Profile photos uploaded to a **private** S3 bucket via `@aws-sdk/client-s3`.
+Public delivery is via CloudFront CDN (URL prefix: `AWS_CLOUDFRONT_DOMAIN`).
+When CloudFront is not configured (dev / test), falls back to S3 path-style URL.
+`getStorageAdapter()` factory returns `MockStorageAdapter` when AWS creds are absent — zero
+config required for local dev or CI.
+Key pattern: `photos/<userId>/<randomUUID>.<ext>` — UUIDs prevent collisions and enumeration.
+Max 6 photos per user enforced at service layer (not database constraint).
+File validation: JPEG / PNG / WebP only, 5 MB max — enforced by multer fileFilter + size limit.
 
 ---
 
@@ -430,31 +467,86 @@ AUTH-006 ✅ — POST /admin/auth/login (bcrypt + TOTP)
 AUTH-007 ✅ — requireRole() user RBAC middleware
 AUTH-008 ✅ — requireAdminRole() admin RBAC middleware + auditLog() helper
 
-Phase 3 in progress.
-PROF-001 ✅ — POST /api/v1/profile (create profile), 199 tests, 23 suites.
-Next task: PROF-002 — PUT /api/v1/profile/real-life/:questionKey
+Phase 3 ALL DONE. 344 tests, 29 suites, all passing.
+PROF-001 ✅ — POST /api/v1/profile (create profile)
+PROF-002 ✅ — PUT /api/v1/profile/real-life/:questionKey (upsert real-life answer)
+PROF-003 ✅ — PUT /api/v1/profile/story/:promptKey (upsert story prompt)
+PROF-004 ✅ — POST /api/v1/profile/media (S3 photo upload, multer, libs/storage)
+PROF-005 ✅ — recalculateCompletionScore() (score.service.ts)
+PROF-006 ✅ — GET /api/v1/profile/me + GET /api/v1/profiles/:id
+
+Phase 4 — Matching ALL DONE. 497 tests, 35 suites, all passing.
+MATCH-001 ✅ — Scoring algorithm v1 (libs/matching — 9 dimensions, pure function + DB persistence)
+MATCH-002 ✅ — BullMQ worker: batch-compute all user pairs
+MATCH-003 ✅ — Redis-cached score lookup
+MATCH-004 ✅ — GET /api/v1/discover — paginated feed
+MATCH-005 ✅ — Feature-flag gate for algorithm v2
+
+Next task: Phase 5 — Groups + Connections + Messaging (GROUP-001 or CONN-001)
+
+Key files from MATCH-004/005:
+- libs/matching/src/discover.service.ts — getDiscoveryFeed() + encodeCursor() + decodeCursor() + computeAge()
+- apps/gateway/src/controllers/discover/discover.controller.ts — discoverController.getFeed + lazy FeatureFlagService singleton
+- apps/gateway/src/routes/discover/index.ts — GET / with requireAuth + validateQuery(discoverQuerySchema)
+- apps/gateway/src/schemas/discover/discover.schema.ts — discoverQuerySchema
+- apps/gateway/src/lib/feature-flag-store.ts — PrismaFeatureFlagStore (implements FeatureFlagStore)
+- libs/connections/src/index.ts — Phase 5 stub (error classes + service stubs)
+- libs/groups/src/index.ts — Phase 5+ stub (createGroupService stub)
+- apps/gateway/src/routes/connections/index.ts — empty Router stub (Phase 5 placeholder)
+
+Bugs fixed in this session (BUG-004, BUG-005, BUG-006):
+- BUG-004: uuid v14 ESM fix — replaced uuid import with crypto.randomUUID() in event-bus/publisher.ts
+- BUG-005: Babel hoisting — TypeScript annotations inside jest.mock() factories must use // eslint-disable-next-line @typescript-eslint/no-explicit-any with any[]
+- BUG-006: Missing stub packages — created libs/connections + libs/groups with tsconfig + preset entries
+
+Key files from MATCH-003:
+- libs/matching/src/score-cache.service.ts — getMatchScore() + setMatchScoreCache() + deleteMatchScoreCache()
+- libs/shared/src/constants/index.ts — CACHE_KEYS.MATCH_SCORE_PAIR added
+
+Key files from MATCH-002:
+- libs/matching/src/score-recompute.worker.ts — processScoreRecompute() + createScoreRecomputeWorker() + enqueueScoreRecompute()
+- apps/gateway/src/server.ts — worker started/stopped in lifecycle
+- libs/shared/src/constants/index.ts — SCORE_RECOMPUTE_COMPLETED added
+
+Key files from MATCH-001:
+- libs/matching/src/scoring.service.ts — computeMatchScore() + SCORE_WEIGHTS + helpers (tokenize, jaccardSimilarity, answerSimilarity, recencyScore, ageInYears)
+- libs/matching/src/match-score.service.ts — getUserScoringData() + computeAndSaveScore() + UserProfileMissingError + ALGORITHM_VERSION
+- libs/matching/src/index.ts — barrel
 
 KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
 
-Key files from Phase 3 (PROF-001):
-- libs/profile/src/profile.service.ts — createProfileService() + ProfileAlreadyExistsError
-- libs/profile/src/index.ts — barrel exports
-- apps/gateway/src/schemas/profile/create-profile.schema.ts — z.coerce.date() + age guard
-- apps/gateway/src/constants/profile.constants.ts
-- apps/gateway/src/controllers/profile/profile.controller.ts
-- apps/gateway/src/routes/profile/index.ts
+Key files from Phase 3:
+- libs/profile/src/profile.service.ts — createProfileService() + getOwnProfile() + getProfileById()
+- libs/profile/src/real-life-answer.service.ts — upsertRealLifeAnswer() + ProfileNotFoundError
+- libs/profile/src/story-prompt.service.ts — upsertStoryPrompt()
+- libs/profile/src/score.service.ts — recalculateCompletionScore()
+- libs/profile/src/media.service.ts — uploadProfilePhoto() + PhotoLimitExceededError + InvalidMimeTypeError
+- libs/profile/src/index.ts — barrel
+- libs/storage/src/adapters/base.storage.adapter.ts — StorageAdapter interface
+- libs/storage/src/adapters/s3.storage.adapter.ts — S3Client upload/delete
+- libs/storage/src/adapters/mock.storage.adapter.ts — fake URLs, no network
+- libs/storage/src/adapters/index.ts — getStorageAdapter() factory
+- libs/storage/src/index.ts — barrel
+- apps/gateway/src/middleware/upload.middleware.ts — multer memoryStorage, uploadSinglePhoto
+- apps/gateway/src/schemas/profile/ — create, upsert-rl, upsert-story, get-profile schemas
+- apps/gateway/src/constants/profile.constants.ts — PROFILE_ERRORS + PROFILE_MESSAGES
+- apps/gateway/src/controllers/profile/profile.controller.ts — 6 handlers incl. uploadPhoto
+- apps/gateway/src/routes/profile/index.ts — POST / + GET /me + PUT /real-life/:k + PUT /story/:k + POST /media
+- apps/gateway/src/routes/profiles/index.ts — GET /:id
+- apps/gateway/src/routes/index.ts — both routers registered
 
-Key files from Phase 2 (new additions in AUTH-007/008):
-- libs/auth/src/middleware/require-role.middleware.ts — requireRole(...roles) factory
-- libs/auth/src/middleware/require-admin-role.middleware.ts — requireAdminRole(...roles) factory; verifies admin JWT
-- libs/auth/src/audit.service.ts — auditLog(input) writes to audit_logs table
-- libs/auth/src/types/express.d.ts — Express Request augmentation for auth lib context (req.user, req.admin, req.requestId)
-- libs/auth/src/middleware/require-auth.middleware.ts — Bearer token → req.user
-- libs/auth/src/admin-auth.service.ts — bcrypt + TOTP admin login
-- libs/auth/src/jwt.service.ts — issueAdminToken / verifyAdminToken (ADMIN_JWT_SECRET, 8h)
+AWS S3 env vars (already in libs/config/src/env.ts):
+  AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET, AWS_CLOUDFRONT_DOMAIN
+  All optional — falls back to MockStorageAdapter when absent.
+
+Key files from Phase 2:
+- libs/auth/src/middleware/require-role.middleware.ts
+- libs/auth/src/middleware/require-admin-role.middleware.ts
+- libs/auth/src/audit.service.ts
+- libs/auth/src/jwt.service.ts — issueAdminToken / verifyAdminToken
 - apps/gateway/src/controllers/admin/admin-auth.controller.ts
-- apps/gateway/src/types/express.d.ts — req.user, req.admin, req.requestId augmented
-- sonar-project.properties + .github/workflows/ci.yml — SonarCloud
+- apps/gateway/src/types/express.d.ts — req.user, req.admin, req.requestId
+- sonar-project.properties + .github/workflows/ci.yml
 
 SonarCloud setup (already done):
 - SONAR_TOKEN added to GitHub Secrets

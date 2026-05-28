@@ -1,0 +1,11 @@
+{
+  "name": "@abroad-matrimony/connections",
+  "version": "1.0.0",
+  "description": "Connection request service stubs — full implementation in Phase 5",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/shared": "*"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@abroad-matrimony/groups",
+  "version": "1.0.0",
+  "description": "Regional group service stubs — full implementation in a future phase",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/shared": "*"
+  }
+}

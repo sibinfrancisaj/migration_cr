@@ -14,6 +14,10 @@ module.exports = {
     '^@abroad-matrimony/queue$': '<rootDir>/../../libs/queue/src/index.ts',
     '^@abroad-matrimony/auth$': '<rootDir>/../../libs/auth/src/index.ts',
     '^@abroad-matrimony/profile$': '<rootDir>/../../libs/profile/src/index.ts',
+    '^@abroad-matrimony/storage$':   '<rootDir>/../../libs/storage/src/index.ts',
+    '^@abroad-matrimony/matching$':     '<rootDir>/../../libs/matching/src/index.ts',
+    '^@abroad-matrimony/connections$':  '<rootDir>/../../libs/connections/src/index.ts',
+    '^@abroad-matrimony/groups$':       '<rootDir>/../../libs/groups/src/index.ts',
   },
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
 };

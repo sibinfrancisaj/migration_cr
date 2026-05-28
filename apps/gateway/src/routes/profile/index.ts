@@ -1,7 +1,16 @@
 import { Router } from 'express';
 import { requireAuth } from '@abroad-matrimony/auth';
-import { validateBody } from '../../middleware/validate.middleware.js';
+import { validateBody, validateParams } from '../../middleware/validate.middleware.js';
+import { uploadSinglePhoto } from '../../middleware/upload.middleware.js';
 import { createProfileSchema } from '../../schemas/profile/create-profile.schema.js';
+import {
+  realLifeAnswerParamsSchema,
+  upsertRealLifeAnswerSchema,
+} from '../../schemas/profile/upsert-real-life-answer.schema.js';
+import {
+  storyPromptParamsSchema,
+  upsertStoryPromptSchema,
+} from '../../schemas/profile/upsert-story-prompt.schema.js';
 import { profileController } from '../../controllers/profile/profile.controller.js';
 
 export const profileRouter = Router();
@@ -12,4 +21,37 @@ profileRouter.post(
   requireAuth,
   validateBody(createProfileSchema),
   profileController.create,
+);
+
+// GET /api/v1/profile/me — fetch own profile (must be before /:id routes)
+profileRouter.get(
+  '/me',
+  requireAuth,
+  profileController.getOwnProfile,
+);
+
+// PUT /api/v1/profile/real-life/:questionKey — upsert a real-life answer
+profileRouter.put(
+  '/real-life/:questionKey',
+  requireAuth,
+  validateParams(realLifeAnswerParamsSchema),
+  validateBody(upsertRealLifeAnswerSchema),
+  profileController.upsertRealLifeAnswer,
+);
+
+// PUT /api/v1/profile/story/:promptKey — upsert a story prompt answer
+profileRouter.put(
+  '/story/:promptKey',
+  requireAuth,
+  validateParams(storyPromptParamsSchema),
+  validateBody(upsertStoryPromptSchema),
+  profileController.upsertStoryPrompt,
+);
+
+// POST /api/v1/profile/media — upload a profile photo (multipart/form-data, field: "photo")
+profileRouter.post(
+  '/media',
+  requireAuth,
+  uploadSinglePhoto,
+  profileController.uploadPhoto,
 );

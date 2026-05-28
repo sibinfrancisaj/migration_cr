@@ -1,5 +1,4 @@
 import { Queue } from 'bullmq';
-import { v4 as uuidv4 } from 'uuid';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { CLOUD_EVENT_SOURCE, QUEUE_NAMES } from '@abroad-matrimony/shared';
 import { CloudEventPayload, WalEntry } from './types.js';
@@ -29,7 +28,7 @@ export function initEventBus(redisUrl: string): void {
 
 export function buildCloudEvent<T>(type: string, data: T, subject?: string): CloudEventPayload<T> {
   return {
-    id: uuidv4(),
+    id: crypto.randomUUID(),
     source: CLOUD_EVENT_SOURCE,
     type,
     subject,

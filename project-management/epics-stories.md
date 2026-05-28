@@ -315,101 +315,298 @@
 
 ---
 
-### PROF-002 · Upsert Real-Life Answer ⏳
+### PROF-002 · Upsert Real-Life Answer ✅
 **Story:** As a user, I answer one of the 12 real-life questions to improve my compatibility matching.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/profile/real-life/:questionKey`
-- [ ] Validates `questionKey` against `RealLifeQuestionKey` enum
-- [ ] Upserts `real_life_answers` row
-- [ ] Triggers completion score recalculation (async via event or direct)
+- [x] `PUT /api/v1/profile/real-life/:questionKey`
+- [x] Validates `questionKey` against `RealLifeQuestionKey` enum — returns 400 VALIDATION_ERROR if invalid
+- [x] Validates `value` as string (1–500 chars) or string array (1–20 items, each ≤200 chars)
+- [x] Upserts `real_life_answers` row (composite key: `userId_questionKey`)
+- [x] Triggers completion score recalculation synchronously (awaited for DB consistency)
+- [x] Returns 404 NOT_FOUND when user has no profile yet
+- [x] Returns 200 `{ success: true, data: RealLifeAnswerDto }` on success
+- [x] 41 new tests added; 245 total tests, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Create `libs/profile/src/real-life-answer.service.ts` — `upsertRealLifeAnswer()`, `ProfileNotFoundError`
+- [x] Create `libs/profile/src/score.service.ts` — `recalculateCompletionScore()` (basics 20 + RL 40 + story 20 + photo 10 + verification 10)
+- [x] Update `libs/profile/src/index.ts` — export new services and types
+
+*Gateway — schema + controller (extends existing route file)*
+- [x] Create `apps/gateway/src/schemas/profile/upsert-real-life-answer.schema.ts` — param + body Zod schemas
+- [x] Add `validateParams()` to `apps/gateway/src/middleware/validate.middleware.ts`
+- [x] Add `upsertRealLifeAnswer` handler to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `PUT /real-life/:questionKey` route to `apps/gateway/src/routes/profile/index.ts`
+- [x] Update `apps/gateway/src/constants/profile.constants.ts` — `NOT_FOUND` error constant
+
+*Tests (41 new tests, all passing)*
+- [x] `libs/profile/src/__tests__/real-life-answer.service.test.ts` — 12 tests (happy path, guard, upsert params, score call, error propagation)
+- [x] `libs/profile/src/__tests__/score.service.test.ts` — 17 tests (all score breakdowns, pro-rating, DB write, no-profile guard, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 12 PROF-002 integration tests (200 string, 200 array, 401, 400 bad param, 400 missing value, 400 empty string, 400 empty array, 400 oversized, 400 bad array item, 400 wrong type, 404, 500)
+
+**Decision Log:**
+- Score recalculation is synchronous (awaited), not fire-and-forget. Ensures DB consistency even at slightly higher latency. Revisit as a BullMQ job if p99 latency becomes an issue during Matching phase.
+- `ProfileNotFoundError` lives in `real-life-answer.service.ts` and is exported from the `libs/profile` barrel, ready to be reused by future services (story prompt, check-ins) that also require a profile to exist.
+- `recalculateCompletionScore()` implemented as part of PROF-002 rather than waiting for PROF-005. PROF-005 now tracks wiring up the score call in PROF-003 and PROF-004.
 
 ---
 
-### PROF-003 · Upsert Story Prompt ⏳
+### PROF-003 · Upsert Story Prompt ✅
 **Story:** As a user, I answer one of the 3 story prompts to give others a personal glimpse.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/profile/story/:promptKey`
-- [ ] Validates `promptKey` against `StoryPromptKey` enum
-- [ ] Upserts `story_prompt_answers` row
+- [x] `PUT /api/v1/profile/story/:promptKey`
+- [x] Validates `promptKey` against `StoryPromptKey` enum — returns 400 VALIDATION_ERROR if invalid
+- [x] Validates `answer` as non-empty string (1–1000 chars)
+- [x] Upserts `story_prompt_answers` row (composite key: `userId_promptKey`)
+- [x] Triggers completion score recalculation synchronously (awaited)
+- [x] Returns 404 NOT_FOUND when user has no profile yet
+- [x] Returns 200 `{ success: true, data: StoryPromptAnswerDto }` on success
+- [x] 24 new tests; 269 total tests, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Create `libs/profile/src/story-prompt.service.ts` — `upsertStoryPrompt()`, reuses `ProfileNotFoundError`
+- [x] Update `libs/profile/src/index.ts` — export `upsertStoryPrompt` and `UpsertStoryPromptInput`
+
+*Gateway — schema + controller + route*
+- [x] Create `apps/gateway/src/schemas/profile/upsert-story-prompt.schema.ts` — param + body Zod schemas
+- [x] Add `upsertStoryPrompt` handler to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `PUT /story/:promptKey` to `apps/gateway/src/routes/profile/index.ts`
+
+*Tests (24 new tests, all passing)*
+- [x] `libs/profile/src/__tests__/story-prompt.service.test.ts` — 13 tests (happy path for all 3 keys, guard, upsert params, score call, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 11 PROF-003 integration tests (200, 200 all 3 keys, 401, 400 bad param, 400 missing, 400 empty, 400 too long, 400 wrong type, 404, 500)
+
+**Decision Log:**
+- `ProfileNotFoundError` imported directly from `./real-life-answer.service.js` within the lib (no circular dependency). Will refactor into a shared `errors.ts` if a third service needs it.
+- Story prompts accept up to 1000 characters (vs 500 for real-life answers) — story prompts are narrative text and benefit from more space.
 
 ---
 
-### PROF-004 · Upload Profile Media ⏳
+### PROF-004 · Upload Profile Media ✅
 **Story:** As a user, I upload up to 6 photos that appear on my profile.
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/profile/media` — multipart/form-data
-- [ ] Accept: jpg, png, webp only; max 5 MB per file
-- [ ] Upload to AWS S3; store `media` row with `s3Key` + `url`
-- [ ] Max 6 photos per user; 409 if limit reached
-- [ ] Requires `libs/storage` to be created (S3 adapter)
+- [x] `POST /api/v1/profile/media` — multipart/form-data, field name `photo`
+- [x] Accept: jpg, png, webp only; max 5 MB per file
+- [x] Upload to AWS S3 (or mock in dev/test); store `media` row with `s3Key` + `url`
+- [x] Max 6 photos per user; 409 if limit reached
+- [x] `libs/storage` created — S3 adapter + mock adapter + factory
+- [x] Recalculates completion score after upload
+
+**Subtasks:**
+- [x] Install `@aws-sdk/client-s3` + `multer` + `@types/multer`
+- [x] Add `@abroad-matrimony/storage` alias to `jest.preset.js`
+- [x] `libs/storage/src/adapters/base.storage.adapter.ts` — `StorageAdapter` interface
+- [x] `libs/storage/src/adapters/s3.storage.adapter.ts` — S3Client, PutObjectCommand, DeleteObjectCommand
+- [x] `libs/storage/src/adapters/mock.storage.adapter.ts` — fake CDN URLs, no network
+- [x] `libs/storage/src/adapters/index.ts` — `getStorageAdapter()` factory
+- [x] `libs/storage/src/index.ts` — barrel
+- [x] `libs/storage/jest.config.ts`
+- [x] `libs/profile/src/media.service.ts` — `uploadProfilePhoto()`, `PhotoLimitExceededError`, `InvalidMimeTypeError`
+- [x] Updated `libs/profile/src/index.ts` barrel
+- [x] Added media error/message constants to `apps/gateway/src/constants/profile.constants.ts`
+- [x] `apps/gateway/src/middleware/upload.middleware.ts` — multer memoryStorage, `uploadSinglePhoto`
+- [x] `profileController.uploadPhoto` handler
+- [x] `POST /media` route wired in `routes/profile/index.ts`
+- [x] `libs/storage/src/__tests__/mock.storage.adapter.test.ts` (6 tests)
+- [x] `libs/storage/src/__tests__/s3.storage.adapter.test.ts` (9 tests)
+- [x] `libs/profile/src/__tests__/media.service.test.ts` (21 tests)
+- [x] Extended controller integration test with 10 PROF-004 tests
+
+**Decision Log:**
+- S3 bucket kept private (no public ACL); CloudFront handles public delivery. URL is CloudFront-based when `AWS_CLOUDFRONT_DOMAIN` is set, otherwise S3 path-style.
+- `getStorageAdapter()` factory returns `MockStorageAdapter` when AWS credentials are absent — no env var required for local dev or CI.
+- `LIMIT_UNEXPECTED_FILE` MulterError (wrong field name) is mapped to 400 `NO_FILE_UPLOADED` — same UX as sending no file at all.
+- S3 key pattern: `photos/<userId>/<randomUUID>.<ext>` — UUID guarantees uniqueness; extension from original filename for content negotiation.
+- Media `order` is set to `existingPhotoCount + 1` on upload (1-based). No reorder endpoint yet — added to future-plans.
 
 ---
 
-### PROF-005 · Completion Score ⏳
+### PROF-005 · Completion Score ✅
 **Story:** As the platform, I compute a profile completion % so users know what to fill in.
 
 **Acceptance Criteria:**
-- [ ] Score components: basics 20% + RL answers 40% + story prompts 20% + photos 10% + verification 10%
-- [ ] Recomputed on every profile/answer/media change
-- [ ] Stored in `profiles.completionScore`
+- [x] Score components: basics 20% + RL answers 40% + story prompts 20% + photos 10% + verification 10%
+- [x] `recalculateCompletionScore()` implemented in `libs/profile/src/score.service.ts` (PROF-002)
+- [x] Called after profile creation (PROF-001) and real-life answer upsert (PROF-002)
+- [x] Called after story prompt upsert (PROF-003)
+- [x] Called after media upload (PROF-004)
+- [x] Stored in `profiles.completionScore`
 
 ---
 
-### PROF-006 · Get Profile ⏳
+### PROF-006 · Get Profile ✅
 **Story:** As a user, I view my own profile or browse another user's profile.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/profile/me` — full own profile
-- [ ] `GET /api/v1/profiles/:id` — public view (omit sensitive fields)
-- [ ] Returns `ProfileDto`
+- [x] `GET /api/v1/profile/me` — full own profile (auth required)
+- [x] `GET /api/v1/profiles/:id` — profile by ID (auth required, UUID validation on param)
+- [x] Returns `ProfileDto` with nested `realLifeAnswers`, `storyPrompts`, `photos`
+- [x] Returns 404 NOT_FOUND if profile does not exist
+- [x] 29 new tests; 298 total, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Add `getOwnProfile(userId)` to `libs/profile/src/profile.service.ts`
+- [x] Add `getProfileById(profileId)` to `libs/profile/src/profile.service.ts`
+- [x] Add private `toProfileDto()` mapper — maps profile row + related rows → `ProfileDto`; replaces hardcoded empty arrays in `createProfileService`
+- [x] Update `libs/profile/src/index.ts` — export `getOwnProfile`, `getProfileById`
+
+*Gateway — schema + controller + routes*
+- [x] Create `apps/gateway/src/schemas/profile/get-profile.schema.ts` — `z.string().uuid()` param validation
+- [x] Add `getOwnProfile` + `getProfileById` handlers to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `GET /me` to `apps/gateway/src/routes/profile/index.ts`
+- [x] Create `apps/gateway/src/routes/profiles/index.ts` — `GET /:id` (plural router for public browse)
+- [x] Register `profilesRouter` at `/api/v1/profiles` in `apps/gateway/src/routes/index.ts`
+
+*Tests (29 new tests, all passing)*
+- [x] Extended `libs/profile/src/__tests__/profile.service.test.ts` — 18 new tests for `getOwnProfile` + `getProfileById` (DTO shape, nested mapping, not-found, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 11 PROF-006 integration tests (200 me, 200 by-id, 401, 400 bad UUID, 404, 500 for both endpoints)
+
+**Decision Log:**
+- `GET /api/v1/profiles/:id` requires auth (you must be logged in to browse profiles) — open public browse could enable scraping; revisit if anonymous preview is needed for SEO.
+- Both endpoints currently return the same `ProfileDto`. A `PublicProfileDto` (omitting `dateOfBirth`, `completionScore`, internal fields) should be introduced when the discovery/browse feature is built in the Matching phase. Noted in `future-plans.md`.
+- Nested data (`realLifeAnswers`, `storyPromptAnswers`, `media`) cannot be fetched via Prisma include on `Profile` because those models relate to `User`, not `Profile`. They are fetched in parallel via `Promise.all` using the shared `userId`.
+- `getProfileById` fetches the profile first (one round trip) then the nested data (one parallel round trip) — two DB calls total. Acceptable for MVP; could collapse to a single query via a User join if needed later.
 
 ---
 
 ## PHASE 4 — Matching
 
-### MATCH-001 · Scoring Algorithm v1 ⏳
+### MATCH-001 · Scoring Algorithm v1 ✅
 **Story:** As the platform, I compute a compatibility score between any two users across 9 dimensions.
 
 **Dimensions & weights (sum = 1.0):**
 - verification 0.15 · settlementIntent 0.20 · realLifeAnswers 0.25 · profileCompleteness 0.10 · checkInRecency 0.05 · ageCompatibility 0.10 · groupMembership 0.05 · languageMatch 0.05 · faithAlignment 0.05
 
 **Acceptance Criteria:**
-- [ ] `computeScore(userA, userB): ScoreBreakdown` — pure function, no side effects
-- [ ] Total score normalised 0–1
-- [ ] Result stored in `match_scores` table
+- [x] `computeMatchScore(userA, userB, now?): ScoreResult` — pure function, no side effects, injectable `now` for tests
+- [x] Total score normalised 0–1 (weighted sum rounded to 2dp)
+- [x] Result stored in `match_scores` table via `computeAndSaveScore()`
+- [x] Pair canonicalization — smaller UUID always stored as `userAId` (idempotent upsert)
+- [x] `getUserScoringData()` exported for MATCH-002 batch worker reuse
+- [x] 77 unit tests, 2 test suites — all green
+
+**Key files:**
+- `libs/matching/src/scoring.service.ts` — pure algorithm, all 9 dimension scorers, helpers (`tokenize`, `jaccardSimilarity`, `answerSimilarity`, `recencyScore`, `ageInYears`)
+- `libs/matching/src/match-score.service.ts` — DB fetch (`getUserScoringData`), orchestration (`computeAndSaveScore`), `UserProfileMissingError`
+- `libs/matching/src/index.ts` — barrel
+- `libs/matching/src/__tests__/scoring.service.test.ts` — 56 pure-function tests
+- `libs/matching/src/__tests__/match-score.service.test.ts` — 21 service/DB tests
+
+**Decision Log:**
+- **Jaccard similarity for text answers** — tokenize on `[\s,\/\-]+`, filter tokens < 2 chars; handles "UK or Canada" vs "Canada or UK" correctly (same token set → 1.0).
+- **`answerSimilarity`** wraps scalar strings in a single-element set before Jaccard so `"Vegetarian" == "Vegetarian"` → 1.0.
+- **Pair canonicalization** — `canonicalizePair(a, b)` returns `[a,b]` sorted lexicographically to guarantee the `@@unique([userAId, userBId, algorithmV])` constraint is never violated by reverse-order calls.
+- **Injectable `now: Date`** — avoids flaky time-sensitive tests; all recency/age calculations pass `now` through.
+- **`getUserScoringData` exported** — MATCH-002 BullMQ batch worker will call it directly to avoid code duplication.
 
 ---
 
-### MATCH-002 · Score Compute Worker ⏳
+### MATCH-002 · Score Compute Worker ✅
 **Story:** As the platform, I batch-compute scores for all user pairs when triggered.
 
 **Acceptance Criteria:**
-- [ ] BullMQ worker processes `SCORE_RECOMPUTE_REQUESTED` events
-- [ ] Computes scores for all active user pairs
-- [ ] Skips pairs computed within last 24h (unless forced)
+- [x] BullMQ Worker processes `score-recompute` jobs on the `MATCHING` queue
+- [x] Fetches all user IDs with profile rows in a single query
+- [x] Bulk-loads recent scores in one query to avoid per-pair stale DB calls
+- [x] Skips pairs computed within last 24 h when `force: false` (default)
+- [x] Recomputes all pairs unconditionally when `force: true`
+- [x] `UserProfileMissingError` increments error count — job does not crash
+- [x] Generic per-pair errors increment error count — job does not crash
+- [x] Publishes `SCORE_RECOMPUTE_COMPLETED` CloudEvent on finish (even with errors)
+- [x] `enqueueScoreRecompute(redisUrl, data?)` helper for triggering the job
+- [x] Fixed `jobId: "score-recompute"` for BullMQ deduplication
+- [x] `processScoreRecompute()` exported separately for unit-test isolation (no BullMQ dep)
+- [x] Progress reporting via `job.updateProgress(pct)` callback
+- [x] Worker started/closed in `apps/gateway/src/server.ts` as part of graceful lifecycle
+- [x] 22 unit tests — all green
+
+**Key files:**
+- `libs/matching/src/score-recompute.worker.ts` — `processScoreRecompute` + `createScoreRecomputeWorker` + `enqueueScoreRecompute`
+- `libs/matching/src/__tests__/score-recompute.worker.test.ts` — 22 tests
+- `apps/gateway/src/server.ts` — worker start/close wired into lifecycle
+- `libs/shared/src/constants/index.ts` — `SCORE_RECOMPUTE_COMPLETED` added
+
+**Decision Log:**
+- **`processScoreRecompute` extracted from BullMQ Worker** — pure async function with optional `onProgress` callback; lets tests cover all business logic without mocking the BullMQ `Worker` class.
+- **Bulk stale-check** — one `prisma.matchScore.findMany` loads all fresh pairs into a `Set<string>`; avoids N*(N-1)/2 individual `findUnique` calls.
+- **Fixed `jobId`** — `"score-recompute"` prevents queuing duplicate pending jobs when admin triggers multiple recomputes rapidly.
+- **`concurrency: 1`** — only one full recompute runs at a time; a second enqueued job waits until the first finishes.
+- **In-process worker** — Worker runs inside the gateway process for Phase 4 MVP. ADR note added: move to dedicated worker app (`apps/worker`) in production.
 
 ---
 
-### MATCH-003 · Cached Score Lookup ⏳
+### MATCH-003 · Cached Score Lookup ✅
 **Story:** As the discovery feed, I retrieve scores quickly from Redis without hitting the DB every time.
 
+**Acceptance Criteria:**
+- [x] `getMatchScore(userAId, userBId)` — cache-aside: Redis first, DB fallback, then populates cache
+- [x] `setMatchScoreCache(score)` — write-through on every `computeAndSaveScore` call
+- [x] `deleteMatchScoreCache(userAId, userBId)` — explicit eviction for profile-update scenarios
+- [x] Canonical pair key (`user-a:user-b` always, never `user-b:user-a`) regardless of argument order
+- [x] `computedAt` re-hydrated from ISO string → `Date` on cache read
+- [x] Redis errors swallowed with `log.warn` — never surface to callers
+- [x] TTL = `CACHE_TTL.MATCH_SCORES_SECONDS` (86 400 s = 24 h)
+- [x] `computeAndSaveScore` auto-populates cache after every DB upsert
+- [x] 18 unit tests — all green
+
+**Key files:**
+- `libs/matching/src/score-cache.service.ts` — `getMatchScore` + `setMatchScoreCache` + `deleteMatchScoreCache`
+- `libs/matching/src/__tests__/score-cache.service.test.ts` — 18 tests
+- `libs/shared/src/constants/index.ts` — `CACHE_KEYS.MATCH_SCORE_PAIR` added
+
+**Decision Log:**
+- **Cache-aside pattern** — `getMatchScore` tries Redis, falls to DB on miss/error, then backfills cache. Keeps DB as source of truth; cache is best-effort.
+- **Write-through on compute** — `computeAndSaveScore` calls `setMatchScoreCache` immediately after the DB upsert so the first discovery-feed read after a recompute is always a cache hit.
+- **Error swallowing** — all Redis errors are caught inside the three cache functions; the DB path is always available as a fallback. This prevents a Redis outage from taking down score lookups.
+
 ---
 
-### MATCH-004 · Discovery Feed ⏳
+### MATCH-004 · Discovery Feed ✅
 **Story:** As a user, I see a paginated list of compatible matches sorted by score.
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/discover?cursor=&limit=20`
-- [ ] Filters: exclude suspended users, exclude already-connected users
-- [ ] Cursor-based pagination
+- [x] `GET /api/v1/discover?cursor=&limit=20`
+- [x] Filters: exclude suspended users, exclude already-connected users
+- [x] Cursor-based pagination (composite keyset: `totalScore DESC, id ASC`)
+- [x] Returns `ApiResponse<DiscoveryItemDto[]>` with `meta.cursor` + `meta.hasMore`
+- [x] Validation: limit 1–100 (400 on bad value), cursor is opaque base64url string
+
+**Key files:**
+- `libs/matching/src/discover.service.ts` — `getDiscoveryFeed()`, `encodeCursor()`, `decodeCursor()`, `computeAge()`
+- `apps/gateway/src/controllers/discover/discover.controller.ts` — `discoverController.getFeed`
+- `apps/gateway/src/routes/discover/index.ts` — GET / with `requireAuth` + `validateQuery`
+- `apps/gateway/src/schemas/discover/discover.schema.ts` — `discoverQuerySchema`
+- `apps/gateway/src/lib/feature-flag-store.ts` — `PrismaFeatureFlagStore`
+- Tests: `libs/matching/src/__tests__/discover.service.test.ts` (24 tests)
+- Tests: `apps/gateway/src/controllers/discover/__tests__/discover.controller.test.ts` (12 tests)
+
+**Decision Log:**
+- Cursor encodes `{ score, id }` as base64url JSON for stable pagination when scores are equal
+- Suspended users + already-connected users filtered in one pass after score lookup
+- `FeatureFlagService` is a lazy singleton in the controller (initialised on first request) so Jest mocks are in place before the constructor runs
 
 ---
 
-### MATCH-005 · Feature Flag for Algorithm v2 ⏳
+### MATCH-005 · Feature Flag for Algorithm v2 ✅
 **Story:** As the platform, I can roll out algorithm v2 to a subset of users without a deploy.
+
+**Key files:**
+- Controller: lazy `FeatureFlagService` singleton checks `FEATURE_FLAGS.MATCHING_ALGORITHM_V2` per request
+- `PrismaFeatureFlagStore` reads from the `feature_flags` table (Phase 4 MVP — uncached)
+- If flag is enabled for `userId`, `algorithmVersion: 'v2'` is passed to `getDiscoveryFeed()`; otherwise `ALGORITHM_VERSION` ('v1') is used
+- 2 integration tests cover flag-off (v1) and flag-on (v2) paths
 
 ---
 

@@ -45,32 +45,32 @@
 
 ---
 
-## Phase 3 — Profile 🔄
+## Phase 3 — Profile ✅
 **Goal:** User profile creation, real-life answers, story prompts, photo upload.
-**Sprint:** 3 | **Status:** In Progress
+**Sprint:** 3 | **Status:** Complete
 
 | Task ID   | Description                                      | Status |
 |-----------|--------------------------------------------------|--------|
 | PROF-001  | `POST /api/v1/profile` — create profile          | ✅     |
-| PROF-002  | `PUT /api/v1/profile/real-life/:questionKey`     | ⏳     |
-| PROF-003  | `PUT /api/v1/profile/story/:promptKey`           | ⏳     |
-| PROF-004  | `POST /api/v1/profile/media` — S3 photo upload   | ⏳     |
-| PROF-005  | Profile completion score calculation             | ⏳     |
-| PROF-006  | `GET /api/v1/profile/me` + `GET /profiles/:id`  | ⏳     |
+| PROF-002  | `PUT /api/v1/profile/real-life/:questionKey`     | ✅     |
+| PROF-003  | `PUT /api/v1/profile/story/:promptKey`           | ✅     |
+| PROF-004  | `POST /api/v1/profile/media` — S3 photo upload   | ✅     |
+| PROF-005  | Profile completion score calculation             | ✅     |
+| PROF-006  | `GET /api/v1/profile/me` + `GET /profiles/:id`  | ✅     |
 
 ---
 
-## Phase 4 — Matching ⏳
+## Phase 4 — Matching ✅
 **Goal:** Weighted compatibility scoring, BullMQ batch compute, discovery feed.
-**Sprint:** 4 | **Status:** Backlog
+**Sprint:** 4 | **Status:** Complete — 497 tests, 35 suites all green
 
 | Task ID    | Description                                     | Status |
 |------------|-------------------------------------------------|--------|
-| MATCH-001  | Scoring algorithm v1 — 9 dimensions             | ⏳     |
-| MATCH-002  | BullMQ worker — batch-compute all user pairs    | ⏳     |
-| MATCH-003  | Redis-cached score lookup                       | ⏳     |
-| MATCH-004  | `GET /api/v1/discover` — paginated feed         | ⏳     |
-| MATCH-005  | Feature-flag gate for algorithm v2              | ⏳     |
+| MATCH-001  | Scoring algorithm v1 — 9 dimensions             | ✅     |
+| MATCH-002  | BullMQ worker — batch-compute all user pairs    | ✅     |
+| MATCH-003  | Redis-cached score lookup                       | ✅     |
+| MATCH-004  | `GET /api/v1/discover` — paginated feed         | ✅     |
+| MATCH-005  | Feature-flag gate for algorithm v2              | ✅     |
 
 ---
 
