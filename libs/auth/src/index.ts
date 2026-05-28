@@ -63,3 +63,11 @@ export {
   AdminTotpInvalidError,
 } from './admin-auth.service.js';
 export type { AdminLoginInput, AdminLoginResult } from './admin-auth.service.js';
+
+// Trusted device bypass
+export {
+  trustedDeviceLoginService,
+  checkTrustedDeviceRateLimit,
+  DeviceNotTrustedError,
+} from './trusted-device.service.js';
+export type { TrustedDeviceLoginInput } from './trusted-device.service.js';

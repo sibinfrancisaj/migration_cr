@@ -55,6 +55,10 @@ jest.mock('@abroad-matrimony/shared', () => ({
   CACHE_TTL: { REFRESH_TOKEN_SECONDS: 2592000 },
 }));
 
+jest.mock('@abroad-matrimony/config', () => ({
+  getEnv: () => ({ TRUSTED_DEVICE_TTL_DAYS: 90 }),
+}));
+
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
 const INPUT = {

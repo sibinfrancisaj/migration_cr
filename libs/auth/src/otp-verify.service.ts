@@ -4,6 +4,7 @@ import { publish } from '@abroad-matrimony/event-bus';
 import { CLOUD_EVENT_TYPES, MAX_DEVICES_PER_USER } from '@abroad-matrimony/shared';
 import type { UserDto } from '@abroad-matrimony/shared';
 import { UserRole } from '@abroad-matrimony/shared';
+import { getEnv } from '@abroad-matrimony/config';
 import { verifyOtp } from './otp.service.js';
 import { issueTokenPair } from './jwt.service.js';
 import { storeRefreshToken } from './refresh-token.service.js';
@@ -64,7 +65,12 @@ export async function otpVerifyService(input: OtpVerifyInput): Promise<OtpVerify
     });
   }
 
-  // 3. Upsert device — check limit only when it's a new fingerprint
+  // 3. Upsert device — check limit only when it's a new fingerprint.
+  //    Mark / renew device trust on every successful OTP so the TTL window slides forward.
+  const now = new Date();
+  const ttlDays = getEnv().TRUSTED_DEVICE_TTL_DAYS;
+  const trustedExpiresAt = new Date(now.getTime() + ttlDays * 24 * 3600 * 1000);
+
   let device = await prisma.device.findUnique({
     where: { userId_fingerprint: { userId: user.id, fingerprint: deviceFingerprint } },
   });
@@ -74,13 +80,25 @@ export async function otpVerifyService(input: OtpVerifyInput): Promise<OtpVerify
     if (deviceCount >= MAX_DEVICES_PER_USER) throw new DeviceLimitError();
 
     device = await prisma.device.create({
-      data: { userId: user.id, fingerprint: deviceFingerprint, name: deviceName, platform },
+      data: {
+        userId:          user.id,
+        fingerprint:     deviceFingerprint,
+        name:            deviceName,
+        platform,
+        isTrusted:       true,
+        trustedAt:       now,
+        trustedExpiresAt,
+      },
     });
   } else {
+    // Renew trust window on every successful OTP on a known device
     device = await prisma.device.update({
       where: { id: device.id },
       data: {
-        lastSeenAt: new Date(),
+        lastSeenAt:      now,
+        isTrusted:       true,
+        trustedAt:       now,
+        trustedExpiresAt,
         ...(deviceName && { name: deviceName }),
         ...(platform && { platform }),
       },

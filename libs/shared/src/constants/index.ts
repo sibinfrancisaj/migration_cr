@@ -15,6 +15,7 @@ export const CACHE_KEYS = {
   OTP_ATTEMPTS: (phone: string) => `am:otp:attempts:${phone}`,
   ADMIN_LOGIN_ATTEMPTS: (email: string) => `am:admin:login:${email}`,
   RATE_LIMIT: (key: string) => `am:rl:${key}`,
+  TRUSTED_DEVICE_ATTEMPTS: (phone: string) => `am:td:rl:${phone}`,
 } as const;
 
 export const CACHE_TTL = {
