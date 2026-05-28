@@ -24,4 +24,19 @@ export interface StorageAdapter {
    * @param key  Storage key of the file to remove
    */
   delete(key: string): Promise<void>;
+
+  /**
+   * Generate a presigned PUT URL so clients can upload directly to S3.
+   *
+   * @param key               Storage key (path within the bucket)
+   * @param mimeType          Content-Type the client must send with the PUT
+   * @param expiresInSeconds  How long the URL remains valid (max 7 days for S3)
+   * @returns `uploadUrl`  — presigned S3 PUT URL (share with client)
+   *          `fileUrl`    — final public URL of the file once uploaded
+   */
+  getPresignedUploadUrl(
+    key: string,
+    mimeType: string,
+    expiresInSeconds: number,
+  ): Promise<{ uploadUrl: string; fileUrl: string }>;
 }

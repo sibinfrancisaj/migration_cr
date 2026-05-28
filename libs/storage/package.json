@@ -6,6 +6,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "@aws-sdk/client-s3": "*",
+    "@aws-sdk/s3-request-presigner": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/logger": "*"
   }

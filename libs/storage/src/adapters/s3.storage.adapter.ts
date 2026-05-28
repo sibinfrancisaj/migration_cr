@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import type { StorageAdapter } from './base.storage.adapter.js';
 
@@ -58,5 +59,23 @@ export class S3StorageAdapter implements StorageAdapter {
 
     await this.client.send(command);
     log.info('File deleted from S3', { key, bucket: this.bucket });
+  }
+
+  async getPresignedUploadUrl(
+    key: string,
+    mimeType: string,
+    expiresInSeconds: number,
+  ): Promise<{ uploadUrl: string; fileUrl: string }> {
+    const command = new PutObjectCommand({
+      Bucket:      this.bucket,
+      Key:         key,
+      ContentType: mimeType,
+    });
+
+    const uploadUrl = await getSignedUrl(this.client, command, { expiresIn: expiresInSeconds });
+    const fileUrl   = `${this.baseUrl}/${key}`;
+
+    log.info('Presigned upload URL generated', { key, mimeType, bucket: this.bucket, expiresInSeconds });
+    return { uploadUrl, fileUrl };
   }
 }

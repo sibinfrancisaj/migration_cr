@@ -39,7 +39,9 @@
       "@abroad-matrimony/payment": ["libs/payment/src/index.ts"],
       "@abroad-matrimony/storage": ["libs/storage/src/index.ts"],
       "@abroad-matrimony/connections": ["libs/connections/src/index.ts"],
-      "@abroad-matrimony/groups": ["libs/groups/src/index.ts"]
+      "@abroad-matrimony/groups": ["libs/groups/src/index.ts"],
+      "@abroad-matrimony/firebase": ["libs/firebase/src/index.ts"],
+      "@abroad-matrimony/messaging": ["libs/messaging/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

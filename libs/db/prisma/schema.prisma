@@ -51,20 +51,25 @@ model User {
 }
 
 model Device {
-  id            String   @id @default(uuid())
-  userId        String
-  fingerprint   String
-  name          String?
-  platform      String?
-  pushToken     String?
-  isTrusted     Boolean  @default(false)
-  lastSeenAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
+  id               String    @id @default(uuid())
+  userId           String
+  fingerprint      String
+  name             String?
+  platform         String?
+  pushToken        String?
+  isTrusted        Boolean   @default(false)
+  /// Timestamp when isTrusted was last set to true (i.e. last successful OTP on this device).
+  trustedAt        DateTime?
+  /// Trust expiry — bypass is only valid before this timestamp. Null = not trusted.
+  trustedExpiresAt DateTime?
+  lastSeenAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
 
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, fingerprint])
   @@index([userId])
+  @@index([trustedExpiresAt])
   @@map("devices")
 }
 
@@ -298,16 +303,20 @@ model Conversation {
 }
 
 model Message {
-  id             String      @id @default(uuid())
-  conversationId String
-  senderId       String
-  type           MessageType @default(TEXT)
-  content        String
-  readAt         DateTime?
-  createdAt      DateTime    @default(now())
+  id              String      @id @default(uuid())
+  conversationId  String
+  senderId        String
+  type            MessageType @default(TEXT)
+  content         String      @default("")
+  mediaUrl        String?
+  durationSeconds Int?
+  flagCount       Int         @default(0)
+  isHidden        Boolean     @default(false)
+  readAt          DateTime?
+  createdAt       DateTime    @default(now())
 
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
 
   @@index([conversationId])
   @@index([senderId])
@@ -488,27 +497,30 @@ model Notification {
 }
 
 model Flag {
-  id               String     @id @default(uuid())
+  id               String      @id @default(uuid())
   reporterId       String
   targetUserId     String
   targetEntityType String
   targetEntityId   String?
-  reason           String
+  firestoreMsgId   String?
+  reason           FlagReason
   description      String?
-  status           FlagStatus @default(OPEN)
+  status           FlagStatus  @default(OPEN)
+  actionTaken      FlagAction?
   moderatorId      String?
   resolution       String?
   resolvedAt       DateTime?
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
 
-  reporter         User       @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: Cascade)
-  targetUser       User       @relation("FlagTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
-  moderator        AdminUser? @relation("FlagModerator", fields: [moderatorId], references: [id])
+  reporter         User        @relation("FlagReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetUser       User        @relation("FlagTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  moderator        AdminUser?  @relation("FlagModerator", fields: [moderatorId], references: [id])
 
   @@index([reporterId])
   @@index([targetUserId])
   @@index([status])
+  @@index([targetEntityType, targetEntityId])
   @@map("flags")
 }
 
@@ -597,6 +609,7 @@ enum GroupStatus {
 
 enum MessageType {
   TEXT
+  IMAGE
   VOICE
   SYSTEM
 }
@@ -644,6 +657,23 @@ enum FlagStatus {
   UNDER_REVIEW
   RESOLVED
   DISMISSED
+}
+
+enum FlagReason {
+  INAPPROPRIATE_CONTENT
+  HARASSMENT
+  SPAM
+  FAKE_IDENTITY
+  UNDERAGE_CONCERN
+  OTHER
+}
+
+enum FlagAction {
+  NO_ACTION
+  USER_WARNED
+  MESSAGE_REMOVED
+  USER_SUSPENDED
+  USER_BANNED
 }
 
 enum DiamondReason {

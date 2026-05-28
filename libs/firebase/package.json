@@ -1,0 +1,12 @@
+{
+  "name": "@abroad-matrimony/firebase",
+  "version": "1.0.0",
+  "description": "Firebase Admin SDK singleton — Firestore, Realtime DB, FCM",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/logger": "*",
+    "firebase-admin": "*"
+  }
+}
