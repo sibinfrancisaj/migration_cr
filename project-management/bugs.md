@@ -14,6 +14,8 @@
 | BUG-004 | Dependency | P4    | MATCH-004 | uuid v14 ESM breaks all gateway tests that call createApp() | 🟢 Fixed | 2026-05-28 |
 | BUG-005 | Test       | P4    | MATCH-004 | TypeScript annotations inside jest.mock() cause Babel parse error | 🟢 Fixed | 2026-05-28 |
 | BUG-006 | Test       | P4    | MATCH-004 | @abroad-matrimony/groups and /connections not resolvable in tests | 🟢 Fixed | 2026-05-28 |
+| BUG-007 | Test       | P5    | MSG-003  | requireAdminRole missing from auth mocks after admin route added  | 🟢 Fixed | 2026-05-28 |
+| BUG-008 | Test       | P6b   | AUTH-TD  | otp-verify.service.test.ts missing @abroad-matrimony/config mock after TRUSTED_DEVICE_TTL_DAYS added | 🟢 Fixed | 2026-05-28 |
 
 ---
 
@@ -113,6 +115,47 @@ Additionally, `routes/index.ts` already imported from `./connections/index.js` b
 1. Created stub packages: `libs/connections/src/index.ts` and `libs/groups/src/index.ts` (service stubs for Phase 5+)
 2. Added path aliases in `tsconfig.base.json` and `jest.preset.js` moduleNameMapper
 3. Created `apps/gateway/src/routes/connections/index.ts` (empty router stub, Phase 5 placeholder)
+
+---
+
+### BUG-007 — requireAdminRole missing from auth mocks broke all gateway test suites
+**Type:** Test infrastructure
+**Phase:** 5 — Messaging
+**Task:** MSG-003
+**Reported:** 2026-05-28
+**Status:** 🟢 Fixed
+
+**Problem:**
+Adding `requireAdminRole(AdminRole.MODERATOR)` to `apps/gateway/src/routes/admin/index.ts` (for the new flag moderation routes) caused all gateway controller tests that call `createApp()` to fail with `TypeError: (0, auth_1.requireAdminRole) is not a function`. The `@abroad-matrimony/auth` mock in those test files didn't include `requireAdminRole` (it was only in `discover.controller.test.ts` which was already updated in MSG-001/002).
+
+Additionally, all test files needed the new messaging exports (`markConversationRead`, `createFirebaseToken`, `flagMessage`, etc.) added to their `@abroad-matrimony/messaging` mocks.
+
+**Pattern to follow for future new service exports:**
+When adding a new exported function to `@abroad-matrimony/messaging` or a new middleware to `@abroad-matrimony/auth`, every test file that mocks those modules via `jest.mock()` must be updated with stub entries.
+
+**Fix:**
+Added `requireAdminRole: jest.fn(() => ...)` and `requireRole: jest.fn(() => ...)` to the auth mock in all 6 affected test files.
+Added all new messaging exports as stubs to all 9 affected messaging mock objects.
+
+---
+
+---
+
+### BUG-008 — otp-verify test missing config mock after TRUSTED_DEVICE_TTL_DAYS added
+**Type:** Test infrastructure
+**Phase:** 6b — Trusted Device Bypass
+**Task:** AUTH-TD
+**Reported:** 2026-05-28
+**Status:** 🟢 Fixed
+
+**Problem:**
+`libs/auth/src/__tests__/otp-verify.service.test.ts` did not mock `@abroad-matrimony/config`. When `otp-verify.service.ts` was updated to call `getEnv().TRUSTED_DEVICE_TTL_DAYS`, all 8 tests in that file failed because Zod env validation ran against the test process's `process.env`, which is missing required JWT/DB vars.
+
+**Fix:**
+Added `jest.mock('@abroad-matrimony/config', () => ({ getEnv: () => ({ TRUSTED_DEVICE_TTL_DAYS: 90 }) }))` to the test file.
+
+**Pattern to follow:**
+Any time a service file adds a new `getEnv()` call, add (or update) the `@abroad-matrimony/config` mock in its test file.
 
 ---
 

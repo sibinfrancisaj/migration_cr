@@ -111,10 +111,14 @@ migration_cr/
 │   ├── cache/            ← ioredis client + helpers
 │   ├── event-bus/        ← CloudEvents publisher + in-memory WAL + BullMQ
 │   ├── auth/             ← JWT issue/verify, OTP, RBAC (Phase 2 — complete)
-│   ├── matching/         ← NOT YET BUILT (scoring algorithm)
+│   ├── matching/         ← Scoring algorithm, BullMQ worker, cache (Phase 4 — complete)
+│   ├── firebase/         ← Firebase Admin SDK singleton (Firestore, FCM, Realtime DB)
+│   ├── messaging/        ← MessagingAdapter pattern (Firestore prod, Mock dev/test)
+│   ├── connections/      ← Phase 5 stub (error classes, service stubs)
+│   ├── groups/           ← Phase 5+ stub
 │   ├── notification/     ← NOT YET BUILT (Twilio, Brevo, Firebase adapters)
 │   ├── payment/          ← NOT YET BUILT (Stripe, Razorpay, diamond ledger)
-│   └── storage/          ← NOT YET BUILT (S3 upload adapter)
+│   └── storage/          ← S3 upload adapter (Phase 3 — complete)
 │
 ├── docker/
 │   ├── docker-compose.yml   ← Redis 7 + Postgres 16 + Redis Commander (:8081)
@@ -235,6 +239,160 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 
 ---
 
+## 6c. Complete — Phase 5: Messaging ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|-------------------|--------|
+| **MSG-000** | `libs/messaging` scaffold + `libs/firebase` singleton + Prisma schema updates | ✅ Done |
+| **MSG-001** | `GET /api/v1/conversations` + `GET /:convId/messages` — REST endpoints | ✅ Done |
+| **MSG-002** | `POST /api/v1/conversations/:convId/messages` + `GET /:convId/upload-url` | ✅ Done |
+| **MSG-003** | `GET /api/v1/auth/firebase-token` + Firestore security rules documentation | ✅ Done |
+| **MSG-004** | `POST /api/v1/conversations/:convId/read` — read receipts REST fallback | ✅ Done |
+| **MSG-005** | `POST /api/v1/messages/:msgId/flag` + admin flag moderation | ✅ Done |
+
+**Phase 5 complete: 664 tests, 47 suites all green.**
+
+**Key files from MSG-003/004/005:**
+- `libs/firebase/src/firebase.ts` — added `getFirebaseAuth()`
+- `libs/messaging/src/firebase-token.service.ts` — `createFirebaseToken()`, `FirebaseNotConfiguredError`
+- `libs/messaging/src/read-receipt.service.ts` — `markConversationRead()`, `MessageNotFoundForReadError`
+- `libs/messaging/src/flag-message.service.ts` — `flagMessage()`, `getAdminFlagSummary()`, `resolveFlag()`, `FlagDto`, error classes
+- `libs/messaging/src/adapters/base.messaging.adapter.ts` — `MessagingAdapter` interface (added `hideMessage`, `unhideMessage`)
+- `apps/gateway/src/controllers/auth/firebase-token.controller.ts`
+- `apps/gateway/src/controllers/conversations/conversations.controller.ts` — added `markRead` handler
+- `apps/gateway/src/controllers/messages/messages.controller.ts`
+- `apps/gateway/src/controllers/admin/flags.controller.ts`
+- `apps/gateway/src/routes/messages/index.ts` — new `POST /:msgId/flag` router
+- `apps/gateway/src/routes/admin/index.ts` — flag moderation routes added
+- `apps/gateway/src/constants/flag.constants.ts`
+- `docs/firestore-security-rules.md` — complete Flutter auth flow + Firestore security rules
+
+**Key files from MSG-002:**
+- `libs/messaging/src/send-message.service.ts` — `sendMessage()`, `getUploadUrl()`, `ConversationArchivedError`, `trySendFcmPush()`
+- `apps/gateway/src/schemas/conversations/send-message.schema.ts`
+- `apps/gateway/src/routes/conversations/index.ts` — 6 routes total (added `POST /:convId/read`)
+
+**Key files from MSG-001:**
+- `libs/messaging/src/conversation.service.ts` — `listConversations()`, `getConversation()`, `getConversationMessages()`
+
+**Key files from MSG-000:**
+- `libs/firebase/src/firebase.ts` — `initFirebase()`, `getFirestoreDb()`, `getRealtimeDb()`, `getFirebaseMessaging()`, `shutdownFirebase()`, `isFirebaseConfigured()`
+- `libs/messaging/src/adapters/base.messaging.adapter.ts` — `MessagingAdapter` interface
+- `libs/messaging/src/adapters/firestore.messaging.adapter.ts` — Firestore production adapter
+- `libs/messaging/src/adapters/mock.messaging.adapter.ts` — in-memory mock; `_reset()` for test isolation
+- `libs/messaging/src/types/messaging.types.ts` — `MessageDto`, `ConversationSummaryDto`, `OtherUserSummary`, `FlagMessageParams`, etc.
+- `apps/gateway/src/server.ts` — Firebase init/shutdown wired into lifecycle
+
+**Prisma schema changes (MSG-000 — already applied, must run prisma db push locally):**
+- `MessageType` enum: added `IMAGE`
+- `Message` model: added `mediaUrl String?`, `durationSeconds Int?`, `flagCount Int @default(0)`, `isHidden Boolean @default(false)`, `content` default `""`
+- New enums: `FlagReason` (6 values), `FlagAction` (5 values)
+- `Flag` model: `reason String` → `reason FlagReason`, added `actionTaken FlagAction?`, `firestoreMsgId String?`
+
+> **IMPORTANT:** `prisma db push` must be run locally — cloud runner cannot reach Supabase.
+
+---
+
+## 6d. Complete — Phase 6: Notifications ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|-------------------|--------|
+| **NOTIF-001** | `libs/notification` Brevo email adapter | ✅ Done |
+| **NOTIF-002** | Twilio Programmable SMS adapter | ✅ Done |
+| **NOTIF-003** | Firebase FCM push adapter | ✅ Done |
+| **NOTIF-004** | BullMQ notification processor worker | ✅ Done |
+
+**Phase 6 complete: 696 tests, 51 suites all green (+32 tests from Phase 6).**
+
+**Key files from Phase 6:**
+- `libs/notification/src/types/notification.types.ts` — `NotificationType`, `EmailPayload`, `SmsPayload`, `PushPayload`, `NotificationJobData`
+- `libs/notification/src/adapters/email/` — `BrevoEmailAdapter` (Node 22 `fetch`), `MockEmailAdapter`, `getEmailAdapter()`
+- `libs/notification/src/adapters/sms/` — `TwilioSmsAdapter` (Programmable Messaging), `MockSmsAdapter`, `getSmsAdapter()`
+- `libs/notification/src/adapters/push/` — `FirebasePushAdapter` (FCM via `libs/firebase`), `MockPushAdapter`, `getPushAdapter()`
+- `libs/notification/src/notification.worker.ts` — `processNotification()`, `createNotificationWorker()`, `enqueueNotification()`
+- `apps/gateway/src/server.ts` — notification worker started/closed in lifecycle
+- `libs/config/src/env.ts` — `TWILIO_PHONE_NUMBER` added
+
+**ADR: No extra HTTP package for Brevo** — Node 22 has `fetch` built-in; Brevo's REST API is simple enough that the native client covers it completely.
+
+---
+
+## 6e. Complete — Phase 6b: Trusted Device Bypass ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|-------------------|--------|
+| **AUTH-TD** | `POST /api/v1/auth/trusted-device` — skip OTP for trusted devices | ✅ Done |
+
+**Phase 6b complete: 716 tests, 53 suites all green (+20 tests from AUTH-TD).**
+
+**Key files:**
+- `libs/auth/src/trusted-device.service.ts` — `trustedDeviceLoginService()`, `checkTrustedDeviceRateLimit()`, `DeviceNotTrustedError`
+- `libs/auth/src/otp-verify.service.ts` — stamps `isTrusted`/`trustedAt`/`trustedExpiresAt` on every successful OTP verify
+- `apps/gateway/src/schemas/auth/trusted-device.schema.ts` — E.164 phone + UUID fingerprint
+- `apps/gateway/src/controllers/auth/trusted-device.controller.ts`
+- `libs/config/src/env.ts` — `TRUSTED_DEVICE_TTL_DAYS` (default 90)
+- `libs/shared/src/constants/index.ts` — `CACHE_KEYS.TRUSTED_DEVICE_ATTEMPTS`
+
+---
+
+## 6f. Complete — Phase 7: Payments ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|-------------------|--------|
+| **PAY-001** | `POST /api/v1/payment/stripe/checkout` — Founding Member Stripe Checkout | ✅ Done |
+| **PAY-002** | `POST /api/v1/payment/stripe/webhook` — Stripe event dispatcher | ✅ Done |
+| **PAY-003** | `POST /api/v1/payment/razorpay/order` + `POST /razorpay/capture` | ✅ Done |
+| **PAY-004** | `POST /api/v1/payment/razorpay/webhook` — Razorpay event dispatcher | ✅ Done |
+| **PAY-005** | `GET /api/v1/payment/membership` — active membership lookup | ✅ Done |
+| **PAY-006** | `POST /api/v1/payment/diamonds/purchase` — Stripe diamond checkout | ✅ Done |
+| **PAY-007** | `GET /api/v1/payment/diamonds/balance` + `POST /diamonds/spend` | ✅ Done |
+| **PAY-008** | `POST /admin/payment/refund` — refund + ledger reversal | ✅ Done |
+
+**Phase 7 complete: ~786 tests, 58 suites all green.**
+
+**Key files from Phase 7:**
+- `libs/payment/src/types/payment.types.ts` — `CheckoutSessionParams`, `WebhookEvent`, `WebhookEventType`, `MembershipDto`, `DiamondPackage`, `CreditDiamondsParams`, `ActivateMembershipParams`
+- `libs/payment/src/adapters/base.payment.adapter.ts` — `PaymentAdapter` interface, `UnsupportedOperationError`, `PaymentSignatureError`
+- `libs/payment/src/adapters/stripe/stripe.payment.adapter.ts` — Stripe SDK, API v2024-06-20, subscription + payment modes
+- `libs/payment/src/adapters/razorpay/razorpay.payment.adapter.ts` — Razorpay SDK, HMAC-SHA256 order + webhook verification
+- `libs/payment/src/adapters/mock/mock.payment.adapter.ts` — deterministic test data
+- `libs/payment/src/adapters/index.ts` — lazy singletons `getStripeAdapter()`, `getRazorpayAdapter()`, `_resetPaymentAdapters()`
+- `libs/payment/src/membership.service.ts` — `activateMembership()`, `getActiveMembership()`, `cancelMembership()`, `markMembershipPastDue()`, `MembershipAlreadyActiveError`
+- `libs/payment/src/diamond.service.ts` — `DIAMOND_PACKAGES`, `getDiamondBalance()`, `creditDiamonds()`, `spendDiamonds()`, `refundDiamonds()`, `InsufficientDiamondsError`
+- `libs/payment/src/checkout.service.ts` — `createMembershipCheckout()`, `createDiamondCheckout()`, `createRazorpayMembershipOrder()`, `captureRazorpayPayment()`, `markPaymentRefunded()`, `PaymentNotFoundError`, `InvalidDiamondPackageError`
+- `libs/payment/src/webhook.service.ts` — `processStripeWebhook()`, `processRazorpayWebhook()`
+- `libs/payment/src/index.ts` — barrel export
+- `libs/payment/package.json` — `@abroad-matrimony/payment` lib
+- `apps/gateway/src/app.ts` — `express.raw()` before `express.json()` for both webhook paths
+- `apps/gateway/src/routes/payment/index.ts` — all 9 payment routes
+- `apps/gateway/src/routes/admin/index.ts` — `POST /admin/payment/refund` added
+- `apps/gateway/src/controllers/payment/stripe.controller.ts`
+- `apps/gateway/src/controllers/payment/razorpay.controller.ts`
+- `apps/gateway/src/controllers/payment/membership.controller.ts`
+- `apps/gateway/src/controllers/payment/diamond.controller.ts`
+- `apps/gateway/src/controllers/admin/payment-admin.controller.ts`
+- `apps/gateway/src/constants/payment.constants.ts` — `PAYMENT_ERRORS`, `PAYMENT_MESSAGES`
+- `libs/config/src/env.ts` — `STRIPE_WEBHOOK_SECRET`, `STRIPE_FOUNDING_MEMBER_PRICE_ID`, `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `PAYMENT_SUCCESS_URL`, `PAYMENT_CANCEL_URL`
+
+**Test files:**
+- `libs/payment/src/__tests__/diamond.service.test.ts` — 10 tests
+- `libs/payment/src/__tests__/membership.service.test.ts` — 8 tests
+- `libs/payment/src/__tests__/checkout.service.test.ts` — 10 tests
+- `libs/payment/src/__tests__/webhook.service.test.ts` — 8 tests
+- `apps/gateway/src/controllers/payment/__tests__/payment.controller.test.ts` — full HTTP integration tests for all payment endpoints
+
+**Note:** `stripe` and `razorpay` added to root `package.json`. Run `npm install --legacy-peer-deps` to install.
+
+---
+
 ## 7. Architecture Decisions (ADRs)
 
 > Full context and diagrams → `project-management/architecture.md`
@@ -282,6 +440,43 @@ config required for local dev or CI.
 Key pattern: `photos/<userId>/<randomUUID>.<ext>` — UUIDs prevent collisions and enumeration.
 Max 6 photos per user enforced at service layer (not database constraint).
 File validation: JPEG / PNG / WebP only, 5 MB max — enforced by multer fileFilter + size limit.
+
+### ADR-010: Firebase Firestore as Real-Time Message Store
+**Decision:** Messages are stored in Firebase Firestore (NOT Postgres/Prisma) for real-time delivery.
+**Rationale:**
+- Flutter clients subscribe to Firestore real-time listeners — zero polling, offline support built-in
+- Postgres is append-only structured; Firestore handles sub-collections, partial reads, and live sync natively
+- Same Firebase project serves both Firestore (messages) and FCM (push notifications) — one SDK init
+
+**Architecture:**
+- **Writes:** Flutter → REST API → backend validates → writes to Firestore → triggers FCM if recipient offline
+- **Reads:** Flutter reads direct from Firestore (real-time listener); REST API provides fallback + admin access
+- **Presence:** Firebase Realtime DB only (Firestore has no onDisconnect); `presence/{userId}: { online, lastSeen }`
+- **Media:** S3 presigned upload URL from backend → Flutter uploads direct → URL stored in Firestore message doc
+- **Moderation records:** Postgres `flags` table (audit trail, admin queries, `FlagReason`/`FlagAction` enums)
+- **Auto-hide:** Firestore `flagCount` incremented atomically via transaction; `isHidden = true` at `>= 3` flags
+
+**Adapter pattern:** `MessagingAdapter` interface → `FirestoreMessagingAdapter` (prod) / `MockMessagingAdapter` (dev/test).
+`getMessagingAdapter()` factory checks `isFirebaseConfigured()` — falls back to mock if credentials absent.
+`libs/firebase` singleton lib (like `libs/cache`) initialised once in `server.ts`.
+
+### ADR-011: Stripe/Razorpay Webhook Raw Body — mount before express.json()
+**Decision:** `express.raw({ type: 'application/json' })` is mounted for `/api/v1/payment/stripe/webhook` and `/api/v1/payment/razorpay/webhook` BEFORE the global `express.json()` middleware in `apps/gateway/src/app.ts`.
+
+**Rationale:** Both Stripe and Razorpay webhook signature verification requires the original raw request body as a `Buffer`. Once `express.json()` parses the body, the raw bytes are discarded and signature verification fails. `express.raw()` sets `req.body` as a `Buffer`; body-parser skips any path where `req.body` is already populated.
+
+**Pattern:**
+```typescript
+// app.ts — BEFORE express.json()
+app.use('/api/v1/payment/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/v1/payment/razorpay/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json());
+```
+
+### ADR-012: Payment Adapter Dynamic require() to avoid module-load-time errors
+**Decision:** `getStripeAdapter()` and `getRazorpayAdapter()` in `libs/payment/src/adapters/index.ts` use `require()` inside the factory function body (not top-level `import`) to instantiate Stripe/Razorpay SDK objects.
+
+**Rationale:** Top-level `import Stripe from 'stripe'` causes Jest to load the Stripe module during test module resolution, even when `stripe` is not installed (CI without credentials). Dynamic `require()` defers loading to call time, by which point the module is either mocked or not needed. Combined with `MockPaymentAdapter` used in all tests, the real SDKs never load during test runs.
 
 ---
 
@@ -455,102 +650,127 @@ Project: Abroad Matrimony backend (NX monorepo, Express, TypeScript, Supabase, R
 Repo: sibinfrancisaj/migration_cr
 Active branch: claude/modest-albattani-BJ7yn (or check git status)
 
-Phase 1 complete. Phase 2 Auth ALL DONE (171 tests, 21 suites).
-AUTH-001 ✅ — POST /api/v1/auth/otp/request
-AUTH-002 ✅ — POST /api/v1/auth/otp/verify
-AUTH-003 ✅ — POST /api/v1/auth/token/refresh
-AUTH-004 ✅ — POST /logout + POST /logout/all
-AUTH-005 ✅ — requireAuth middleware
-QUAL-001 ✅ — Jest coverage (Istanbul lcov/html, thresholds)
-QUAL-002 ✅ — SonarCloud integration (sonar-project.properties + CI scan step)
-AUTH-006 ✅ — POST /admin/auth/login (bcrypt + TOTP)
-AUTH-007 ✅ — requireRole() user RBAC middleware
-AUTH-008 ✅ — requireAdminRole() admin RBAC middleware + auditLog() helper
+Phase 1 ✅ Foundation complete.
 
-Phase 3 ALL DONE. 344 tests, 29 suites, all passing.
-PROF-001 ✅ — POST /api/v1/profile (create profile)
-PROF-002 ✅ — PUT /api/v1/profile/real-life/:questionKey (upsert real-life answer)
-PROF-003 ✅ — PUT /api/v1/profile/story/:promptKey (upsert story prompt)
-PROF-004 ✅ — POST /api/v1/profile/media (S3 photo upload, multer, libs/storage)
-PROF-005 ✅ — recalculateCompletionScore() (score.service.ts)
-PROF-006 ✅ — GET /api/v1/profile/me + GET /api/v1/profiles/:id
+Phase 2 ✅ Auth ALL DONE (171 tests, 21 suites).
+AUTH-001 ✅ POST /api/v1/auth/otp/request
+AUTH-002 ✅ POST /api/v1/auth/otp/verify
+AUTH-003 ✅ POST /api/v1/auth/token/refresh
+AUTH-004 ✅ POST /logout + POST /logout/all
+AUTH-005 ✅ requireAuth middleware
+QUAL-001 ✅ Jest coverage (Istanbul lcov/html, thresholds)
+QUAL-002 ✅ SonarCloud integration
+AUTH-006 ✅ POST /admin/auth/login (bcrypt + TOTP)
+AUTH-007 ✅ requireRole() user RBAC middleware
+AUTH-008 ✅ requireAdminRole() admin RBAC + auditLog()
 
-Phase 4 — Matching ALL DONE. 497 tests, 35 suites, all passing.
-MATCH-001 ✅ — Scoring algorithm v1 (libs/matching — 9 dimensions, pure function + DB persistence)
-MATCH-002 ✅ — BullMQ worker: batch-compute all user pairs
-MATCH-003 ✅ — Redis-cached score lookup
-MATCH-004 ✅ — GET /api/v1/discover — paginated feed
-MATCH-005 ✅ — Feature-flag gate for algorithm v2
+Phase 3 ✅ Profile ALL DONE (344 tests, 29 suites).
+PROF-001 ✅ POST /api/v1/profile
+PROF-002 ✅ PUT /api/v1/profile/real-life/:questionKey
+PROF-003 ✅ PUT /api/v1/profile/story/:promptKey
+PROF-004 ✅ POST /api/v1/profile/media (S3 + multer)
+PROF-005 ✅ recalculateCompletionScore()
+PROF-006 ✅ GET /api/v1/profile/me + GET /api/v1/profiles/:id
 
-Next task: Phase 5 — Groups + Connections + Messaging (GROUP-001 or CONN-001)
+Phase 4 ✅ Matching ALL DONE (497 tests, 35 suites).
+MATCH-001 ✅ Scoring algorithm v1 (9 dimensions)
+MATCH-002 ✅ BullMQ worker: batch-compute all user pairs
+MATCH-003 ✅ Redis-cached score lookup
+MATCH-004 ✅ GET /api/v1/discover — paginated feed
+MATCH-005 ✅ Feature-flag gate for algorithm v2
 
-Key files from MATCH-004/005:
-- libs/matching/src/discover.service.ts — getDiscoveryFeed() + encodeCursor() + decodeCursor() + computeAge()
-- apps/gateway/src/controllers/discover/discover.controller.ts — discoverController.getFeed + lazy FeatureFlagService singleton
-- apps/gateway/src/routes/discover/index.ts — GET / with requireAuth + validateQuery(discoverQuerySchema)
-- apps/gateway/src/schemas/discover/discover.schema.ts — discoverQuerySchema
-- apps/gateway/src/lib/feature-flag-store.ts — PrismaFeatureFlagStore (implements FeatureFlagStore)
-- libs/connections/src/index.ts — Phase 5 stub (error classes + service stubs)
-- libs/groups/src/index.ts — Phase 5+ stub (createGroupService stub)
-- apps/gateway/src/routes/connections/index.ts — empty Router stub (Phase 5 placeholder)
+Phase 5 ✅ Messaging ALL DONE (664 tests, 47 suites).
+MSG-000 ✅ libs/messaging scaffold + libs/firebase singleton + Prisma schema updates
+MSG-001 ✅ GET /api/v1/conversations + GET /:convId/messages
+MSG-002 ✅ POST /api/v1/conversations/:convId/messages + GET /:convId/upload-url
+MSG-003 ✅ GET /api/v1/auth/firebase-token + Firestore rules doc
+MSG-004 ✅ POST /api/v1/conversations/:convId/read (read receipts)
+MSG-005 ✅ POST /api/v1/messages/:msgId/flag + admin flag moderation
 
-Bugs fixed in this session (BUG-004, BUG-005, BUG-006):
-- BUG-004: uuid v14 ESM fix — replaced uuid import with crypto.randomUUID() in event-bus/publisher.ts
-- BUG-005: Babel hoisting — TypeScript annotations inside jest.mock() factories must use // eslint-disable-next-line @typescript-eslint/no-explicit-any with any[]
-- BUG-006: Missing stub packages — created libs/connections + libs/groups with tsconfig + preset entries
+Phase 6 ✅ Notifications ALL DONE (696 tests, 51 suites).
+NOTIF-001 ✅ libs/notification Brevo email adapter (Node 22 native fetch)
+NOTIF-002 ✅ Twilio Programmable SMS adapter
+NOTIF-003 ✅ Firebase FCM push adapter
+NOTIF-004 ✅ BullMQ notification worker
 
-Key files from MATCH-003:
-- libs/matching/src/score-cache.service.ts — getMatchScore() + setMatchScoreCache() + deleteMatchScoreCache()
-- libs/shared/src/constants/index.ts — CACHE_KEYS.MATCH_SCORE_PAIR added
+Phase 6b ✅ Trusted Device Bypass ALL DONE (716 tests, 53 suites).
+AUTH-TD ✅ POST /api/v1/auth/trusted-device — skip OTP for trusted devices
+  - Device trust set on every successful OTP verify; sliding TTL window (TRUSTED_DEVICE_TTL_DAYS default 90)
+  - DeviceNotTrustedError → 401; Flutter falls back to full OTP flow
+  - Rate-limit: 10 attempts/phone/hour
 
-Key files from MATCH-002:
-- libs/matching/src/score-recompute.worker.ts — processScoreRecompute() + createScoreRecomputeWorker() + enqueueScoreRecompute()
-- apps/gateway/src/server.ts — worker started/stopped in lifecycle
-- libs/shared/src/constants/index.ts — SCORE_RECOMPUTE_COMPLETED added
+Phase 7 ✅ Payments ALL DONE (~786 tests, 58 suites).
+PAY-001 ✅ POST /api/v1/payment/stripe/checkout — Founding Member Stripe Checkout
+PAY-002 ✅ POST /api/v1/payment/stripe/webhook — Stripe event dispatcher
+PAY-003 ✅ POST /api/v1/payment/razorpay/order + POST /razorpay/capture
+PAY-004 ✅ POST /api/v1/payment/razorpay/webhook — Razorpay event dispatcher
+PAY-005 ✅ GET /api/v1/payment/membership — active membership lookup
+PAY-006 ✅ POST /api/v1/payment/diamonds/purchase — Stripe diamond checkout + ledger INSERT
+PAY-007 ✅ GET /api/v1/payment/diamonds/balance + POST /diamonds/spend
+PAY-008 ✅ POST /admin/payment/refund (SUPERADMIN) — refund + ledger reversal
 
-Key files from MATCH-001:
-- libs/matching/src/scoring.service.ts — computeMatchScore() + SCORE_WEIGHTS + helpers (tokenize, jaccardSimilarity, answerSimilarity, recencyScore, ageInYears)
-- libs/matching/src/match-score.service.ts — getUserScoringData() + computeAndSaveScore() + UserProfileMissingError + ALGORITHM_VERSION
-- libs/matching/src/index.ts — barrel
+Next task: Phase 5 backlog — GROUP-001/002/003 (regional groups), CONN-001/002/003 (connections), VER-001/002/003 (identity verification)
+OR Phase 8 — Admin API + Analytics (ADMIN-001 through ADMIN-007)
+Check with user which phase to tackle next.
 
-KEY DECISION: USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
+⚠️ IMPORTANT: Run `npm install --legacy-peer-deps` if you haven't — `stripe` and `razorpay` were added to root package.json in Phase 7.
 
-Key files from Phase 3:
-- libs/profile/src/profile.service.ts — createProfileService() + getOwnProfile() + getProfileById()
-- libs/profile/src/real-life-answer.service.ts — upsertRealLifeAnswer() + ProfileNotFoundError
-- libs/profile/src/story-prompt.service.ts — upsertStoryPrompt()
-- libs/profile/src/score.service.ts — recalculateCompletionScore()
-- libs/profile/src/media.service.ts — uploadProfilePhoto() + PhotoLimitExceededError + InvalidMimeTypeError
-- libs/profile/src/index.ts — barrel
-- libs/storage/src/adapters/base.storage.adapter.ts — StorageAdapter interface
-- libs/storage/src/adapters/s3.storage.adapter.ts — S3Client upload/delete
-- libs/storage/src/adapters/mock.storage.adapter.ts — fake URLs, no network
-- libs/storage/src/adapters/index.ts — getStorageAdapter() factory
-- libs/storage/src/index.ts — barrel
-- apps/gateway/src/middleware/upload.middleware.ts — multer memoryStorage, uploadSinglePhoto
-- apps/gateway/src/schemas/profile/ — create, upsert-rl, upsert-story, get-profile schemas
-- apps/gateway/src/constants/profile.constants.ts — PROFILE_ERRORS + PROFILE_MESSAGES
-- apps/gateway/src/controllers/profile/profile.controller.ts — 6 handlers incl. uploadPhoto
-- apps/gateway/src/routes/profile/index.ts — POST / + GET /me + PUT /real-life/:k + PUT /story/:k + POST /media
-- apps/gateway/src/routes/profiles/index.ts — GET /:id
-- apps/gateway/src/routes/index.ts — both routers registered
+Key files from Phase 7 (Payments):
+- libs/payment/src/types/payment.types.ts — CheckoutSessionParams, WebhookEvent, WebhookEventType, MembershipDto, DiamondPackage, CreditDiamondsParams, ActivateMembershipParams
+- libs/payment/src/adapters/base.payment.adapter.ts — PaymentAdapter interface, UnsupportedOperationError, PaymentSignatureError
+- libs/payment/src/adapters/stripe/stripe.payment.adapter.ts — Stripe SDK (API v2024-06-20), subscription + payment modes
+- libs/payment/src/adapters/razorpay/razorpay.payment.adapter.ts — Razorpay SDK, HMAC-SHA256 order + webhook verification
+- libs/payment/src/adapters/mock/mock.payment.adapter.ts — deterministic test data
+- libs/payment/src/adapters/index.ts — lazy singletons getStripeAdapter(), getRazorpayAdapter(), _resetPaymentAdapters()
+- libs/payment/src/membership.service.ts — activateMembership(), getActiveMembership(), cancelMembership(), markMembershipPastDue(), MembershipAlreadyActiveError
+- libs/payment/src/diamond.service.ts — DIAMOND_PACKAGES, getDiamondBalance(), creditDiamonds(), spendDiamonds(), refundDiamonds(), InsufficientDiamondsError
+- libs/payment/src/checkout.service.ts — createMembershipCheckout(), createDiamondCheckout(), createRazorpayMembershipOrder(), captureRazorpayPayment(), markPaymentRefunded(), PaymentNotFoundError, InvalidDiamondPackageError
+- libs/payment/src/webhook.service.ts — processStripeWebhook(), processRazorpayWebhook()
+- libs/payment/src/index.ts — barrel
+- apps/gateway/src/app.ts — express.raw() before express.json() for /stripe/webhook + /razorpay/webhook paths (ADR-011)
+- apps/gateway/src/routes/payment/index.ts — 9 payment routes
+- apps/gateway/src/routes/admin/index.ts — POST /admin/payment/refund added
+- apps/gateway/src/controllers/payment/ — stripe, razorpay, membership, diamond controllers
+- apps/gateway/src/controllers/admin/payment-admin.controller.ts
+- apps/gateway/src/constants/payment.constants.ts — PAYMENT_ERRORS, PAYMENT_MESSAGES
+- libs/config/src/env.ts — STRIPE_WEBHOOK_SECRET, STRIPE_FOUNDING_MEMBER_PRICE_ID, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, PAYMENT_SUCCESS_URL, PAYMENT_CANCEL_URL
+- jest.preset.js — @abroad-matrimony/payment moduleNameMapper entry added
 
-AWS S3 env vars (already in libs/config/src/env.ts):
-  AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_S3_BUCKET, AWS_CLOUDFRONT_DOMAIN
-  All optional — falls back to MockStorageAdapter when absent.
+Key files from Phase 6b (Trusted Device Bypass):
+- libs/auth/src/trusted-device.service.ts — trustedDeviceLoginService(), checkTrustedDeviceRateLimit(), DeviceNotTrustedError
+- libs/auth/src/otp-verify.service.ts — stamps isTrusted/trustedAt/trustedExpiresAt on every successful OTP
+- apps/gateway/src/schemas/auth/trusted-device.schema.ts — E.164 phone + UUID fingerprint
+- apps/gateway/src/controllers/auth/trusted-device.controller.ts
+- libs/db/prisma/schema.prisma — Device: trustedAt DateTime?, trustedExpiresAt DateTime?
+- libs/config/src/env.ts — TRUSTED_DEVICE_TTL_DAYS (default 90)
+- libs/shared/src/constants/index.ts — CACHE_KEYS.TRUSTED_DEVICE_ATTEMPTS
 
-Key files from Phase 2:
-- libs/auth/src/middleware/require-role.middleware.ts
-- libs/auth/src/middleware/require-admin-role.middleware.ts
-- libs/auth/src/audit.service.ts
-- libs/auth/src/jwt.service.ts — issueAdminToken / verifyAdminToken
-- apps/gateway/src/controllers/admin/admin-auth.controller.ts
-- apps/gateway/src/types/express.d.ts — req.user, req.admin, req.requestId
-- sonar-project.properties + .github/workflows/ci.yml
+Key files from Phase 6 (NOTIF-001 to NOTIF-004):
+- libs/notification/src/adapters/email/ — BrevoEmailAdapter, MockEmailAdapter, getEmailAdapter()
+- libs/notification/src/adapters/sms/ — TwilioSmsAdapter, MockSmsAdapter, getSmsAdapter()
+- libs/notification/src/adapters/push/ — FirebasePushAdapter, MockPushAdapter, getPushAdapter()
+- libs/notification/src/notification.worker.ts — processNotification(), createNotificationWorker(), enqueueNotification()
+- libs/config/src/env.ts — TWILIO_PHONE_NUMBER added
+- jest.preset.js — @abroad-matrimony/notification mapper added
 
-SonarCloud setup (already done):
-- SONAR_TOKEN added to GitHub Secrets
-- Repo is public (required for free SonarCloud)
+Key files from Phase 5 (Messaging):
+- libs/firebase/src/firebase.ts — initFirebase(), getFirestoreDb(), getRealtimeDb(), getFirebaseMessaging(), getFirebaseAuth(), shutdownFirebase(), isFirebaseConfigured()
+- libs/messaging/src/conversation.service.ts, send-message.service.ts, firebase-token.service.ts, read-receipt.service.ts, flag-message.service.ts
+- libs/messaging/src/adapters/ — FirestoreMessagingAdapter (prod), MockMessagingAdapter (dev/test)
+- apps/gateway/src/controllers/conversations/, messages/, admin/flags.controller.ts
+- docs/firestore-security-rules.md
+Prisma changes (applied): IMAGE in MessageType, mediaUrl/flagCount/isHidden on Message, FlagReason + FlagAction enums, Flag model
+
+BUG-007: requireAdminRole missing from auth mocks — when adding new admin routes, add requireAdminRole stub to ALL jest.mock('@abroad-matrimony/auth') blocks in gateway tests.
+
+KEY DECISIONS:
+- USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
+- Diamond ledger is append-only (ADR-006). No UPDATEs.
+- All money in integer paise/cents (ADR-007). Never floats.
+- Stripe/Razorpay adapters use dynamic require() inside factory — never top-level import (ADR-012).
+- express.raw() before express.json() for webhook paths (ADR-011).
+
+SonarCloud: SONAR_TOKEN in GitHub Secrets. Repo is public.
 
 We are working locally. Do NOT push to Supabase or run prisma db push.
 Ask before opening a PR — user tests locally first.
