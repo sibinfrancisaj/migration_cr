@@ -83,6 +83,43 @@
 
 ---
 
+## Messaging (future enhancements beyond MVP)
+
+| ID    | Title                                              | Priority | Notes |
+|-------|----------------------------------------------------|----------|-------|
+| F-033 | Message "delivered to device" status              | Medium   | MVP has sent + read only. Delivered = FCM delivery receipt. Add `deliveredAt` to Firestore message doc + Prisma `messages` table. |
+| F-034 | Message reactions (emoji)                         | Low      | Add `reactions: Map<emoji, userId[]>` to Firestore message doc. |
+| F-035 | Message editing + edit history                    | Low      | `editedAt`, `editHistory[]` on Firestore doc. Show "edited" label. |
+| F-036 | Message deletion (unsend)                         | Medium   | Soft-delete: `deletedAt` + `isDeleted: true` in Firestore. Show "[Message removed]". |
+| F-037 | Video message type                                | Low      | S3 upload → Firestore URL + thumbnail + duration. `MessageType.VIDEO` already in schema. |
+| F-038 | Message search within conversation                | Low      | Firestore has no full-text search. Use Algolia or Typesense fed by Cloud Function trigger. |
+| F-039 | Bulk message export (GDPR / DPDPA)               | High     | Admin triggers export → Firestore query + S3 ZIP → email user. Legal requirement. |
+| F-040 | End-to-end encryption                             | Low      | Signal Protocol or Virgil Security. Large scope. Key exchange at match creation. |
+
+---
+
+## Calls (future module — libs/calling)
+
+| ID    | Title                                              | Priority | Notes |
+|-------|----------------------------------------------------|----------|-------|
+| F-041 | Voice call — Twilio Programmable Voice            | Medium   | `libs/calling` with `CallingAdapter` interface. Token minted server-side. |
+| F-042 | Video call — Daily.co or Agora                    | Medium   | Daily.co simplest API; Agora lower latency for South/Southeast Asia. |
+| F-043 | Call duration logging + diamond charge            | Low      | Log start/end in Postgres. Charge diamonds per minute via DiamondLedger. |
+| F-044 | Call recording (both-party consent required)      | Low      | Both users must opt in. S3 storage. Admin-access only. |
+
+---
+
+## Moderation (future enhancements beyond MVP flag system)
+
+| ID    | Title                                              | Priority | Notes |
+|-------|----------------------------------------------------|----------|-------|
+| F-045 | Automated image moderation                        | High     | Google Vision API SafeSearch before S3 store. Reject LIKELY/VERY_LIKELY explicit. |
+| F-046 | Automated text/voice moderation                   | Medium   | Google Perspective API for toxic text. Voice → Whisper transcription → Perspective. |
+| F-047 | User safety score dashboard (admin)               | High     | Per-user: total flags received, unique reporters, open/resolved breakdown. |
+| F-048 | Repeat-offender auto-escalation                   | Medium   | X flags in Y days → auto-`SUSPENDED_REVIEW` status. Currently manual only. |
+
+---
+
 ## Technical Debt
 
 | ID    | Title                                              | Priority | Notes |

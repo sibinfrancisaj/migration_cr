@@ -1,0 +1,15 @@
+{
+  "name": "@abroad-matrimony/matching",
+  "version": "1.0.0",
+  "description": "Compatibility scoring algorithm and match-score persistence",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/cache": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/event-bus": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "bullmq": "*"
+  }
+}

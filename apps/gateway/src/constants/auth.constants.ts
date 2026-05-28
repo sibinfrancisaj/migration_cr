@@ -10,6 +10,8 @@ export const AUTH_ERRORS = {
   UNAUTHORIZED: 'Authentication required.',
   FORBIDDEN: 'Insufficient permissions.',
   DEVICE_LIMIT_EXCEEDED: 'Maximum device limit reached. Log out from another device first.',
+  DEVICE_NOT_TRUSTED: 'Device not recognised or trust has expired. Please verify via OTP.',
+  TRUSTED_DEVICE_RATE_LIMITED: 'Too many attempts. Please try again later.',
 } as const;
 
 export const AUTH_MESSAGES = {
@@ -17,4 +19,5 @@ export const AUTH_MESSAGES = {
   OTP_VERIFIED: 'Phone verified successfully.',
   TOKEN_REFRESHED: 'Token refreshed successfully.',
   LOGGED_OUT: 'Logged out successfully.',
+  TRUSTED_DEVICE_LOGIN: 'Trusted device login successful.',
 } as const;

@@ -31,6 +31,13 @@ export function createApp(): express.Application {
     }),
   );
   app.use(compression());
+
+  // ── Webhook raw-body parsers (MUST come before express.json) ────────────────
+  // Stripe and Razorpay require the raw Buffer for HMAC signature verification.
+  // express.body-parser skips paths where req.body is already set.
+  app.use('/api/v1/payment/stripe/webhook', express.raw({ type: 'application/json' }));
+  app.use('/api/v1/payment/razorpay/webhook', express.raw({ type: 'application/json' }));
+
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 

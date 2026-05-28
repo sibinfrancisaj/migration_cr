@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@abroad-matrimony/auth": "*",
+    "@abroad-matrimony/profile": "*",
     "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",

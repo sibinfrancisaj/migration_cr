@@ -33,10 +33,15 @@
       "@abroad-matrimony/event-bus": ["libs/event-bus/src/index.ts"],
       "@abroad-matrimony/queue": ["libs/queue/src/index.ts"],
       "@abroad-matrimony/auth": ["libs/auth/src/index.ts"],
+      "@abroad-matrimony/profile": ["libs/profile/src/index.ts"],
       "@abroad-matrimony/matching": ["libs/matching/src/index.ts"],
       "@abroad-matrimony/notification": ["libs/notification/src/index.ts"],
       "@abroad-matrimony/payment": ["libs/payment/src/index.ts"],
-      "@abroad-matrimony/storage": ["libs/storage/src/index.ts"]
+      "@abroad-matrimony/storage": ["libs/storage/src/index.ts"],
+      "@abroad-matrimony/connections": ["libs/connections/src/index.ts"],
+      "@abroad-matrimony/groups": ["libs/groups/src/index.ts"],
+      "@abroad-matrimony/firebase": ["libs/firebase/src/index.ts"],
+      "@abroad-matrimony/messaging": ["libs/messaging/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

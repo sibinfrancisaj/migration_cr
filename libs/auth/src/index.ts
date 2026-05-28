@@ -37,6 +37,16 @@ export type { TokenRefreshInput, TokenRefreshResult } from './token-refresh.serv
 // requireAuth middleware (used by gateway + admin-api)
 export { requireAuth } from './middleware/require-auth.middleware.js';
 
+// requireRole — user RBAC (must follow requireAuth in middleware chain)
+export { requireRole } from './middleware/require-role.middleware.js';
+
+// requireAdminRole — admin RBAC (reads + verifies admin JWT, optional role list)
+export { requireAdminRole } from './middleware/require-admin-role.middleware.js';
+
+// auditLog — write an immutable admin audit trail entry
+export { auditLog } from './audit.service.js';
+export type { AuditLogInput } from './audit.service.js';
+
 // Admin JWT
 export { issueAdminToken, verifyAdminToken } from './jwt.service.js';
 export type { AdminTokenResult } from './jwt.service.js';
@@ -53,3 +63,11 @@ export {
   AdminTotpInvalidError,
 } from './admin-auth.service.js';
 export type { AdminLoginInput, AdminLoginResult } from './admin-auth.service.js';
+
+// Trusted device bypass
+export {
+  trustedDeviceLoginService,
+  checkTrustedDeviceRateLimit,
+  DeviceNotTrustedError,
+} from './trusted-device.service.js';
+export type { TrustedDeviceLoginInput } from './trusted-device.service.js';

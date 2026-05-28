@@ -10,3 +10,4 @@ build/
 .nx/workspace-data
 tmp/
 coverage/
+.claude/

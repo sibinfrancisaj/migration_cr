@@ -24,11 +24,16 @@ jest.mock('@abroad-matrimony/auth', () => {
     OtpInvalidError:  class OtpInvalidError  extends Error { constructor() { super(); this.name = 'OtpInvalidError'; } },
     DeviceLimitError: class DeviceLimitError extends Error { constructor() { super(); this.name = 'DeviceLimitError'; } },
     // Admin auth stubs
+    requireRole:              jest.fn(() => (_req: any, _res: any, next: any) => next()),
+    requireAdminRole:         jest.fn(() => (_req: any, _res: any, next: any) => next()),
     checkAdminLoginRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
     adminLoginService:        jest.fn().mockResolvedValue({}),
     AdminCredentialsError:  class AdminCredentialsError  extends Error { constructor() { super(); this.name = 'AdminCredentialsError'; } },
     AdminTotpRequiredError: class AdminTotpRequiredError extends Error { constructor() { super(); this.name = 'AdminTotpRequiredError'; } },
     AdminTotpInvalidError:  class AdminTotpInvalidError  extends Error { constructor() { super(); this.name = 'AdminTotpInvalidError'; } },
+    checkTrustedDeviceRateLimit: jest.fn().mockResolvedValue({ allowed: true }),
+    trustedDeviceLoginService:   jest.fn().mockResolvedValue({}),
+    DeviceNotTrustedError:       class extends Error { constructor() { super('DEVICE_NOT_TRUSTED'); this.name = 'DeviceNotTrustedError'; } },
   };
 });
 
@@ -41,6 +46,52 @@ jest.mock('@abroad-matrimony/config', () => ({
     OTP_RATE_LIMIT_MAX: 3,
     OTP_RATE_LIMIT_WINDOW_MS: 3600000,
   }),
+}));
+
+// ── Messaging mock (conversations router registered in routes/index.ts) ────────
+jest.mock('@abroad-matrimony/messaging', () => ({
+  listConversations:        jest.fn().mockResolvedValue([]),
+  getConversation:          jest.fn().mockResolvedValue({}),
+  getConversationMessages:  jest.fn().mockResolvedValue({ messages: [], cursor: null, hasMore: false }),
+  sendMessage:              jest.fn().mockResolvedValue({}),
+  getUploadUrl:             jest.fn().mockResolvedValue({ uploadUrl: '', fileUrl: '' }),
+  ConversationNotFoundError: class extends Error { constructor() { super(); this.name = 'ConversationNotFoundError'; } },
+  ConversationForbiddenError: class extends Error { constructor() { super(); this.name = 'ConversationForbiddenError'; } },
+  ConversationArchivedError:  class extends Error { constructor() { super(); this.name = 'ConversationArchivedError'; } },
+  CONVERSATION_MESSAGES_DEFAULT_LIMIT: 50,
+  MessageType: { TEXT: 'TEXT', IMAGE: 'IMAGE', VOICE: 'VOICE', SYSTEM: 'SYSTEM' },
+  markConversationRead:       jest.fn().mockResolvedValue(undefined),
+  MessageNotFoundForReadError: class extends Error { constructor() { super(); this.name = 'MessageNotFoundForReadError'; } },
+  createFirebaseToken:         jest.fn().mockResolvedValue('mock-firebase-token'),
+  FirebaseNotConfiguredError:  class extends Error { constructor() { super(); this.name = 'FirebaseNotConfiguredError'; } },
+  flagMessage:                 jest.fn().mockResolvedValue({ id: 'flag-1', status: 'OPEN' }),
+  MessageNotFoundError:        class extends Error { constructor() { super(); this.name = 'MessageNotFoundError'; } },
+  AlreadyFlaggedError:         class extends Error { constructor() { super(); this.name = 'AlreadyFlaggedError'; } },
+  FlagSelfError:               class extends Error { constructor() { super(); this.name = 'FlagSelfError'; } },
+  getAdminFlagSummary:         jest.fn().mockResolvedValue({ flags: [], total: 0 }),
+  resolveFlag:                 jest.fn().mockResolvedValue({ id: 'flag-1', status: 'RESOLVED' }),
+  FlagNotFoundError:           class extends Error { constructor() { super(); this.name = 'FlagNotFoundError'; } },
+}));
+
+// ── Payment mock (payment router registered in routes/index.ts) ───────────────
+jest.mock('@abroad-matrimony/payment', () => ({
+  createMembershipCheckout:      jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.mock/session', sessionId: 'cs_mock_123' }),
+  createDiamondCheckout:         jest.fn().mockResolvedValue({ checkoutUrl: 'https://checkout.mock/diamonds', sessionId: 'cs_mock_diamond' }),
+  createRazorpayMembershipOrder: jest.fn().mockResolvedValue({ orderId: 'order_mock_123', amount: 99900, currency: 'INR', keyId: 'rzp_test_mock' }),
+  captureRazorpayPayment:        jest.fn().mockResolvedValue(undefined),
+  processStripeWebhook:          jest.fn().mockResolvedValue(undefined),
+  processRazorpayWebhook:        jest.fn().mockResolvedValue(undefined),
+  getActiveMembership:           jest.fn().mockResolvedValue(null),
+  getDiamondBalance:             jest.fn().mockResolvedValue(0),
+  spendDiamonds:                 jest.fn().mockResolvedValue(0),
+  markPaymentRefunded:           jest.fn().mockResolvedValue(undefined),
+  refundDiamonds:                jest.fn().mockResolvedValue(0),
+  DIAMOND_PACKAGES:              { DIAMONDS_50: { packageKey: 'DIAMONDS_50', diamonds: 50, amountPaise: 49900, currency: 'INR', description: '50 Diamonds' } },
+  PaymentSignatureError:         class extends Error { constructor() { super('Payment signature verification failed'); this.name = 'PaymentSignatureError'; } },
+  PaymentNotFoundError:          class extends Error { constructor() { super('PAYMENT_NOT_FOUND'); this.name = 'PaymentNotFoundError'; } },
+  InvalidDiamondPackageError:    class extends Error { constructor() { super('INVALID_DIAMOND_PACKAGE'); this.name = 'InvalidDiamondPackageError'; } },
+  InsufficientDiamondsError:     class extends Error { constructor() { super('INSUFFICIENT_DIAMONDS'); this.name = 'InsufficientDiamondsError'; } },
+  MembershipAlreadyActiveError:  class extends Error { constructor() { super('MEMBERSHIP_ALREADY_ACTIVE'); this.name = 'MembershipAlreadyActiveError'; } },
 }));
 
 const app = createApp();

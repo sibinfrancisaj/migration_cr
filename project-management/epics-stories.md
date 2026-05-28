@@ -232,149 +232,381 @@
 
 ---
 
-### AUTH-007 · requireRole Middleware ⏳
+### AUTH-007 · requireRole Middleware ✅
 **Story:** As a route that needs a specific user role, I block access if the caller doesn't qualify.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `requireRole(...roles: UserRole[])` — checks `req.user.role`
-- [ ] Returns 403 if role not in allowed list
-- [ ] Composes with `requireAuth` (must come after)
+- [x] `requireRole(...roles: UserRole[])` — factory returns middleware that checks `req.user.role`
+- [x] Returns 401 if `req.user` is not set (requireAuth missing from chain)
+- [x] Returns 403 FORBIDDEN if role not in allowed list
+- [x] Composes with `requireAuth` (must come after in chain)
+- [x] Works with single role or multiple roles (OR semantics)
+- [x] Logs warning with userId + attempted role on 403
 
 **Implementation Subtasks:**
-- [ ] `libs/auth/src/middleware/require-role.middleware.ts`
-- [ ] Tests
+- [x] `libs/auth/src/middleware/require-role.middleware.ts`
+- [x] `libs/auth/src/types/express.d.ts` — Express Request augmentation for req.user / req.admin / req.requestId in libs/auth context
+- [x] Tests — 12 tests covering 401 (no req.user), 403 (wrong role, multi-role list, SUSPENDED), next() calls
+
+**Decision Log:**
+- Added `libs/auth/src/types/express.d.ts` to mirror the gateway's Express augmentation.  TypeScript merges declarations — having it in both places is safe and required so ts-jest can compile auth middleware without TS errors inside the lib's own tsconfig context.
 
 ---
 
-### AUTH-008 · requireAdminRole Middleware ⏳
+### AUTH-008 · requireAdminRole Middleware ✅
 **Story:** As an admin route, I verify the caller has a valid admin JWT with the required AdminRole.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] Reads `Authorization: Bearer <token>`, verifies with `ADMIN_JWT_SECRET`
-- [ ] Attaches `req.admin = { id, role, email }`
-- [ ] Returns 401/403 as appropriate
-- [ ] All admin mutations must write to `audit_logs` (enforced via separate `auditLog()` helper)
+- [x] Reads `Authorization: Bearer <token>`, verifies with `ADMIN_JWT_SECRET` via `verifyAdminToken()`
+- [x] Attaches `req.admin = { id, role, email }` on success
+- [x] Returns 401 if header missing/malformed or token invalid/expired
+- [x] Returns 403 if `roles` list provided and admin's role is not in it
+- [x] No role list → any authenticated admin is allowed
+- [x] All admin mutations must write to `audit_logs` via `auditLog()` helper
+- [x] `auditLog()` re-throws on DB failure so callers can decide whether to abort
 
 **Implementation Subtasks:**
-- [ ] `libs/auth/src/middleware/require-admin-role.middleware.ts`
-- [ ] `libs/auth/src/audit.service.ts` — `auditLog()` helper
-- [ ] Tests
+- [x] `libs/auth/src/middleware/require-admin-role.middleware.ts`
+- [x] `libs/auth/src/audit.service.ts` — `auditLog(input: AuditLogInput): Promise<void>`
+- [x] Tests — 15 tests (requireAdminRole: 13 tests, auditLog: 6 tests)
+- [x] Barrel exports added to `libs/auth/src/index.ts`
+
+**Decision Log:**
+- `auditLog()` awaits the DB write and re-throws on failure.  Fire-and-forget was considered but rejected — silent audit failures would create compliance blind spots.  Controllers that call `auditLog()` should decide whether to abort the operation or log + continue.
+- `Prisma.InputJsonValue` cast required for `before`/`after` JSON fields — Prisma's generated types are overly strict about `Record<string, unknown>` → `InputJsonValue`.  Using an explicit cast keeps the service signature ergonomic without widening to `any`.
 
 ---
 
 ## PHASE 3 — Profile
 
-### PROF-001 · Create Profile ⏳
+### PROF-001 · Create Profile ✅
 **Story:** As a verified phone user, I create my profile with basic details to join the platform.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/profile` — requires `requireAuth`
-- [ ] Body: `{ name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent, bio? }`
-- [ ] Validates: name min 2 chars, DOB ≥ 18 years ago, gender enum, city/country non-empty
-- [ ] Creates `profiles` row; returns `ProfileDto`
-- [ ] 409 if profile already exists for this user
+- [x] `POST /api/v1/profile` — requires `requireAuth`
+- [x] Body: `{ name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent, bio? }`
+- [x] Validates: name ≥ 2 chars, DOB ≥ 18 years ago (z.coerce.date + refine), gender enum, city/country/settlementIntent non-empty
+- [x] Creates `profiles` row; returns `ProfileDto` (empty arrays for photos/answers not yet created)
+- [x] 409 CONFLICT if profile already exists for this user
+- [x] 28 tests passing (10 service + 18 controller)
 
 **Implementation Subtasks:**
-- [ ] Schema + handler in `apps/gateway/src/routes/profile/`
-- [ ] Tests
+- [x] Create `libs/profile/` — new domain library
+- [x] `libs/profile/package.json` + `tsconfig.spec.json` + `jest.config.ts`
+- [x] `libs/profile/src/profile.service.ts` — `createProfileService()` + `ProfileAlreadyExistsError`
+- [x] `libs/profile/src/index.ts` — barrel exports
+- [x] `apps/gateway/src/schemas/profile/create-profile.schema.ts` — Zod schema with `z.coerce.date()` + age guard
+- [x] `apps/gateway/src/constants/profile.constants.ts` — PROFILE_ERRORS
+- [x] `apps/gateway/src/controllers/profile/profile.controller.ts` + STANDARDS.md
+- [x] `apps/gateway/src/routes/profile/index.ts` + STANDARDS.md
+- [x] Update `apps/gateway/src/routes/index.ts` — mount at `/api/v1/profile`
+- [x] Update `apps/gateway/package.json`, `tsconfig.base.json`, `jest.preset.js`, `gateway/jest.config.ts` — wire new lib
+- [x] Tests — 10 unit (profile.service) + 18 integration (profile.controller)
+
+**Decision Log:**
+- New `libs/profile/` library created, following the same structure as `libs/auth/` — business logic stays out of the gateway.
+- `z.coerce.date()` used for `dateOfBirth` — accepts ISO 8601 date strings (`"1990-05-15"`) and full datetimes (`"1990-05-15T00:00:00Z"`), converts to `Date` before the age refine runs.
+- `completionScore` starts at 0 on creation. PROF-005 will implement the recalculation function called after every profile mutation.
+- `ProfileDto.isVerified` is derived inline: `verificationStatus === VerificationStatus.APPROVED`.
+- `bio: null` from Prisma mapped to `undefined` in `ProfileDto` to satisfy the `bio?: string` type.
 
 ---
 
-### PROF-002 · Upsert Real-Life Answer ⏳
+### PROF-002 · Upsert Real-Life Answer ✅
 **Story:** As a user, I answer one of the 12 real-life questions to improve my compatibility matching.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/profile/real-life/:questionKey`
-- [ ] Validates `questionKey` against `RealLifeQuestionKey` enum
-- [ ] Upserts `real_life_answers` row
-- [ ] Triggers completion score recalculation (async via event or direct)
+- [x] `PUT /api/v1/profile/real-life/:questionKey`
+- [x] Validates `questionKey` against `RealLifeQuestionKey` enum — returns 400 VALIDATION_ERROR if invalid
+- [x] Validates `value` as string (1–500 chars) or string array (1–20 items, each ≤200 chars)
+- [x] Upserts `real_life_answers` row (composite key: `userId_questionKey`)
+- [x] Triggers completion score recalculation synchronously (awaited for DB consistency)
+- [x] Returns 404 NOT_FOUND when user has no profile yet
+- [x] Returns 200 `{ success: true, data: RealLifeAnswerDto }` on success
+- [x] 41 new tests added; 245 total tests, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Create `libs/profile/src/real-life-answer.service.ts` — `upsertRealLifeAnswer()`, `ProfileNotFoundError`
+- [x] Create `libs/profile/src/score.service.ts` — `recalculateCompletionScore()` (basics 20 + RL 40 + story 20 + photo 10 + verification 10)
+- [x] Update `libs/profile/src/index.ts` — export new services and types
+
+*Gateway — schema + controller (extends existing route file)*
+- [x] Create `apps/gateway/src/schemas/profile/upsert-real-life-answer.schema.ts` — param + body Zod schemas
+- [x] Add `validateParams()` to `apps/gateway/src/middleware/validate.middleware.ts`
+- [x] Add `upsertRealLifeAnswer` handler to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `PUT /real-life/:questionKey` route to `apps/gateway/src/routes/profile/index.ts`
+- [x] Update `apps/gateway/src/constants/profile.constants.ts` — `NOT_FOUND` error constant
+
+*Tests (41 new tests, all passing)*
+- [x] `libs/profile/src/__tests__/real-life-answer.service.test.ts` — 12 tests (happy path, guard, upsert params, score call, error propagation)
+- [x] `libs/profile/src/__tests__/score.service.test.ts` — 17 tests (all score breakdowns, pro-rating, DB write, no-profile guard, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 12 PROF-002 integration tests (200 string, 200 array, 401, 400 bad param, 400 missing value, 400 empty string, 400 empty array, 400 oversized, 400 bad array item, 400 wrong type, 404, 500)
+
+**Decision Log:**
+- Score recalculation is synchronous (awaited), not fire-and-forget. Ensures DB consistency even at slightly higher latency. Revisit as a BullMQ job if p99 latency becomes an issue during Matching phase.
+- `ProfileNotFoundError` lives in `real-life-answer.service.ts` and is exported from the `libs/profile` barrel, ready to be reused by future services (story prompt, check-ins) that also require a profile to exist.
+- `recalculateCompletionScore()` implemented as part of PROF-002 rather than waiting for PROF-005. PROF-005 now tracks wiring up the score call in PROF-003 and PROF-004.
 
 ---
 
-### PROF-003 · Upsert Story Prompt ⏳
+### PROF-003 · Upsert Story Prompt ✅
 **Story:** As a user, I answer one of the 3 story prompts to give others a personal glimpse.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/profile/story/:promptKey`
-- [ ] Validates `promptKey` against `StoryPromptKey` enum
-- [ ] Upserts `story_prompt_answers` row
+- [x] `PUT /api/v1/profile/story/:promptKey`
+- [x] Validates `promptKey` against `StoryPromptKey` enum — returns 400 VALIDATION_ERROR if invalid
+- [x] Validates `answer` as non-empty string (1–1000 chars)
+- [x] Upserts `story_prompt_answers` row (composite key: `userId_promptKey`)
+- [x] Triggers completion score recalculation synchronously (awaited)
+- [x] Returns 404 NOT_FOUND when user has no profile yet
+- [x] Returns 200 `{ success: true, data: StoryPromptAnswerDto }` on success
+- [x] 24 new tests; 269 total tests, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Create `libs/profile/src/story-prompt.service.ts` — `upsertStoryPrompt()`, reuses `ProfileNotFoundError`
+- [x] Update `libs/profile/src/index.ts` — export `upsertStoryPrompt` and `UpsertStoryPromptInput`
+
+*Gateway — schema + controller + route*
+- [x] Create `apps/gateway/src/schemas/profile/upsert-story-prompt.schema.ts` — param + body Zod schemas
+- [x] Add `upsertStoryPrompt` handler to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `PUT /story/:promptKey` to `apps/gateway/src/routes/profile/index.ts`
+
+*Tests (24 new tests, all passing)*
+- [x] `libs/profile/src/__tests__/story-prompt.service.test.ts` — 13 tests (happy path for all 3 keys, guard, upsert params, score call, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 11 PROF-003 integration tests (200, 200 all 3 keys, 401, 400 bad param, 400 missing, 400 empty, 400 too long, 400 wrong type, 404, 500)
+
+**Decision Log:**
+- `ProfileNotFoundError` imported directly from `./real-life-answer.service.js` within the lib (no circular dependency). Will refactor into a shared `errors.ts` if a third service needs it.
+- Story prompts accept up to 1000 characters (vs 500 for real-life answers) — story prompts are narrative text and benefit from more space.
 
 ---
 
-### PROF-004 · Upload Profile Media ⏳
+### PROF-004 · Upload Profile Media ✅
 **Story:** As a user, I upload up to 6 photos that appear on my profile.
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/profile/media` — multipart/form-data
-- [ ] Accept: jpg, png, webp only; max 5 MB per file
-- [ ] Upload to AWS S3; store `media` row with `s3Key` + `url`
-- [ ] Max 6 photos per user; 409 if limit reached
-- [ ] Requires `libs/storage` to be created (S3 adapter)
+- [x] `POST /api/v1/profile/media` — multipart/form-data, field name `photo`
+- [x] Accept: jpg, png, webp only; max 5 MB per file
+- [x] Upload to AWS S3 (or mock in dev/test); store `media` row with `s3Key` + `url`
+- [x] Max 6 photos per user; 409 if limit reached
+- [x] `libs/storage` created — S3 adapter + mock adapter + factory
+- [x] Recalculates completion score after upload
+
+**Subtasks:**
+- [x] Install `@aws-sdk/client-s3` + `multer` + `@types/multer`
+- [x] Add `@abroad-matrimony/storage` alias to `jest.preset.js`
+- [x] `libs/storage/src/adapters/base.storage.adapter.ts` — `StorageAdapter` interface
+- [x] `libs/storage/src/adapters/s3.storage.adapter.ts` — S3Client, PutObjectCommand, DeleteObjectCommand
+- [x] `libs/storage/src/adapters/mock.storage.adapter.ts` — fake CDN URLs, no network
+- [x] `libs/storage/src/adapters/index.ts` — `getStorageAdapter()` factory
+- [x] `libs/storage/src/index.ts` — barrel
+- [x] `libs/storage/jest.config.ts`
+- [x] `libs/profile/src/media.service.ts` — `uploadProfilePhoto()`, `PhotoLimitExceededError`, `InvalidMimeTypeError`
+- [x] Updated `libs/profile/src/index.ts` barrel
+- [x] Added media error/message constants to `apps/gateway/src/constants/profile.constants.ts`
+- [x] `apps/gateway/src/middleware/upload.middleware.ts` — multer memoryStorage, `uploadSinglePhoto`
+- [x] `profileController.uploadPhoto` handler
+- [x] `POST /media` route wired in `routes/profile/index.ts`
+- [x] `libs/storage/src/__tests__/mock.storage.adapter.test.ts` (6 tests)
+- [x] `libs/storage/src/__tests__/s3.storage.adapter.test.ts` (9 tests)
+- [x] `libs/profile/src/__tests__/media.service.test.ts` (21 tests)
+- [x] Extended controller integration test with 10 PROF-004 tests
+
+**Decision Log:**
+- S3 bucket kept private (no public ACL); CloudFront handles public delivery. URL is CloudFront-based when `AWS_CLOUDFRONT_DOMAIN` is set, otherwise S3 path-style.
+- `getStorageAdapter()` factory returns `MockStorageAdapter` when AWS credentials are absent — no env var required for local dev or CI.
+- `LIMIT_UNEXPECTED_FILE` MulterError (wrong field name) is mapped to 400 `NO_FILE_UPLOADED` — same UX as sending no file at all.
+- S3 key pattern: `photos/<userId>/<randomUUID>.<ext>` — UUID guarantees uniqueness; extension from original filename for content negotiation.
+- Media `order` is set to `existingPhotoCount + 1` on upload (1-based). No reorder endpoint yet — added to future-plans.
 
 ---
 
-### PROF-005 · Completion Score ⏳
+### PROF-005 · Completion Score ✅
 **Story:** As the platform, I compute a profile completion % so users know what to fill in.
 
 **Acceptance Criteria:**
-- [ ] Score components: basics 20% + RL answers 40% + story prompts 20% + photos 10% + verification 10%
-- [ ] Recomputed on every profile/answer/media change
-- [ ] Stored in `profiles.completionScore`
+- [x] Score components: basics 20% + RL answers 40% + story prompts 20% + photos 10% + verification 10%
+- [x] `recalculateCompletionScore()` implemented in `libs/profile/src/score.service.ts` (PROF-002)
+- [x] Called after profile creation (PROF-001) and real-life answer upsert (PROF-002)
+- [x] Called after story prompt upsert (PROF-003)
+- [x] Called after media upload (PROF-004)
+- [x] Stored in `profiles.completionScore`
 
 ---
 
-### PROF-006 · Get Profile ⏳
+### PROF-006 · Get Profile ✅
 **Story:** As a user, I view my own profile or browse another user's profile.
+**Completed:** 2026-05-27
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/profile/me` — full own profile
-- [ ] `GET /api/v1/profiles/:id` — public view (omit sensitive fields)
-- [ ] Returns `ProfileDto`
+- [x] `GET /api/v1/profile/me` — full own profile (auth required)
+- [x] `GET /api/v1/profiles/:id` — profile by ID (auth required, UUID validation on param)
+- [x] Returns `ProfileDto` with nested `realLifeAnswers`, `storyPrompts`, `photos`
+- [x] Returns 404 NOT_FOUND if profile does not exist
+- [x] 29 new tests; 298 total, all passing
+
+**Implementation Subtasks:**
+
+*libs/profile — service layer*
+- [x] Add `getOwnProfile(userId)` to `libs/profile/src/profile.service.ts`
+- [x] Add `getProfileById(profileId)` to `libs/profile/src/profile.service.ts`
+- [x] Add private `toProfileDto()` mapper — maps profile row + related rows → `ProfileDto`; replaces hardcoded empty arrays in `createProfileService`
+- [x] Update `libs/profile/src/index.ts` — export `getOwnProfile`, `getProfileById`
+
+*Gateway — schema + controller + routes*
+- [x] Create `apps/gateway/src/schemas/profile/get-profile.schema.ts` — `z.string().uuid()` param validation
+- [x] Add `getOwnProfile` + `getProfileById` handlers to `apps/gateway/src/controllers/profile/profile.controller.ts`
+- [x] Add `GET /me` to `apps/gateway/src/routes/profile/index.ts`
+- [x] Create `apps/gateway/src/routes/profiles/index.ts` — `GET /:id` (plural router for public browse)
+- [x] Register `profilesRouter` at `/api/v1/profiles` in `apps/gateway/src/routes/index.ts`
+
+*Tests (29 new tests, all passing)*
+- [x] Extended `libs/profile/src/__tests__/profile.service.test.ts` — 18 new tests for `getOwnProfile` + `getProfileById` (DTO shape, nested mapping, not-found, error propagation)
+- [x] Extended `apps/gateway/src/controllers/profile/__tests__/profile.controller.test.ts` — 11 PROF-006 integration tests (200 me, 200 by-id, 401, 400 bad UUID, 404, 500 for both endpoints)
+
+**Decision Log:**
+- `GET /api/v1/profiles/:id` requires auth (you must be logged in to browse profiles) — open public browse could enable scraping; revisit if anonymous preview is needed for SEO.
+- Both endpoints currently return the same `ProfileDto`. A `PublicProfileDto` (omitting `dateOfBirth`, `completionScore`, internal fields) should be introduced when the discovery/browse feature is built in the Matching phase. Noted in `future-plans.md`.
+- Nested data (`realLifeAnswers`, `storyPromptAnswers`, `media`) cannot be fetched via Prisma include on `Profile` because those models relate to `User`, not `Profile`. They are fetched in parallel via `Promise.all` using the shared `userId`.
+- `getProfileById` fetches the profile first (one round trip) then the nested data (one parallel round trip) — two DB calls total. Acceptable for MVP; could collapse to a single query via a User join if needed later.
 
 ---
 
 ## PHASE 4 — Matching
 
-### MATCH-001 · Scoring Algorithm v1 ⏳
+### MATCH-001 · Scoring Algorithm v1 ✅
 **Story:** As the platform, I compute a compatibility score between any two users across 9 dimensions.
 
 **Dimensions & weights (sum = 1.0):**
 - verification 0.15 · settlementIntent 0.20 · realLifeAnswers 0.25 · profileCompleteness 0.10 · checkInRecency 0.05 · ageCompatibility 0.10 · groupMembership 0.05 · languageMatch 0.05 · faithAlignment 0.05
 
 **Acceptance Criteria:**
-- [ ] `computeScore(userA, userB): ScoreBreakdown` — pure function, no side effects
-- [ ] Total score normalised 0–1
-- [ ] Result stored in `match_scores` table
+- [x] `computeMatchScore(userA, userB, now?): ScoreResult` — pure function, no side effects, injectable `now` for tests
+- [x] Total score normalised 0–1 (weighted sum rounded to 2dp)
+- [x] Result stored in `match_scores` table via `computeAndSaveScore()`
+- [x] Pair canonicalization — smaller UUID always stored as `userAId` (idempotent upsert)
+- [x] `getUserScoringData()` exported for MATCH-002 batch worker reuse
+- [x] 77 unit tests, 2 test suites — all green
+
+**Key files:**
+- `libs/matching/src/scoring.service.ts` — pure algorithm, all 9 dimension scorers, helpers (`tokenize`, `jaccardSimilarity`, `answerSimilarity`, `recencyScore`, `ageInYears`)
+- `libs/matching/src/match-score.service.ts` — DB fetch (`getUserScoringData`), orchestration (`computeAndSaveScore`), `UserProfileMissingError`
+- `libs/matching/src/index.ts` — barrel
+- `libs/matching/src/__tests__/scoring.service.test.ts` — 56 pure-function tests
+- `libs/matching/src/__tests__/match-score.service.test.ts` — 21 service/DB tests
+
+**Decision Log:**
+- **Jaccard similarity for text answers** — tokenize on `[\s,\/\-]+`, filter tokens < 2 chars; handles "UK or Canada" vs "Canada or UK" correctly (same token set → 1.0).
+- **`answerSimilarity`** wraps scalar strings in a single-element set before Jaccard so `"Vegetarian" == "Vegetarian"` → 1.0.
+- **Pair canonicalization** — `canonicalizePair(a, b)` returns `[a,b]` sorted lexicographically to guarantee the `@@unique([userAId, userBId, algorithmV])` constraint is never violated by reverse-order calls.
+- **Injectable `now: Date`** — avoids flaky time-sensitive tests; all recency/age calculations pass `now` through.
+- **`getUserScoringData` exported** — MATCH-002 BullMQ batch worker will call it directly to avoid code duplication.
 
 ---
 
-### MATCH-002 · Score Compute Worker ⏳
+### MATCH-002 · Score Compute Worker ✅
 **Story:** As the platform, I batch-compute scores for all user pairs when triggered.
 
 **Acceptance Criteria:**
-- [ ] BullMQ worker processes `SCORE_RECOMPUTE_REQUESTED` events
-- [ ] Computes scores for all active user pairs
-- [ ] Skips pairs computed within last 24h (unless forced)
+- [x] BullMQ Worker processes `score-recompute` jobs on the `MATCHING` queue
+- [x] Fetches all user IDs with profile rows in a single query
+- [x] Bulk-loads recent scores in one query to avoid per-pair stale DB calls
+- [x] Skips pairs computed within last 24 h when `force: false` (default)
+- [x] Recomputes all pairs unconditionally when `force: true`
+- [x] `UserProfileMissingError` increments error count — job does not crash
+- [x] Generic per-pair errors increment error count — job does not crash
+- [x] Publishes `SCORE_RECOMPUTE_COMPLETED` CloudEvent on finish (even with errors)
+- [x] `enqueueScoreRecompute(redisUrl, data?)` helper for triggering the job
+- [x] Fixed `jobId: "score-recompute"` for BullMQ deduplication
+- [x] `processScoreRecompute()` exported separately for unit-test isolation (no BullMQ dep)
+- [x] Progress reporting via `job.updateProgress(pct)` callback
+- [x] Worker started/closed in `apps/gateway/src/server.ts` as part of graceful lifecycle
+- [x] 22 unit tests — all green
+
+**Key files:**
+- `libs/matching/src/score-recompute.worker.ts` — `processScoreRecompute` + `createScoreRecomputeWorker` + `enqueueScoreRecompute`
+- `libs/matching/src/__tests__/score-recompute.worker.test.ts` — 22 tests
+- `apps/gateway/src/server.ts` — worker start/close wired into lifecycle
+- `libs/shared/src/constants/index.ts` — `SCORE_RECOMPUTE_COMPLETED` added
+
+**Decision Log:**
+- **`processScoreRecompute` extracted from BullMQ Worker** — pure async function with optional `onProgress` callback; lets tests cover all business logic without mocking the BullMQ `Worker` class.
+- **Bulk stale-check** — one `prisma.matchScore.findMany` loads all fresh pairs into a `Set<string>`; avoids N*(N-1)/2 individual `findUnique` calls.
+- **Fixed `jobId`** — `"score-recompute"` prevents queuing duplicate pending jobs when admin triggers multiple recomputes rapidly.
+- **`concurrency: 1`** — only one full recompute runs at a time; a second enqueued job waits until the first finishes.
+- **In-process worker** — Worker runs inside the gateway process for Phase 4 MVP. ADR note added: move to dedicated worker app (`apps/worker`) in production.
 
 ---
 
-### MATCH-003 · Cached Score Lookup ⏳
+### MATCH-003 · Cached Score Lookup ✅
 **Story:** As the discovery feed, I retrieve scores quickly from Redis without hitting the DB every time.
 
+**Acceptance Criteria:**
+- [x] `getMatchScore(userAId, userBId)` — cache-aside: Redis first, DB fallback, then populates cache
+- [x] `setMatchScoreCache(score)` — write-through on every `computeAndSaveScore` call
+- [x] `deleteMatchScoreCache(userAId, userBId)` — explicit eviction for profile-update scenarios
+- [x] Canonical pair key (`user-a:user-b` always, never `user-b:user-a`) regardless of argument order
+- [x] `computedAt` re-hydrated from ISO string → `Date` on cache read
+- [x] Redis errors swallowed with `log.warn` — never surface to callers
+- [x] TTL = `CACHE_TTL.MATCH_SCORES_SECONDS` (86 400 s = 24 h)
+- [x] `computeAndSaveScore` auto-populates cache after every DB upsert
+- [x] 18 unit tests — all green
+
+**Key files:**
+- `libs/matching/src/score-cache.service.ts` — `getMatchScore` + `setMatchScoreCache` + `deleteMatchScoreCache`
+- `libs/matching/src/__tests__/score-cache.service.test.ts` — 18 tests
+- `libs/shared/src/constants/index.ts` — `CACHE_KEYS.MATCH_SCORE_PAIR` added
+
+**Decision Log:**
+- **Cache-aside pattern** — `getMatchScore` tries Redis, falls to DB on miss/error, then backfills cache. Keeps DB as source of truth; cache is best-effort.
+- **Write-through on compute** — `computeAndSaveScore` calls `setMatchScoreCache` immediately after the DB upsert so the first discovery-feed read after a recompute is always a cache hit.
+- **Error swallowing** — all Redis errors are caught inside the three cache functions; the DB path is always available as a fallback. This prevents a Redis outage from taking down score lookups.
+
 ---
 
-### MATCH-004 · Discovery Feed ⏳
+### MATCH-004 · Discovery Feed ✅
 **Story:** As a user, I see a paginated list of compatible matches sorted by score.
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/discover?cursor=&limit=20`
-- [ ] Filters: exclude suspended users, exclude already-connected users
-- [ ] Cursor-based pagination
+- [x] `GET /api/v1/discover?cursor=&limit=20`
+- [x] Filters: exclude suspended users, exclude already-connected users
+- [x] Cursor-based pagination (composite keyset: `totalScore DESC, id ASC`)
+- [x] Returns `ApiResponse<DiscoveryItemDto[]>` with `meta.cursor` + `meta.hasMore`
+- [x] Validation: limit 1–100 (400 on bad value), cursor is opaque base64url string
+
+**Key files:**
+- `libs/matching/src/discover.service.ts` — `getDiscoveryFeed()`, `encodeCursor()`, `decodeCursor()`, `computeAge()`
+- `apps/gateway/src/controllers/discover/discover.controller.ts` — `discoverController.getFeed`
+- `apps/gateway/src/routes/discover/index.ts` — GET / with `requireAuth` + `validateQuery`
+- `apps/gateway/src/schemas/discover/discover.schema.ts` — `discoverQuerySchema`
+- `apps/gateway/src/lib/feature-flag-store.ts` — `PrismaFeatureFlagStore`
+- Tests: `libs/matching/src/__tests__/discover.service.test.ts` (24 tests)
+- Tests: `apps/gateway/src/controllers/discover/__tests__/discover.controller.test.ts` (12 tests)
+
+**Decision Log:**
+- Cursor encodes `{ score, id }` as base64url JSON for stable pagination when scores are equal
+- Suspended users + already-connected users filtered in one pass after score lookup
+- `FeatureFlagService` is a lazy singleton in the controller (initialised on first request) so Jest mocks are in place before the constructor runs
 
 ---
 
-### MATCH-005 · Feature Flag for Algorithm v2 ⏳
+### MATCH-005 · Feature Flag for Algorithm v2 ✅
 **Story:** As the platform, I can roll out algorithm v2 to a subset of users without a deploy.
+
+**Key files:**
+- Controller: lazy `FeatureFlagService` singleton checks `FEATURE_FLAGS.MATCHING_ALGORITHM_V2` per request
+- `PrismaFeatureFlagStore` reads from the `feature_flags` table (Phase 4 MVP — uncached)
+- If flag is enabled for `userId`, `algorithmVersion: 'v2'` is passed to `getDiscoveryFeed()`; otherwise `ALGORITHM_VERSION` ('v1') is used
+- 2 integration tests cover flag-off (v1) and flag-on (v2) paths
 
 ---
 
@@ -449,58 +681,550 @@
 
 ---
 
-### MSG-001 · Conversation Endpoints ⏳
-**Story:** As matched users, we have a conversation thread we can fetch.
+### MSG-000 · libs/messaging scaffold + Firebase setup ✅
+**Story:** As the platform, I have a messaging adapter layer and Firebase project wired up so all MSG stories can be built on top of it.
+**Completed:** 2026-05-28
+
+**Architecture Decision (ADR-010):**
+- **Primary message store:** Google Firestore (same Firebase project as FCM push notifications)
+- **Presence / onDisconnect:** Firebase Realtime DB (Firestore has no onDisconnect equivalent)
+- **Media uploads (image + voice):** S3 via presigned URL — Flutter uploads direct to S3, URL stored in Firestore
+- **Writes go through backend API** (validation, Firestore fanout, FCM trigger — all in one Node.js call)
+- **Reads are direct Firestore** from Flutter client (real-time listeners, zero latency, offline sync)
+- **Flags / moderation records:** Postgres via backend API (audit trail, admin queries)
+- **Delivered status:** deferred to F-033 — MVP has sent + read only
+
+**Firestore data structure:**
+```
+conversations/{convId}/
+  messages/{msgId}
+    senderId        string
+    type            'text' | 'image' | 'voice'
+    content         string          // text body OR S3/CloudFront URL
+    durationSeconds number?         // voice only
+    thumbnailUrl    string?         // image only (future)
+    readAt          Timestamp?
+    createdAt       Timestamp
+    flagCount       number          // auto-moderation counter
+    isHidden        boolean         // true when flagCount >= threshold (3)
+
+  typing/{userId}
+    isTyping        boolean
+    updatedAt       Timestamp
+
+users/{userId}/
+  inbox/{convId}
+    conversationId  string
+    otherUserId     string
+    otherUserName   string
+    otherUserPhotoUrl string
+    lastMessage     string          // text preview OR "📷 Photo" OR "🎤 Voice"
+    lastMessageAt   Timestamp
+    lastMessageType string
+    lastSenderId    string
+    unreadCount     number
+
+presence/{userId}                  [Realtime DB — not Firestore]
+  online          boolean
+  lastSeen        Timestamp
+```
+
+**Prisma schema changes required (before MSG-001):**
+- `MessageType` enum: add `IMAGE` (currently TEXT, VOICE, SYSTEM)
+- `Message` model: add `mediaUrl String?`, `durationSeconds Int?`, `flagCount Int @default(0)`, `isHidden Boolean @default(false)`
+- `Flag` model: add `FlagReason` enum (replace free-text `reason` String), add `actionTaken FlagAction?`
+- New enums: `FlagReason`, `FlagAction`
+
+**Acceptance Criteria:**
+- [x] `libs/messaging/src/adapters/base.messaging.adapter.ts` — `MessagingAdapter` interface
+- [x] `libs/messaging/src/adapters/firestore.messaging.adapter.ts` — Firebase Admin SDK implementation
+- [x] `libs/messaging/src/adapters/mock.messaging.adapter.ts` — in-memory for tests (18 tests, all green)
+- [x] `libs/messaging/src/adapters/index.ts` — `getMessagingAdapter()` factory (lazy singleton)
+- [x] Firebase Admin SDK initialised in gateway `server.ts` (shared with FCM); graceful shutdown
+- [x] Prisma schema updated: `IMAGE` in `MessageType`, `mediaUrl/durationSeconds/flagCount/isHidden` on `Message`, `FlagReason`/`FlagAction` enums, `Flag.reason` → `FlagReason`, `Flag.actionTaken FlagAction?`, `Flag.firestoreMsgId String?`
+- [x] `libs/firebase/` singleton lib created (`initFirebase`, `getFirestoreDb`, `getRealtimeDb`, `getFirebaseMessaging`, `shutdownFirebase`, `isFirebaseConfigured`)
+- [x] `libs/messaging/package.json` + `tsconfig.base.json` path aliases + `jest.preset.js` moduleNameMapper
+
+**Key files:**
+- `libs/firebase/src/firebase.ts` — Firebase Admin SDK singleton; `isFirebaseConfigured()` guards startup
+- `libs/firebase/src/index.ts` — barrel
+- `libs/messaging/src/adapters/base.messaging.adapter.ts` — `MessagingAdapter` interface
+- `libs/messaging/src/adapters/firestore.messaging.adapter.ts` — Firestore implementation (batch writes, transactions for flagCount)
+- `libs/messaging/src/adapters/mock.messaging.adapter.ts` — in-memory mock; `_reset()` for test isolation
+- `libs/messaging/src/adapters/index.ts` — `getMessagingAdapter()` / `resetMessagingAdapter()`
+- `libs/messaging/src/types/messaging.types.ts` — `MessageDto`, `ConversationMetaDto`, `SendMessageParams`, `MarkReadParams`, `FlagMessageParams`, `PaginatedMessagesResult`, `MessageType` enum
+- `libs/messaging/src/__tests__/mock.adapter.test.ts` — 18 unit tests
+- `apps/gateway/src/server.ts` — `initFirebase()` + `shutdownFirebase()` in lifecycle
+
+**Decision Log:**
+- `libs/firebase` created as a separate singleton lib (like `libs/cache`) so Firestore, FCM, and Realtime DB can all be served from one initialized app shared between `libs/messaging` and future `libs/notification`
+- `FirestoreMessagingAdapter` uses ISO string timestamps (not Firestore Timestamps) to keep DTOs portable and serializable without Firebase dependencies in the service/controller layers
+- `flagCount` increment uses a Firestore transaction (read-modify-write) to prevent race conditions when multiple users flag simultaneously
+- `getMessagingAdapter()` falls back to `MockMessagingAdapter` when Firebase credentials absent — dev/CI works with zero configuration
+- `firebase-admin` v13.10.0 installed; no peer dep conflicts
 
 ---
 
-### MSG-002 · Send / Fetch Messages ⏳
-**Story:** As a matched user, I send and read messages in a conversation.
+### MSG-001 · Conversation REST endpoints ✅
+**Story:** As matched users, we can GET our conversation metadata and message history via REST (fallback + admin use — real-time is via Firestore direct).
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `GET /api/v1/conversations` — list my conversations ordered by most-recent message
+- [x] `GET /api/v1/conversations/:convId` — get single conversation metadata
+- [x] `GET /api/v1/conversations/:convId/messages?cursor=&limit=` — paginated message history (limit 1–100, default 50; cursor is ISO timestamp)
+- [x] 401 if not authenticated; 403 if caller is not a participant; 404 if conversation does not exist
+- [x] 400 if `convId` is not a valid UUID or `limit` is out of range
+- [x] Returns `ConversationSummaryDto` (with `otherUser: { userId, name, photoUrl }`) + `MessageDto[]`
+
+**Key files:**
+- `libs/messaging/src/conversation.service.ts` — `listConversations()`, `getConversation()`, `getConversationMessages()`, `ConversationNotFoundError`, `ConversationForbiddenError`
+- `libs/messaging/src/types/messaging.types.ts` — `ConversationSummaryDto`, `OtherUserSummary` added
+- `apps/gateway/src/constants/messaging.constants.ts` — `MESSAGING_ERRORS`, `MESSAGING_MESSAGES`, `MESSAGING_LIMITS`
+- `apps/gateway/src/schemas/conversations/messages.schema.ts` — `messagesQuerySchema` + `convIdParamsSchema`
+- `apps/gateway/src/controllers/conversations/conversations.controller.ts` — `list`, `getOne`, `getMessages` handlers
+- `apps/gateway/src/routes/conversations/index.ts` — 3 GET routes with `validateParams` + `validateQuery`
+- `libs/messaging/src/__tests__/conversation.service.test.ts` — 17 unit tests
+- `apps/gateway/src/controllers/conversations/__tests__/conversations.controller.test.ts` — 20 integration tests
+
+**Decision Log:**
+- `unreadCount` is always 0 until MSG-004 (read receipts) — noted in code and STANDARDS.md
+- Authorization uses a lightweight Prisma query (only match IDs) for `getConversationMessages`, not the full participant include (performance)
+- All existing createApp()-based controller tests updated with messaging mock to prevent module resolution issues
+- `convId` validated as UUID at route level via `validateParams(convIdParamsSchema)` — controller receives guaranteed-valid UUIDs
+
+**Key files (to create):**
+- `apps/gateway/src/controllers/messaging/messaging.controller.ts`
+- `apps/gateway/src/routes/messaging/index.ts`
+- `apps/gateway/src/schemas/messaging/`
+- `libs/messaging/src/conversation.service.ts`
 
 ---
 
-### MSG-003 · WebSocket Real-time ⏳
-**Story:** As a user in an active conversation, messages appear in real-time without polling.
+### MSG-002 · Send message (text / image / voice) ✅
+**Story:** As a matched user, I can send a text, image, or voice message to my match.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/conversations/:convId/messages` — send message
+  - Body: `{ type: 'TEXT'|'IMAGE'|'VOICE', content: string, durationSeconds?: number }`
+  - `content` is text body for TEXT; S3/CloudFront URL for IMAGE and VOICE
+  - Backend validates: caller is a participant, conversation is not archived, content not empty
+- [x] `GET /api/v1/conversations/:convId/upload-url?type=image|voice&mimeType=...` — get S3 presigned upload URL
+  - Returns: `{ uploadUrl, fileUrl }` (uploadUrl = S3 presigned PUT, fileUrl = CloudFront delivery URL)
+  - Flutter uploads direct to S3, then sends POST /messages with fileUrl as content
+- [x] On message send, backend writes to Firestore via MessagingAdapter (batch write already in `sendMessage`)
+- [x] If Firebase is configured and recipient is offline (check Realtime DB presence) → send FCM push (best-effort)
+- [x] Postgres `messages` row inserted (audit record — empty content for IMAGE/VOICE, URL in mediaUrl)
+- [x] Returns `MessageDto` with Firestore doc ID
+- [x] 400 if type is SYSTEM/invalid, content is empty, or mimeType not allowed (image: jpeg/png/webp; voice: m4a/webm)
+- [x] 403 if caller is not a participant
+- [x] 404 if conversation does not exist
+- [x] 409 if conversation is archived
+
+**FCM push payload:**
+```json
+{
+  "title": "<senderName>",
+  "body": "Sent you a photo" | "Sent you a voice message" | "<text preview>",
+  "data": { "type": "new_message", "convId": "...", "msgId": "..." }
+}
+```
+
+**Key files:**
+- `libs/messaging/src/send-message.service.ts` — `sendMessage()`, `getUploadUrl()`, `ConversationArchivedError`, `assertParticipantActive()`, `trySendFcmPush()`
+- `libs/storage/src/adapters/base.storage.adapter.ts` — `getPresignedUploadUrl()` added to interface
+- `libs/storage/src/adapters/s3.storage.adapter.ts` — S3 implementation using `@aws-sdk/s3-request-presigner`
+- `libs/storage/src/adapters/mock.storage.adapter.ts` — mock implementation (returns fake URLs)
+- `apps/gateway/src/schemas/conversations/send-message.schema.ts` — `sendMessageBodySchema`, `uploadUrlQuerySchema` (with cross-field superRefine)
+- `apps/gateway/src/constants/messaging.constants.ts` — `CONVERSATION_ARCHIVED` error, `MESSAGE_SENT` + `UPLOAD_URL_GENERATED` messages
+- `apps/gateway/src/controllers/conversations/conversations.controller.ts` — `sendMessage` + `getUploadUrl` handlers added
+- `apps/gateway/src/routes/conversations/index.ts` — `POST /:convId/messages` + `GET /:convId/upload-url`
+- `libs/messaging/src/__tests__/send-message.service.test.ts` — 18 unit tests
+- `apps/gateway/src/controllers/conversations/__tests__/send-message.controller.test.ts` — 26 integration tests
+
+**Decision Log:**
+- **Presigned URL on StorageAdapter**: Added `getPresignedUploadUrl(key, mimeType, expiresInSeconds)` to the interface to keep the adapter pattern consistent — MockStorageAdapter returns deterministic fake URLs for tests
+- **Upload URL expiry**: 15 minutes (900s) — standard balance between usability and security
+- **FCM push is best-effort**: `trySendFcmPush()` wraps all Firebase calls in try/catch and logs a warning on failure — message delivery never blocked by push failures
+- **Postgres audit row uses same Firestore doc ID**: UUID generated by the adapter's `sendMessage()`, returned as `dto.id`, then inserted as `Message.id` — one source of truth, enables cross-database queries
+- **IMAGE/VOICE Postgres storage**: `content = ''`, URL in `mediaUrl` — keeps Postgres row lightweight; Firestore has full message including mediaUrl in `content` field for Flutter display
+- **SYSTEM type blocked at schema level**: `sendMessageBodySchema` rejects `SYSTEM` via `.refine()` — system messages are backend-only
 
 ---
 
-### MSG-004 · Read Receipts ⏳
-**Story:** As a sender, I know when my message has been read.
+### MSG-003 · Real-time (Flutter direct Firestore) ✅
+**Story:** As a Flutter developer, I have clear documentation of all direct Firestore interactions so the app team can implement real-time features without backend changes.
+
+**Note:** This is primarily a Flutter-side implementation. Backend role is minimal (Firebase custom token).
+
+**Acceptance Criteria:**
+- [x] `GET /api/v1/auth/firebase-token` — endpoint mints a Firebase custom auth token for the authenticated user
+  - Uses `firebaseAdmin.auth().createCustomToken(userId)`
+  - Flutter uses this token to call `FirebaseAuth.signInWithCustomToken()`
+  - Token has 1-hour TTL; Flutter refreshes before expiry
+  - 503 when Firebase credentials are absent (dev/CI)
+- [x] Firestore security rules documented in `docs/firestore-security-rules.md`
+  - Flutter read-only access to `conversations/{convId}/messages/{msgId}`
+  - All writes go through REST API (Admin SDK bypasses rules)
+  - `flagCount` and `isHidden` are READ-ONLY from client
+  - Presence via Realtime Database (not Firestore)
+- [x] `getFirebaseAuth()` added to `libs/firebase`
+- [x] `createFirebaseToken()` service in `libs/messaging`
+- [x] `FirebaseNotConfiguredError` → 503 in controller
+
+**Key files:**
+- `libs/firebase/src/firebase.ts` — `getFirebaseAuth()`
+- `libs/messaging/src/firebase-token.service.ts` — `createFirebaseToken()`
+- `apps/gateway/src/controllers/auth/firebase-token.controller.ts`
+- `apps/gateway/src/routes/auth/index.ts` — `GET /firebase-token`
+- `docs/firestore-security-rules.md`
+- `libs/messaging/src/__tests__/firebase-token.service.test.ts` — 4 tests
+- `apps/gateway/src/controllers/auth/__tests__/firebase-token.controller.test.ts` — 4 tests
+
+---
+
+### MSG-004 · Read receipts ✅
+**Story:** As a message sender, I see when my message has been read (single grey tick → double blue tick).
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/conversations/:convId/read` — REST fallback for marking read
+  - Body: `{ lastReadMessageId: UUID }` — marks message as read in Firestore + mirrors to Postgres
+  - 404 if conversation or message not found
+  - 403 if caller is not a participant
+- [x] `markConversationRead()` service verifies participant authorization before marking
+- [x] Postgres `messages.readAt` updated for audit trail
+- [x] `MessageNotFoundForReadError` error class for clear error handling
+
+**Key files:**
+- `libs/messaging/src/read-receipt.service.ts` — `markConversationRead()`
+- `apps/gateway/src/schemas/conversations/read-receipt.schema.ts`
+- `apps/gateway/src/controllers/conversations/conversations.controller.ts` — `markRead` handler added
+- `apps/gateway/src/routes/conversations/index.ts` — `POST /:convId/read`
+- `libs/messaging/src/__tests__/read-receipt.service.test.ts` — 9 tests
+- `apps/gateway/src/controllers/conversations/__tests__/read-receipt.controller.test.ts` — 8 tests
+
+**Decision Log:**
+- REST fallback only (not direct Firestore write from client) — keeps authorization server-side
+- `updateMany` with `readAt: null` condition prevents double-stamping already-read messages
+
+---
+
+### MSG-005 · Message flagging + reporting ✅
+**Story:** As a user, I can flag an inappropriate message and optionally add a report with details. As an admin, I can see all flagged messages, the total flags per user, and take moderation action.
+
+**Architecture note:** Flags are Postgres records (audit trail, admin SQL queries). Firestore `flagCount` is a denormalised counter for client-side auto-hide (no admin query needed on Firestore).
+
+**Acceptance Criteria:**
+
+*Flagging flow (user):*
+- [x] `POST /api/v1/messages/:msgId/flag` — flag a message
+  - Body: `{ reason: FlagReason, description?: string }`
+  - Creates Postgres `flags` record with `targetEntityType: 'message'`
+  - Atomically increments Firestore `flagCount` via `incrementFlagCount()`
+  - Auto-hides message at `flagCount >= 3` (mirrors to Postgres)
+  - 404 if message not found; 409 if already flagged or self-flag
+- [x] `FlagSelfError`, `AlreadyFlaggedError`, `MessageNotFoundError` error classes
+
+*Admin flag management:*
+- [x] `GET /admin/users/:userId/flags?page=1&limit=20` — paginated flag list (MODERATOR+)
+- [x] `PUT /admin/flags/:flagId` — resolve/dismiss a flag (MODERATOR+)
+  - If `actionTaken = MESSAGE_REMOVED`: hides message in Firestore + Postgres
+  - If `status = DISMISSED` + no other open flags: unhides message in Firestore + Postgres
+  - 404 if flag not found
+
+**Key files:**
+- `libs/messaging/src/flag-message.service.ts` — `flagMessage()`, `getAdminFlagSummary()`, `resolveFlag()`
+- `apps/gateway/src/schemas/messages/flag.schema.ts` — `flagMessageBodySchema`
+- `apps/gateway/src/schemas/admin/resolve-flag.schema.ts` — `resolveFlagBodySchema`, `adminFlagsQuerySchema`
+- `apps/gateway/src/controllers/messages/messages.controller.ts` — `flagMessage` handler
+- `apps/gateway/src/controllers/admin/flags.controller.ts` — `listByUser`, `resolve` handlers
+- `apps/gateway/src/routes/messages/index.ts` — `POST /:msgId/flag`
+- `apps/gateway/src/routes/admin/index.ts` — flag moderation routes added
+- `apps/gateway/src/constants/flag.constants.ts`
+- `libs/messaging/src/__tests__/flag-message.service.test.ts` — 20 tests
+- `apps/gateway/src/controllers/messages/__tests__/flag.controller.test.ts` — 11 tests
+- `apps/gateway/src/controllers/admin/__tests__/flags.controller.test.ts` — 11 tests
+
+**Decision Log:**
+- Firestore operations in `flagMessage()` and `resolveFlag()` are non-fatal (catch + log) — message flag record is the source of truth; Firestore update failure doesn't block the response
+- `unhideMessage` only called when ALL remaining open flags for that message are gone (not just the flag being dismissed)
+- `FlagReason` and `FlagAction` duplicated to `libs/shared` enums so gateway schemas have no Prisma dependency
 
 ---
 
 ## PHASE 6 — Notifications
 
-### NOTIF-001 · Brevo Email Adapter ⏳
+### NOTIF-001 · Brevo Email Adapter ✅
 **Story:** As the platform, I send transactional emails via Brevo.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `EmailAdapter` interface with `send(EmailPayload): Promise<void>`
+- [x] `BrevoEmailAdapter` calls `POST https://api.brevo.com/v3/smtp/email` with `api-key` header (Node 22 native `fetch` — no new package)
+- [x] `MockEmailAdapter` logs, no network, tracks `sent[]` for assertions
+- [x] `getEmailAdapter()` factory: returns Brevo when `BREVO_API_KEY` set, Mock otherwise
+- [x] `BREVO_FROM_EMAIL` + `BREVO_FROM_NAME` configurable (already in env schema)
+- [x] Non-2xx response throws descriptive error
+- [x] Tests: happy path, non-2xx error, network error, mock adapter, factory singleton + fallback
+
+**Key files:**
+- `libs/notification/src/adapters/email/base.email.adapter.ts`
+- `libs/notification/src/adapters/email/brevo.email.adapter.ts`
+- `libs/notification/src/adapters/email/mock.email.adapter.ts`
+- `libs/notification/src/adapters/email/index.ts` — `getEmailAdapter()` factory + `_resetEmailAdapter()`
 
 ---
 
-### NOTIF-002 · Twilio SMS Adapter ⏳
+### NOTIF-002 · Twilio SMS Adapter ✅
 **Story:** As the platform, I send SMS notifications via Twilio Programmable SMS.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `SmsAdapter` interface with `send(SmsPayload): Promise<void>`
+- [x] `TwilioSmsAdapter` calls `client.messages.create()` (Programmable Messaging, distinct from Twilio Verify OTP)
+- [x] `MockSmsAdapter` logs, no network, tracks `sent[]`
+- [x] `getSmsAdapter()` factory: returns Twilio when `TWILIO_ACCOUNT_SID` + `TWILIO_AUTH_TOKEN` + `TWILIO_PHONE_NUMBER` set
+- [x] `TWILIO_PHONE_NUMBER` added to env schema + `.env.example`
+- [x] Phone number masked in logs (`slice(0,6)+'****'`)
+- [x] Tests: happy path, Twilio error, mock adapter, factory singleton + fallback
+
+**Key files:**
+- `libs/notification/src/adapters/sms/base.sms.adapter.ts`
+- `libs/notification/src/adapters/sms/twilio.sms.adapter.ts`
+- `libs/notification/src/adapters/sms/mock.sms.adapter.ts`
+- `libs/notification/src/adapters/sms/index.ts` — `getSmsAdapter()` factory + `_resetSmsAdapter()`
+- `libs/config/src/env.ts` — `TWILIO_PHONE_NUMBER` added
 
 ---
 
-### NOTIF-003 · Firebase Push Adapter ⏳
+### NOTIF-003 · Firebase Push Adapter ✅
 **Story:** As the platform, I send push notifications to mobile devices via Firebase Admin SDK.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `PushAdapter` interface with `send(PushPayload): Promise<void>`
+- [x] `FirebasePushAdapter` calls `getFirebaseMessaging().send()` — uses `libs/firebase` singleton
+- [x] `MockPushAdapter` logs, no network, tracks `sent[]`
+- [x] `getPushAdapter()` factory: returns Firebase when `isFirebaseConfigured()`, Mock otherwise
+- [x] FCM token masked in logs
+- [x] Optional `data` field passed through to FCM message; omitted when not provided
+- [x] Tests: mock adapter, factory fallback, Firebase dispatch (mocked FCM), error propagation
+
+**Key files:**
+- `libs/notification/src/adapters/push/base.push.adapter.ts`
+- `libs/notification/src/adapters/push/firebase.push.adapter.ts`
+- `libs/notification/src/adapters/push/mock.push.adapter.ts`
+- `libs/notification/src/adapters/push/index.ts` — `getPushAdapter()` factory + `_resetPushAdapter()`
 
 ---
 
-### NOTIF-004 · Notification Worker ⏳
+### NOTIF-004 · Notification Worker ✅
 **Story:** As the platform, I process notification jobs from the BullMQ queue and dispatch via the right channel.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `processNotification(job)` — pure dispatch function (exported for unit-test isolation)
+- [x] Switches on `NotificationType.EMAIL | SMS | PUSH` → correct adapter
+- [x] `createNotificationWorker(redisUrl)` — BullMQ Worker on `QUEUE_NAMES.NOTIFICATION` queue, `concurrency: 5`
+- [x] `enqueueNotification(redisUrl, job)` — adds job with `attempts: 3`, exponential backoff 5s
+- [x] `removeOnComplete: { count: 1000 }`, `removeOnFail: { count: 500 }` to prevent queue bloat
+- [x] Worker started in `apps/gateway/src/server.ts` lifecycle; closed on shutdown
+- [x] `@abroad-matrimony/notification` path alias added to `jest.preset.js`
+- [x] Tests: EMAIL/SMS/PUSH dispatch, error propagation for each type
+
+**Key files:**
+- `libs/notification/src/notification.worker.ts` — `processNotification`, `createNotificationWorker`, `enqueueNotification`
+- `libs/notification/src/types/notification.types.ts` — `NotificationType`, `EmailPayload`, `SmsPayload`, `PushPayload`, `NotificationJobData`
+- `libs/notification/src/index.ts` — barrel
+- `libs/notification/package.json`
+- `libs/notification/jest.config.ts`
+- `apps/gateway/src/server.ts` — notification worker wired into lifecycle
+- `jest.preset.js` — `@abroad-matrimony/notification` mapper added
 
 ---
 
-## PHASE 7 — Payments
+## PHASE 7 — Payments ✅
+**Completed:** 2026-05-28 | **Tests:** ~786 total, 58 suites
 
-### PAY-001 · Stripe Checkout ⏳
-### PAY-002 · Stripe Webhook ⏳
-### PAY-003 · Razorpay Order ⏳
-### PAY-004 · Razorpay Webhook ⏳
-### PAY-005 · Membership Activation ⏳
-### PAY-006 · Diamond Purchase ⏳
-### PAY-007 · Diamond Spend ⏳
-### PAY-008 · Refund Handling ⏳
+---
+
+### PAY-001 · Stripe Checkout — Founding Member Plan ✅
+**Story:** As a user, I initiate a Stripe Checkout session for the Founding Member subscription so I can pay and unlock full access.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/payment/stripe/checkout` requires `requireAuth`
+- [x] Creates a Stripe Checkout session in `subscription` mode using `STRIPE_FOUNDING_MEMBER_PRICE_ID`
+- [x] Inserts a `PaymentIntent` row with `status: PENDING`, `provider: STRIPE`, `userId`
+- [x] Returns `{ checkoutUrl, sessionId }`
+- [x] Returns 400 if `STRIPE_FOUNDING_MEMBER_PRICE_ID` not configured
+- [x] Returns 500 on Stripe API failure
+- [x] Unit tests + integration tests pass
+
+**Implementation Subtasks:**
+- [x] `libs/payment/package.json` — `@abroad-matrimony/payment` lib with stripe + razorpay deps
+- [x] `libs/payment/src/types/payment.types.ts` — DTOs and types
+- [x] `libs/payment/src/adapters/base.payment.adapter.ts` — `PaymentAdapter` interface
+- [x] `libs/payment/src/adapters/stripe/stripe.payment.adapter.ts` — Stripe impl (API v2024-06-20)
+- [x] `libs/payment/src/adapters/mock/mock.payment.adapter.ts` — deterministic test data
+- [x] `libs/payment/src/adapters/index.ts` — lazy singletons, `getStripeAdapter()`, `_resetPaymentAdapters()`
+- [x] `libs/payment/src/checkout.service.ts` — `createMembershipCheckout()`
+- [x] `apps/gateway/src/schemas/payment/stripe-checkout.schema.ts`
+- [x] `apps/gateway/src/controllers/payment/stripe.controller.ts`
+- [x] `apps/gateway/src/routes/payment/index.ts` — payment router
+- [x] `apps/gateway/src/routes/index.ts` — register `/api/v1/payment`
+- [x] `apps/gateway/src/constants/payment.constants.ts` — `PAYMENT_ERRORS`, `PAYMENT_MESSAGES`
+- [x] `libs/config/src/env.ts` — `PAYMENT_SUCCESS_URL`, `PAYMENT_CANCEL_URL`, `STRIPE_FOUNDING_MEMBER_PRICE_ID`
+- [x] `.env.example` — all new payment env vars documented
+- [x] `root/package.json` — `stripe: ^16.0.0` added
+- [x] `jest.preset.js` — `@abroad-matrimony/payment` moduleNameMapper entry
+- [x] All 14 existing gateway test files — `@abroad-matrimony/payment` mock added
+
+---
+
+### PAY-002 · Stripe Webhook Handler ✅
+**Story:** As the platform, I receive Stripe webhook events and update membership/payment state accordingly.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/payment/stripe/webhook` parses raw body (no `express.json()` wrapper)
+- [x] Verifies `Stripe-Signature` header using `STRIPE_WEBHOOK_SECRET`
+- [x] `checkout.session.completed` → activates membership + publishes `membership.activated` + `payment.succeeded` events
+- [x] `invoice.payment_failed` → marks membership PAST_DUE, publishes `payment.failed`
+- [x] `customer.subscription.deleted` → cancels membership
+- [x] Diamond purchase session → credits diamonds via ledger INSERT
+- [x] Returns `200 { received: true }` on success; 400 on invalid signature; 500 on handler error
+- [x] `express.raw()` mounted before `express.json()` for webhook paths
+
+**Implementation Subtasks:**
+- [x] `apps/gateway/src/app.ts` — `express.raw()` before `express.json()` for both webhook paths
+- [x] `libs/payment/src/webhook.service.ts` — `processStripeWebhook()` dispatcher
+- [x] `libs/payment/src/__tests__/webhook.service.test.ts` — 6 Stripe tests
+
+---
+
+### PAY-003 · Razorpay Order + Payment Capture ✅
+**Story:** As a user in India, I create a Razorpay order and capture payment after the Flutter Razorpay SDK completes the payment.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/payment/razorpay/order` — creates order, inserts `PaymentIntent` PENDING, returns `{ orderId, amount, currency, keyId }`
+- [x] `POST /api/v1/payment/razorpay/capture` — verifies HMAC-SHA256 signature, marks `PaymentIntent` SUCCEEDED
+- [x] `PaymentSignatureError` → 400; `PaymentNotFoundError` → 404
+- [x] Signature = HMAC-SHA256 of `{orderId}|{paymentId}` using Razorpay key secret
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/adapters/razorpay/razorpay.payment.adapter.ts` — Razorpay impl
+- [x] `libs/payment/src/adapters/index.ts` — `getRazorpayAdapter()`
+- [x] `libs/payment/src/checkout.service.ts` — `createRazorpayMembershipOrder()`, `captureRazorpayPayment()`
+- [x] `root/package.json` — `razorpay: ^2.9.2` added
+- [x] `apps/gateway/src/schemas/payment/razorpay-order.schema.ts`
+- [x] `apps/gateway/src/schemas/payment/razorpay-capture.schema.ts`
+- [x] `apps/gateway/src/controllers/payment/razorpay.controller.ts`
+
+---
+
+### PAY-004 · Razorpay Webhook Handler ✅
+**Story:** As the platform, I receive Razorpay webhook events and update payment/membership state.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/payment/razorpay/webhook` verifies `X-Razorpay-Signature` using `RAZORPAY_WEBHOOK_SECRET` (HMAC-SHA256 of raw body)
+- [x] `payment.captured` → activates membership / credits diamonds + publishes events
+- [x] `payment.failed` → marks `PaymentIntent` FAILED + publishes `payment.failed`
+- [x] `express.raw()` middleware handles raw body for signature verification
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/webhook.service.ts` — `processRazorpayWebhook()` dispatcher
+- [x] `libs/payment/src/__tests__/webhook.service.test.ts` — 2 Razorpay tests
+
+---
+
+### PAY-005 · Membership Activation ✅
+**Story:** As a user, my membership is activated after a successful payment so I get Founding Member access.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `GET /api/v1/payment/membership` returns active membership DTO or `null`
+- [x] `activateMembership()` upserts on `providerSubId` (Stripe) or creates new row (Razorpay)
+- [x] Elevates `user.role` to `UserRole.FOUNDING_MEMBER` for `FOUNDING_MEMBER` plan
+- [x] `cancelMembership(providerSubId)` → sets status CANCELLED
+- [x] `markMembershipPastDue(providerSubId)` → sets status PAST_DUE
+- [x] `MembershipDto` returned with id, userId, plan, status, provider, providerSubId, dates
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/membership.service.ts` — `activateMembership()`, `getActiveMembership()`, `cancelMembership()`, `markMembershipPastDue()`
+- [x] `libs/payment/src/__tests__/membership.service.test.ts` — 8 tests
+- [x] `apps/gateway/src/controllers/payment/membership.controller.ts`
+
+---
+
+### PAY-006 · Diamond Credit Purchase + Ledger INSERT ✅
+**Story:** As a Founding Member, I purchase a diamond package via Stripe so I can unlock features.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /api/v1/payment/diamonds/purchase` — creates Stripe Checkout session in `payment` mode
+- [x] Package key validated against `DIAMOND_PACKAGES` — throws `InvalidDiamondPackageError` (400) for unknown keys
+- [x] `creditDiamonds()` appends a `DiamondLedger` row in a `$transaction`; returns `balanceAfter`
+- [x] Throws when `delta <= 0`
+
+**DIAMOND_PACKAGES:**
+- `DIAMONDS_50`: 50 diamonds, ₹499 (49900 paise)
+- `DIAMONDS_100`: 100 diamonds, ₹899 (89900 paise)
+- `DIAMONDS_200`: 200 diamonds, ₹1499 (149900 paise)
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/diamond.service.ts` — `DIAMOND_PACKAGES`, `getDiamondBalance()`, `creditDiamonds()`
+- [x] `libs/payment/src/__tests__/diamond.service.test.ts` — 10 tests
+- [x] `libs/payment/src/checkout.service.ts` — `createDiamondCheckout()`
+- [x] `apps/gateway/src/schemas/payment/diamond-purchase.schema.ts`
+- [x] `apps/gateway/src/controllers/payment/diamond.controller.ts`
+
+---
+
+### PAY-007 · Diamond Spend + Balance Check ✅
+**Story:** As a user, I spend diamonds to unlock features and see my current balance.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `GET /api/v1/payment/diamonds/balance` — returns `{ balance: number }`
+- [x] `POST /api/v1/payment/diamonds/spend` — spends diamonds, returns new balance
+- [x] `InsufficientDiamondsError` → 402 Payment Required
+- [x] `spendDiamonds()` appends negative `DiamondLedger` row in `$transaction`; throws if balance insufficient
+- [x] Throws when `amount <= 0`
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/diamond.service.ts` — `spendDiamonds()`
+- [x] `apps/gateway/src/schemas/payment/diamond-spend.schema.ts` — `DiamondReason` enum validation
+
+---
+
+### PAY-008 · Refund Handling + Ledger Reversal ✅
+**Story:** As an admin, I can refund a payment and reverse diamond credits when needed.
+**Completed:** 2026-05-28
+
+**Acceptance Criteria:**
+- [x] `POST /admin/payment/refund` — requires `AdminRole.SUPERADMIN`
+- [x] `markPaymentRefunded(providerPaymentId)` — sets `PaymentIntent` status to REFUNDED
+- [x] `refundDiamonds(userId, amount)` — credits back diamonds with `DiamondReason.REFUND`
+- [x] `PaymentNotFoundError` → 404
+- [x] Admin route wired with `auditLog()` middleware
+
+**Implementation Subtasks:**
+- [x] `libs/payment/src/checkout.service.ts` — `markPaymentRefunded()`
+- [x] `libs/payment/src/diamond.service.ts` — `refundDiamonds()`
+- [x] `apps/gateway/src/schemas/payment/admin-refund.schema.ts`
+- [x] `apps/gateway/src/controllers/admin/payment-admin.controller.ts`
+- [x] `apps/gateway/src/routes/admin/index.ts` — `POST /admin/payment/refund`
+
+**Decision Log:**
+- **ADR-011 added:** Raw body middleware mounted before `express.json()` for Stripe/Razorpay webhook paths to preserve signature-verifiable body. See `apps/gateway/src/app.ts`.
+- **Dynamic require for Stripe/Razorpay adapters:** Adapter factories use `require()` inside functions (not top-level `import`) so Jest tests never load the real SDKs. Packages added to root `package.json` — user must run `npm install --legacy-peer-deps`.
+- **Append-only diamond ledger** (ADR-006 confirmed): No `UPDATE` to balance column; all writes are INSERTs using `$transaction`. Current balance = latest `balanceAfter` row.
+
+---
 
 ---
 

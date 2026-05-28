@@ -1,0 +1,14 @@
+{
+  "name": "@abroad-matrimony/notification",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/firebase": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "bullmq": "^5.0.0",
+    "twilio": "^6.0.2"
+  }
+}

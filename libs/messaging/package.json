@@ -1,0 +1,16 @@
+{
+  "name": "@abroad-matrimony/messaging",
+  "version": "1.0.0",
+  "description": "Messaging adapter — Firestore (prod) / Mock (dev/test). Conversations, messages, flag counts.",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/firebase": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "@abroad-matrimony/storage": "*",
+    "firebase-admin": "*"
+  }
+}

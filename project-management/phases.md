@@ -26,9 +26,9 @@
 
 ---
 
-## Phase 2 — Auth 🔄
+## Phase 2 — Auth ✅
 **Goal:** Full phone OTP auth flow, JWT tokens, device tracking, RBAC.
-**Sprint:** 2 | **Status:** In Progress
+**Sprint:** 2 | **Status:** Complete (commit pending)
 
 | Task ID   | Description                                      | Status     |
 |-----------|--------------------------------------------------|------------|
@@ -40,43 +40,43 @@
 | QUAL-001  | Jest coverage config (Istanbul lcov/html)        | ✅         |
 | QUAL-002  | SonarCloud integration (CI scan + properties)    | ✅         |
 | AUTH-006  | `POST /admin/auth/login` (bcrypt + TOTP)         | ✅         |
-| AUTH-007  | `requireRole()` user RBAC middleware             | ⏳         |
-| AUTH-008  | `requireAdminRole()` admin RBAC middleware       | ⏳         |
+| AUTH-007  | `requireRole()` user RBAC middleware             | ✅         |
+| AUTH-008  | `requireAdminRole()` admin RBAC middleware       | ✅         |
 
 ---
 
-## Phase 3 — Profile ⏳
+## Phase 3 — Profile ✅
 **Goal:** User profile creation, real-life answers, story prompts, photo upload.
-**Sprint:** 3 | **Status:** Backlog
+**Sprint:** 3 | **Status:** Complete
 
 | Task ID   | Description                                      | Status |
 |-----------|--------------------------------------------------|--------|
-| PROF-001  | `POST /api/v1/profile` — create profile          | ⏳     |
-| PROF-002  | `PUT /api/v1/profile/real-life/:questionKey`     | ⏳     |
-| PROF-003  | `PUT /api/v1/profile/story/:promptKey`           | ⏳     |
-| PROF-004  | `POST /api/v1/profile/media` — S3 photo upload   | ⏳     |
-| PROF-005  | Profile completion score calculation             | ⏳     |
-| PROF-006  | `GET /api/v1/profile/me` + `GET /profiles/:id`  | ⏳     |
+| PROF-001  | `POST /api/v1/profile` — create profile          | ✅     |
+| PROF-002  | `PUT /api/v1/profile/real-life/:questionKey`     | ✅     |
+| PROF-003  | `PUT /api/v1/profile/story/:promptKey`           | ✅     |
+| PROF-004  | `POST /api/v1/profile/media` — S3 photo upload   | ✅     |
+| PROF-005  | Profile completion score calculation             | ✅     |
+| PROF-006  | `GET /api/v1/profile/me` + `GET /profiles/:id`  | ✅     |
 
 ---
 
-## Phase 4 — Matching ⏳
+## Phase 4 — Matching ✅
 **Goal:** Weighted compatibility scoring, BullMQ batch compute, discovery feed.
-**Sprint:** 4 | **Status:** Backlog
+**Sprint:** 4 | **Status:** Complete — 497 tests, 35 suites all green
 
 | Task ID    | Description                                     | Status |
 |------------|-------------------------------------------------|--------|
-| MATCH-001  | Scoring algorithm v1 — 9 dimensions             | ⏳     |
-| MATCH-002  | BullMQ worker — batch-compute all user pairs    | ⏳     |
-| MATCH-003  | Redis-cached score lookup                       | ⏳     |
-| MATCH-004  | `GET /api/v1/discover` — paginated feed         | ⏳     |
-| MATCH-005  | Feature-flag gate for algorithm v2              | ⏳     |
+| MATCH-001  | Scoring algorithm v1 — 9 dimensions             | ✅     |
+| MATCH-002  | BullMQ worker — batch-compute all user pairs    | ✅     |
+| MATCH-003  | Redis-cached score lookup                       | ✅     |
+| MATCH-004  | `GET /api/v1/discover` — paginated feed         | ✅     |
+| MATCH-005  | Feature-flag gate for algorithm v2              | ✅     |
 
 ---
 
-## Phase 5 — Groups + Connections + Messaging ⏳
+## Phase 5 — Groups + Connections + Messaging 🔄
 **Goal:** Regional groups, weekly intro drops, connection requests, real-time messaging.
-**Sprint:** 5 | **Status:** Backlog
+**Sprint:** 5 | **Status:** Messaging complete — 664 tests, 47 suites all green
 
 | Task ID   | Description                                      | Status |
 |-----------|--------------------------------------------------|--------|
@@ -89,40 +89,52 @@
 | VER-001   | Submit verification (ID doc + selfie)           | ⏳     |
 | VER-002   | Admin review queue                              | ⏳     |
 | VER-003   | Approve / reject + status update                | ⏳     |
-| MSG-001   | Conversation model + REST endpoints             | ⏳     |
-| MSG-002   | Send / fetch messages                           | ⏳     |
-| MSG-003   | WebSocket real-time delivery                    | ⏳     |
-| MSG-004   | Read receipts                                   | ⏳     |
+| MSG-000   | `libs/messaging` scaffold + Firebase Admin SDK   | ✅     |
+| MSG-001   | Conversation REST endpoints (GET list + history) | ✅     |
+| MSG-002   | Send message (text / image / voice)             | ✅     |
+| MSG-003   | `GET /api/v1/auth/firebase-token` + Firestore rules doc | ✅ |
+| MSG-004   | `POST /api/v1/conversations/:convId/read` — read receipts | ✅ |
+| MSG-005   | `POST /api/v1/messages/:msgId/flag` + admin flag moderation | ✅ |
 
 ---
 
-## Phase 6 — Notifications ⏳
+## Phase 6 — Notifications ✅
 **Goal:** Multi-channel notification delivery via BullMQ processor.
-**Sprint:** 6 | **Status:** Backlog
+**Sprint:** 6 | **Status:** Complete — 696 tests, 51 suites all green
 
 | Task ID    | Description                                     | Status |
 |------------|-------------------------------------------------|--------|
-| NOTIF-001  | Brevo email adapter                             | ⏳     |
-| NOTIF-002  | Twilio SMS adapter                              | ⏳     |
-| NOTIF-003  | Firebase push adapter                           | ⏳     |
-| NOTIF-004  | BullMQ notification processor worker           | ⏳     |
+| NOTIF-001  | Brevo email adapter                             | ✅     |
+| NOTIF-002  | Twilio SMS adapter                              | ✅     |
+| NOTIF-003  | Firebase push adapter                           | ✅     |
+| NOTIF-004  | BullMQ notification processor worker           | ✅     |
 
 ---
 
-## Phase 7 — Payments ⏳
+## Phase 6b — Trusted Device Bypass ✅
+**Goal:** Skip OTP when device is trusted + within TTL window.
+**Sprint:** 6b | **Status:** Complete — 716 tests, 53 suites all green
+
+| Task ID  | Description                                              | Status |
+|----------|----------------------------------------------------------|--------|
+| AUTH-TD  | `POST /api/v1/auth/trusted-device` — bypass OTP if trusted | ✅   |
+
+---
+
+## Phase 7 — Payments ✅
 **Goal:** Stripe + Razorpay, membership activation, diamond ledger.
-**Sprint:** 7 | **Status:** Backlog
+**Sprint:** 7 | **Status:** Complete — 786 tests, 58 suites all green
 
 | Task ID  | Description                                       | Status |
 |----------|---------------------------------------------------|--------|
-| PAY-001  | Stripe checkout — Founding Member plan            | ⏳     |
-| PAY-002  | Stripe webhook handler                            | ⏳     |
-| PAY-003  | Razorpay order + payment capture                  | ⏳     |
-| PAY-004  | Razorpay webhook handler                          | ⏳     |
-| PAY-005  | Membership activation on payment success          | ⏳     |
-| PAY-006  | Diamond credit purchase + ledger INSERT           | ⏳     |
-| PAY-007  | Diamond spend + balance check                     | ⏳     |
-| PAY-008  | Refund handling + ledger reversal entry           | ⏳     |
+| PAY-001  | Stripe checkout — Founding Member plan            | ✅     |
+| PAY-002  | Stripe webhook handler                            | ✅     |
+| PAY-003  | Razorpay order + payment capture                  | ✅     |
+| PAY-004  | Razorpay webhook handler                          | ✅     |
+| PAY-005  | Membership activation on payment success          | ✅     |
+| PAY-006  | Diamond credit purchase + ledger INSERT           | ✅     |
+| PAY-007  | Diamond spend + balance check                     | ✅     |
+| PAY-008  | Refund handling + ledger reversal entry           | ✅     |
 
 ---
 

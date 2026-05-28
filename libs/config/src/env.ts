@@ -30,6 +30,8 @@ const envSchema = z.object({
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_VERIFY_SERVICE_SID: z.string().optional(),
+  /** Twilio Programmable Messaging — sender phone number (E.164, e.g. +1234567890) */
+  TWILIO_PHONE_NUMBER: z.string().optional(),
 
   // Brevo
   BREVO_API_KEY: z.string().optional(),
@@ -58,6 +60,10 @@ const envSchema = z.object({
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
+  // Payment redirect URLs (deep-link or web fallback used in Stripe Checkout)
+  PAYMENT_SUCCESS_URL: z.string().url().default('https://app.abroadmatrimony.com/payment/success'),
+  PAYMENT_CANCEL_URL: z.string().url().default('https://app.abroadmatrimony.com/payment/cancel'),
+
   // Sentry
   SENTRY_DSN: z.string().url().optional().or(z.literal('')),
 
@@ -73,6 +79,10 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   OTP_RATE_LIMIT_MAX: z.coerce.number().default(3),
   OTP_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(3600000),
+
+  // Trusted device bypass
+  /** How many days a device stays trusted after a successful OTP. Default: 90 days. */
+  TRUSTED_DEVICE_TTL_DAYS: z.coerce.number().int().min(1).default(90),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

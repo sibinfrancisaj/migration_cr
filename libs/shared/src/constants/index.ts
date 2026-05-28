@@ -9,11 +9,13 @@ export const QUEUE_NAMES = {
 export const CACHE_KEYS = {
   FEATURE_FLAG: (key: string) => `am:ff:${key}`,
   USER_PROFILE: (userId: string) => `am:profile:${userId}`,
-  MATCH_SCORES: (userId: string) => `am:scores:${userId}`,
+  MATCH_SCORES:     (userId: string)               => `am:scores:${userId}`,
+  MATCH_SCORE_PAIR: (userAId: string, userBId: string) => `am:score:${userAId}:${userBId}`,
   REFRESH_TOKEN: (tokenId: string) => `am:rt:${tokenId}`,
   OTP_ATTEMPTS: (phone: string) => `am:otp:attempts:${phone}`,
   ADMIN_LOGIN_ATTEMPTS: (email: string) => `am:admin:login:${email}`,
   RATE_LIMIT: (key: string) => `am:rl:${key}`,
+  TRUSTED_DEVICE_ATTEMPTS: (phone: string) => `am:td:rl:${phone}`,
 } as const;
 
 export const CACHE_TTL = {
@@ -41,7 +43,8 @@ export const CLOUD_EVENT_TYPES = {
   PAYMENT_FAILED: 'com.abroadmatrimony.payment.failed',
   MEMBERSHIP_ACTIVATED: 'com.abroadmatrimony.membership.activated',
   MEMBERSHIP_EXPIRED: 'com.abroadmatrimony.membership.expired',
-  SCORE_RECOMPUTE_REQUESTED: 'com.abroadmatrimony.matching.recompute',
+  SCORE_RECOMPUTE_REQUESTED:  'com.abroadmatrimony.matching.recompute',
+  SCORE_RECOMPUTE_COMPLETED:  'com.abroadmatrimony.matching.recompute.completed',
 } as const;
 
 export const CLOUD_EVENT_SOURCE = 'abroad-matrimony-api';
@@ -58,3 +61,7 @@ export const MAX_PROFILE_PHOTOS = 6;
 export const MIN_OTP_DIGITS = 6;
 export const MAX_DEVICES_PER_USER = 5;
 export const SCORE_RECOMPUTE_STALE_HOURS = 24;
+
+export const FEATURE_FLAGS = {
+  MATCHING_ALGORITHM_V2: 'matching_algorithm_v2',
+} as const;
