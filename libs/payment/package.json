@@ -1,0 +1,16 @@
+{
+  "name": "@abroad-matrimony/payment",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/cache": "*",
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/event-bus": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "razorpay": "^2.9.2",
+    "stripe": "^16.0.0"
+  }
+}

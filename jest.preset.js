@@ -18,6 +18,10 @@ module.exports = {
     '^@abroad-matrimony/matching$':     '<rootDir>/../../libs/matching/src/index.ts',
     '^@abroad-matrimony/connections$':  '<rootDir>/../../libs/connections/src/index.ts',
     '^@abroad-matrimony/groups$':       '<rootDir>/../../libs/groups/src/index.ts',
+    '^@abroad-matrimony/firebase$':      '<rootDir>/../../libs/firebase/src/index.ts',
+    '^@abroad-matrimony/messaging$':    '<rootDir>/../../libs/messaging/src/index.ts',
+    '^@abroad-matrimony/notification$': '<rootDir>/../../libs/notification/src/index.ts',
+    '^@abroad-matrimony/payment$':      '<rootDir>/../../libs/payment/src/index.ts',
   },
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
 };
