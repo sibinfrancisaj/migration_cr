@@ -53,6 +53,31 @@ Add it to **Section 7** of this file AND to `project-management/architecture.md`
 ### Starter prompt maintenance
 Keep Section 11's starter prompt updated to always reflect the *next* task and *current* branch state.
 
+### API documentation maintenance
+These rules apply every time an endpoint is added, changed, or removed.
+
+**Files to keep in sync:**
+- `docs/api/openapi.yaml` — OpenAPI 3.1.0 spec (source of truth for the API contract)
+- `docs/api/postman-collection.json` — Postman Collection v2.1
+
+**Triggers — update BOTH files when:**
+- A new route is added to any `apps/gateway/src/routes/` file
+- An existing route path, method, or auth requirement changes
+- A request body field is added, renamed, or removed
+- A response body field is added, renamed, or removed
+- A new enum value is added to `libs/shared/src/enums/index.ts` or any domain type
+- A new error code or HTTP status is introduced for an existing endpoint
+- A webhook signature header requirement changes
+
+**How:**
+1. Add the new `path` block to `openapi.yaml` under the correct tag
+2. Add the new request item to the matching folder in `postman-collection.json`
+3. Validate: `npx @redocly/cli lint docs/api/openapi.yaml`
+4. Commit both files in the same commit as the implementation
+
+**Rule:** A task is not Done until `openapi.yaml` and `postman-collection.json` are updated and valid.
+Full maintenance guide: `docs/api/STANDARDS.md`.
+
 ---
 
 ## 1. Project Overview

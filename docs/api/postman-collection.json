@@ -1,0 +1,906 @@
+{
+  "info": {
+    "name": "Abroad Matrimony API",
+    "description": "Complete Postman collection for the Abroad Matrimony backend.\n\nOrganized by domain/feature group. Use the **Abroad Matrimony — Local** environment for local development.\n\n## How to use\n1. Import this file into Postman.\n2. Import `postman-environment.json` and select it as the active environment.\n3. Run **Admin — Auth / Admin Login** first to populate `{{admin_token}}`.\n4. Run **Auth / Request OTP** → **Auth / Verify OTP** to populate `{{access_token}}`.\n\n## Maintenance\nSee `docs/api/STANDARDS.md` for rules on keeping this file in sync with the codebase.",
+    "_postman_id": "abroad-matrimony-api-v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",      "value": "http://localhost:3000",  "type": "string" },
+    { "key": "admin_url",     "value": "http://localhost:3000",  "type": "string" },
+    { "key": "access_token",  "value": "",                       "type": "string", "description": "User JWT access token — populated after OTP verify" },
+    { "key": "admin_token",   "value": "",                       "type": "string", "description": "Admin JWT access token — populated after admin login" },
+    { "key": "conv_id",       "value": "REPLACE_WITH_CONV_ID",   "type": "string" },
+    { "key": "msg_id",        "value": "REPLACE_WITH_MSG_ID",    "type": "string" },
+    { "key": "user_id",       "value": "REPLACE_WITH_USER_ID",   "type": "string" },
+    { "key": "flag_id",       "value": "REPLACE_WITH_FLAG_ID",   "type": "string" },
+    { "key": "stripe_webhook_secret", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "description": "API health check — no auth required.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "health"]
+            },
+            "description": "Returns 200 with service uptime and version. Use this to verify the gateway is reachable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "description": "Phone OTP authentication, JWT token management, Firebase token, trusted device bypass.",
+      "item": [
+        {
+          "name": "Request OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/request",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "request"]
+            },
+            "description": "Sends a 6-digit OTP to the provided phone number via Twilio Verify. Rate-limited to 5 requests per phone per 15 minutes.\n\nPhone must be in E.164 format (e.g. +919876543210)."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "  pm.collectionVariables.set('access_token', json.data.accessToken);",
+                  "  console.log('access_token saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"code\": \"123456\",\n  \"fingerprint\": \"device-uuid-v4\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/otp/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "otp", "verify"]
+            },
+            "description": "Verifies the 6-digit OTP. Creates the user row on first login (upsert). Issues an access token (15 min) + refresh token (30 days).\n\nThe test script automatically saves the access token as `{{access_token}}`.\n\n`fingerprint` must be a UUID v4 that uniquely identifies the device (max 5 devices per user)."
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "  pm.collectionVariables.set('access_token', json.data.accessToken);",
+                  "  console.log('access_token refreshed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"PASTE_REFRESH_TOKEN_HERE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/token/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "token", "refresh"]
+            },
+            "description": "Rotates the refresh token. Old token is revoked immediately. Reuse of a consumed token triggers all-device logout (security)."
+          },
+          "response": []
+        },
+        {
+          "name": "Trusted Device Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "  pm.collectionVariables.set('access_token', json.data.accessToken);",
+                  "  console.log('access_token saved (trusted device)');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"fingerprint\": \"device-uuid-v4\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/trusted-device",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "trusted-device"]
+            },
+            "description": "Skips OTP for devices that have successfully completed OTP within the trust window (default 90 days). Returns 401 if device is not trusted — Flutter should fall back to the full OTP flow. Rate-limited to 10 attempts per phone per hour."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "Revokes the refresh token for the current device session. Access token remains valid until its 15-minute TTL expires."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout All Devices",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout/all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout", "all"]
+            },
+            "description": "Revokes all refresh tokens for the authenticated user across all devices."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Firebase Token",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/firebase-token",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "firebase-token"]
+            },
+            "description": "Returns a short-lived Firebase custom auth token. Flutter uses this to sign in to Firebase SDK before subscribing to Firestore real-time listeners. Token is scoped to the authenticated user's UID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "description": "User profile creation and management — real-life answers, story prompts, photo upload.",
+      "item": [
+        {
+          "name": "Create Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Arjun Sharma\",\n  \"dateOfBirth\": \"1992-05-15\",\n  \"gender\": \"MALE\",\n  \"currentCity\": \"London\",\n  \"currentCountry\": \"GB\",\n  \"settlementIntent\": \"OPEN_TO_BOTH\",\n  \"bio\": \"Software engineer who loves hiking and cooking.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile"]
+            },
+            "description": "Creates the user's profile. One profile per user (subsequent calls return 409). `gender` must be one of: MALE, FEMALE, NON_BINARY, PREFER_NOT_TO_SAY. `settlementIntent`: RETURN_HOME, STAY_ABROAD, OPEN_TO_BOTH."
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Profile",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile", "me"]
+            },
+            "description": "Returns the full profile for the authenticated user including real-life answers, story prompts, photos, and completion score."
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert Real-Life Answer",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"I want 2-3 children\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/real-life/:questionKey",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile", "real-life", ":questionKey"],
+              "variable": [
+                {
+                  "key": "questionKey",
+                  "value": "CHILDREN",
+                  "description": "One of: CHILDREN, FAITH, DIET, MONEY, CAREER, LOCATION, FAMILY, LIFESTYLE, PARENTING, PETS, POLITICS, LANGUAGES"
+                }
+              ]
+            },
+            "description": "Creates or updates a single real-life answer. `questionKey` values: CHILDREN, FAITH, DIET, MONEY, CAREER, LOCATION, FAMILY, LIFESTYLE, PARENTING, PETS, POLITICS, LANGUAGES. Answer is free text (max 500 chars)."
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert Story Prompt",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"I once got lost in Tokyo for 6 hours with no data — best adventure of my life.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/story/:promptKey",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile", "story", ":promptKey"],
+              "variable": [
+                {
+                  "key": "promptKey",
+                  "value": "MOST_SPONTANEOUS",
+                  "description": "One of: MOST_SPONTANEOUS, DINNER_GUEST, PERFECT_SUNDAY"
+                }
+              ]
+            },
+            "description": "Creates or updates a story prompt answer. `promptKey` values: MOST_SPONTANEOUS, DINNER_GUEST, PERFECT_SUNDAY. Answer is free text (max 1000 chars)."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Profile Photo",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": "",
+                  "description": "JPEG, PNG, or WebP — max 5 MB"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/media",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile", "media"]
+            },
+            "description": "Uploads a profile photo to S3 (private bucket, served via CloudFront). Max 6 photos per user. Accepted types: JPEG, PNG, WebP. Max size: 5 MB. Returns the CDN URL of the uploaded photo."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile by ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/profiles/:id",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profiles", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{user_id}}",
+                  "description": "UUID of the user whose profile to fetch"
+                }
+              ]
+            },
+            "description": "Returns the public profile view for any user ID. Includes completion score, real-life answers, story prompts, and photos. Returns 404 if the profile does not exist."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Discover",
+      "description": "Paginated discovery feed — sorted by compatibility score.",
+      "item": [
+        {
+          "name": "Get Discovery Feed",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/discover?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "discover"],
+              "query": [
+                { "key": "limit",  "value": "20",   "description": "1–100, default 20" },
+                { "key": "cursor", "value": "",      "description": "Opaque cursor from previous page's meta.nextCursor — omit for first page", "disabled": true }
+              ]
+            },
+            "description": "Returns a cursor-paginated list of compatible users sorted by compatibility score descending. Users that have been previously seen are excluded. Respects the `ALGO_V2` feature flag (if enabled, uses the v2 scoring algorithm)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Conversations",
+      "description": "Messaging conversations and message history. Messages are stored in Firebase Firestore for real-time delivery; these REST endpoints provide fallback access and mutation.",
+      "item": [
+        {
+          "name": "List Conversations",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations"]
+            },
+            "description": "Returns all conversations for the authenticated user, sorted by most recent message. Includes the other participant's name + avatar and the last message preview."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conv_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "{{conv_id}}"]
+            },
+            "description": "Returns details for a single conversation. Returns 403 if the authenticated user is not a participant."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conv_id}}/messages?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "{{conv_id}}", "messages"],
+              "query": [
+                { "key": "limit",  "value": "50", "description": "1–100, default 50" },
+                { "key": "cursor", "value": "",    "description": "Opaque cursor for older messages — omit for most recent page", "disabled": true }
+              ]
+            },
+            "description": "Returns cursor-paginated message history for a conversation, newest-first. Pass `cursor` from `meta.nextCursor` to page backwards through history."
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TEXT\",\n  \"content\": \"Hey, how are you?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conv_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "{{conv_id}}", "messages"]
+            },
+            "description": "Sends a message to the conversation. `type` values: TEXT, IMAGE, VOICE, SYSTEM.\n\n- TEXT: `content` required.\n- IMAGE: `content` is the S3/CloudFront URL (obtain from upload-url endpoint).\n- VOICE: `content` is the S3/CloudFront URL, `durationSeconds` required (1–600).\n\nIf the recipient is offline, an FCM push notification is sent automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Upload URL (for media messages)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conv_id}}/upload-url?contentType=image%2Fjpeg",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "{{conv_id}}", "upload-url"],
+              "query": [
+                { "key": "contentType", "value": "image/jpeg", "description": "MIME type: image/jpeg, image/png, image/webp, audio/mp4, audio/mpeg" }
+              ]
+            },
+            "description": "Returns a short-lived S3 pre-signed upload URL. Flutter uploads the media file directly to S3 using this URL, then passes the resulting CDN URL as the `content` field in Send Message."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Conversation Read",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/{{conv_id}}/read",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "{{conv_id}}", "read"]
+            },
+            "description": "REST fallback for read receipts. Marks all messages in the conversation as read for the authenticated user. Firestore real-time listeners on Flutter handle this natively; this endpoint is for offline / background sync."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "description": "Message-level actions (flagging, moderation).",
+      "item": [
+        {
+          "name": "Flag Message",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"HARASSMENT\",\n  \"description\": \"Repeated unsolicited messages after I asked them to stop.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/messages/{{msg_id}}/flag",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "messages", "{{msg_id}}", "flag"]
+            },
+            "description": "Reports a message for moderation. `reason` values: SPAM, HARASSMENT, INAPPROPRIATE_CONTENT, FAKE_PROFILE, SCAM, OTHER. `description` is optional free text (max 500 chars). A message is automatically hidden in Firestore when it reaches 3 flags."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payment — Stripe",
+      "description": "Stripe Checkout sessions and webhook handler.",
+      "item": [
+        {
+          "name": "Create Stripe Checkout (Membership)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"FOUNDING_MEMBER\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/stripe/checkout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "stripe", "checkout"]
+            },
+            "description": "Creates a Stripe Checkout session for the Founding Member plan. Returns a `checkoutUrl` — redirect the user's browser to this URL. On success, Stripe fires `checkout.session.completed` to the webhook, which activates the membership."
+          },
+          "response": []
+        },
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",    "value": "application/json" },
+              { "key": "Stripe-Signature","value": "REPLACE_WITH_STRIPE_SIGNATURE", "description": "Generated by Stripe — do not set manually in real use. Use Stripe CLI for local testing: stripe listen --forward-to localhost:3000/api/v1/payment/stripe/webhook" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/stripe/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "stripe", "webhook"]
+            },
+            "description": "Stripe webhook endpoint. Raw body (not JSON-parsed) is required for signature verification. Do not test manually — use the Stripe CLI: `stripe listen --forward-to localhost:3000/api/v1/payment/stripe/webhook`. Handles: checkout.session.completed, invoice.payment_succeeded, invoice.payment_failed, customer.subscription.deleted, charge.refunded."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payment — Razorpay",
+      "description": "Razorpay order creation, payment capture, and webhook handler.",
+      "item": [
+        {
+          "name": "Create Razorpay Order",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan\": \"FOUNDING_MEMBER\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/razorpay/order",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "razorpay", "order"]
+            },
+            "description": "Creates a Razorpay order for the Founding Member plan. Returns `orderId`, `amount` (paise), `currency`. Flutter uses these fields to open the Razorpay checkout SDK."
+          },
+          "response": []
+        },
+        {
+          "name": "Capture Razorpay Payment",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"order_XXXXXXXXXXXX\",\n  \"paymentId\": \"pay_XXXXXXXXXXXX\",\n  \"signature\": \"HMAC_SHA256_SIGNATURE_FROM_RAZORPAY\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/razorpay/capture",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "razorpay", "capture"]
+            },
+            "description": "Verifies the Razorpay payment signature and captures the payment. `signature` = HMAC-SHA256(`orderId|paymentId`, Razorpay key secret) — generated by the Razorpay SDK on the Flutter side. Activates the membership on success."
+          },
+          "response": []
+        },
+        {
+          "name": "Razorpay Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type",          "value": "application/json" },
+              { "key": "X-Razorpay-Signature",  "value": "REPLACE_WITH_RAZORPAY_SIGNATURE", "description": "HMAC-SHA256 of raw body using Razorpay webhook secret — set by Razorpay automatically" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/razorpay/webhook",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "razorpay", "webhook"]
+            },
+            "description": "Razorpay webhook endpoint. Signature is verified against the raw request body. Handles: payment.captured, payment.failed, refund.created."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payment — Membership",
+      "description": "Founding Member membership status.",
+      "item": [
+        {
+          "name": "Get Active Membership",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/membership",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "membership"]
+            },
+            "description": "Returns the authenticated user's active membership record, or 404 if no active membership exists. Includes plan, status, provider, amount, and expiry date."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payment — Diamonds",
+      "description": "Diamond credit balance, purchase, and spending.",
+      "item": [
+        {
+          "name": "Get Diamond Balance",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/diamonds/balance",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "diamonds", "balance"]
+            },
+            "description": "Returns the authenticated user's current diamond balance. Balance is read from the latest `balanceAfter` entry in the append-only diamond ledger."
+          },
+          "response": []
+        },
+        {
+          "name": "Purchase Diamonds",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"diamonds_100\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/diamonds/purchase",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "diamonds", "purchase"]
+            },
+            "description": "Creates a Stripe Checkout session to purchase a diamond package. Returns a `checkoutUrl`. After successful payment, Stripe fires the webhook which credits the diamonds via the ledger."
+          },
+          "response": []
+        },
+        {
+          "name": "Spend Diamonds",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10,\n  \"reason\": \"BOOST_PROFILE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/diamonds/spend",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "payment", "diamonds", "spend"]
+            },
+            "description": "Deducts diamonds from the user's balance. Returns 409 if the balance is insufficient. `reason` values: BOOST_PROFILE, SUPER_LIKE, UNLOCK_CONTACT, GIFT, OTHER. All ledger entries are append-only — no balance updates, only new rows with `delta` and `balanceAfter`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin — Auth",
+      "description": "Admin authentication — separate from user auth. Admin tokens use a different JWT secret.",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.success && json.data) {",
+                  "  pm.collectionVariables.set('admin_token', json.data.accessToken);",
+                  "  console.log('admin_token saved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@abroadmatrimony.com\",\n  \"password\": \"ADMIN_PASSWORD\",\n  \"totpCode\": \"123456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/auth/login",
+              "host": ["{{admin_url}}"],
+              "path": ["admin", "auth", "login"]
+            },
+            "description": "Admin login with email + bcrypt password + TOTP code (Google Authenticator / Authy). Returns an admin JWT access token. The test script saves this as `{{admin_token}}`.\n\nNote: Admin API routes are under `/admin/` (not `/api/v1/`)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin — Moderation",
+      "description": "Flag review queue and resolution. Requires MODERATOR admin role or higher.",
+      "item": [
+        {
+          "name": "List Flags for User",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{admin_url}}/admin/users/{{user_id}}/flags?page=1&limit=20",
+              "host": ["{{admin_url}}"],
+              "path": ["admin", "users", "{{user_id}}", "flags"],
+              "query": [
+                { "key": "page",   "value": "1",  "description": "Page number (default 1)" },
+                { "key": "limit",  "value": "20", "description": "Items per page (default 20, max 100)" },
+                { "key": "status", "value": "",   "description": "Filter by status: PENDING, REVIEWED, DISMISSED", "disabled": true }
+              ]
+            },
+            "description": "Returns all moderation flags raised against a specific user's messages. Requires MODERATOR admin role."
+          },
+          "response": []
+        },
+        {
+          "name": "Resolve Flag",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }]
+            },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"WARN_USER\",\n  \"note\": \"First offence — verbal warning issued.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/flags/{{flag_id}}",
+              "host": ["{{admin_url}}"],
+              "path": ["admin", "flags", "{{flag_id}}"]
+            },
+            "description": "Resolves or dismisses a moderation flag. `action` values: DISMISS, WARN_USER, HIDE_MESSAGE, SUSPEND_USER, BAN_USER. `note` is optional free text for the audit log. Requires MODERATOR admin role."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin — Payment",
+      "description": "Admin payment management. Requires SUPERADMIN role.",
+      "item": [
+        {
+          "name": "Process Refund",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }]
+            },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentId\": \"PAYMENT_UUID_HERE\",\n  \"reason\": \"Customer requested refund within cooling-off period.\",\n  \"reverseDiamonds\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/payment/refund",
+              "host": ["{{admin_url}}"],
+              "path": ["admin", "payment", "refund"]
+            },
+            "description": "Processes a refund for a payment. Marks the payment record as refunded and inserts a reversal entry into the diamond ledger if `reverseDiamonds` is true. Does NOT automatically trigger the refund at Stripe/Razorpay — that must be initiated in their dashboards first. Requires SUPERADMIN admin role."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

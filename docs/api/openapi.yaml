@@ -1,0 +1,1790 @@
+openapi: 3.1.0
+
+info:
+  title: Abroad Matrimony API
+  version: 1.0.0
+  description: |
+    REST API for the Abroad Matrimony matchmaking platform.
+
+    **Authentication:** All user endpoints (except OTP request/verify and token refresh)
+    require a Bearer access token issued by `POST /api/v1/auth/otp/verify` or
+    `POST /api/v1/auth/token/refresh`.
+
+    Admin endpoints require a Bearer admin token from `POST /admin/auth/login`.
+
+    Webhook endpoints (`/stripe/webhook`, `/razorpay/webhook`) use provider signature
+    verification instead of Bearer tokens.
+
+    **Response envelope:** Every response follows `ApiResponse<T>`:
+    ```json
+    {
+      "success": true,
+      "data": { ... },
+      "meta": { "hasMore": false, "cursor": null },
+      "requestId": "req_abc123"
+    }
+    ```
+    Errors add `"error": { "code": "ERROR_CODE", "message": "Human-readable message" }`.
+
+    **All money values** are integers in paise (INR) or cents (USD). Never floats.
+
+  contact:
+    name: Abroad Matrimony Engineering
+  license:
+    name: Private
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.abroadmatrimony.com
+    description: Production
+
+# ── Security Schemes ──────────────────────────────────────────────────────────
+
+components:
+  securitySchemes:
+    userBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token issued by /api/v1/auth/otp/verify or /token/refresh. Expires in 15 minutes.
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Admin JWT issued by /admin/auth/login. Longer-lived; carries AdminRole claim.
+
+# ── Reusable Schemas ──────────────────────────────────────────────────────────
+
+  schemas:
+
+    # ── Common wrappers ───────────────────────────────────────────────────────
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string, example: VALIDATION_ERROR }
+        message: { type: string, example: "Phone must be in E.164 format" }
+        details: { type: object, additionalProperties: true }
+
+    PaginationMeta:
+      type: object
+      required: [hasMore]
+      properties:
+        cursor:  { type: string, nullable: true, example: "eyJsYXN0SWQiOiJ1dWlkIn0" }
+        hasMore: { type: boolean }
+        total:   { type: integer, nullable: true }
+
+    # ── Enums ─────────────────────────────────────────────────────────────────
+
+    Gender:
+      type: string
+      enum: [MALE, FEMALE, NON_BINARY, PREFER_NOT_TO_SAY]
+
+    UserRole:
+      type: string
+      enum: [USER, VERIFIED, FOUNDING_MEMBER, SUSPENDED]
+
+    AdminRole:
+      type: string
+      enum: [SUPERADMIN, OPS, MODERATOR, ANALYST]
+
+    VerificationStatus:
+      type: string
+      enum: [PENDING, UNDER_REVIEW, APPROVED, REJECTED, EXPIRED]
+
+    MembershipPlan:
+      type: string
+      enum: [FOUNDING_MEMBER, STANDARD]
+
+    MembershipStatus:
+      type: string
+      enum: [ACTIVE, CANCELLED, EXPIRED, PAST_DUE]
+
+    PaymentProvider:
+      type: string
+      enum: [STRIPE, RAZORPAY]
+
+    PaymentStatus:
+      type: string
+      enum: [PENDING, SUCCEEDED, FAILED, REFUNDED]
+
+    MessageType:
+      type: string
+      enum: [TEXT, IMAGE, VOICE, SYSTEM]
+
+    FlagReason:
+      type: string
+      enum: [INAPPROPRIATE_CONTENT, HARASSMENT, SPAM, FAKE_IDENTITY, UNDERAGE_CONCERN, OTHER]
+
+    FlagAction:
+      type: string
+      enum: [NO_ACTION, USER_WARNED, MESSAGE_REMOVED, USER_SUSPENDED, USER_BANNED]
+
+    FlagStatus:
+      type: string
+      enum: [OPEN, UNDER_REVIEW, RESOLVED, DISMISSED]
+
+    DiamondReason:
+      type: string
+      enum: [PURCHASE, ADMIN_GRANT, REFUND, FEATURE_UNLOCK, EXPIRY]
+
+    RealLifeQuestionKey:
+      type: string
+      enum:
+        - PARENTS_INVOLVEMENT
+        - FAMILY_STRUCTURE
+        - KIDS
+        - FAITH_IN_PRACTICE
+        - DIET
+        - LANGUAGE_AT_HOME
+        - CAREER
+        - MONEY
+        - BODY_AND_HEALTH
+        - MIND_AND_EMOTIONAL
+        - MINDSET_AND_AMBITION
+        - WHERE_TO_SETTLE
+
+    StoryPromptKey:
+      type: string
+      enum: [PARENTS_LOVE, DEAL_BREAKER, TYPICAL_SUNDAY]
+
+    # ── Domain objects ────────────────────────────────────────────────────────
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        accessToken:  { type: string, description: "JWT access token. Valid 15 minutes." }
+        refreshToken: { type: string, description: "Opaque refresh token. Valid 30 days. One-time use." }
+        expiresIn:    { type: integer, example: 900, description: "Seconds until access token expires." }
+
+    MediaDto:
+      type: object
+      required: [id, type, url, isVerified, createdAt]
+      properties:
+        id:         { type: string, format: uuid }
+        type:       { type: string, enum: [PHOTO, VOICE_INTRO, VIDEO_INTRO, ID_DOCUMENT, SELFIE] }
+        url:        { type: string, format: uri }
+        order:      { type: integer, nullable: true }
+        isVerified: { type: boolean }
+        createdAt:  { type: string, format: date-time }
+
+    RealLifeAnswerDto:
+      type: object
+      required: [questionKey, value, updatedAt]
+      properties:
+        questionKey: { $ref: '#/components/schemas/RealLifeQuestionKey' }
+        value:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    StoryPromptAnswerDto:
+      type: object
+      required: [promptKey, answer, updatedAt]
+      properties:
+        promptKey: { $ref: '#/components/schemas/StoryPromptKey' }
+        answer:    { type: string }
+        updatedAt: { type: string, format: date-time }
+
+    ScoreBreakdown:
+      type: object
+      required: [verification, settlementIntent, realLifeAnswers, profileCompleteness, checkInRecency, ageCompatibility, groupMembership, languageMatch, faithAlignment]
+      properties:
+        verification:         { type: number, format: float }
+        settlementIntent:     { type: number, format: float }
+        realLifeAnswers:      { type: number, format: float }
+        profileCompleteness:  { type: number, format: float }
+        checkInRecency:       { type: number, format: float }
+        ageCompatibility:     { type: number, format: float }
+        groupMembership:      { type: number, format: float }
+        languageMatch:        { type: number, format: float }
+        faithAlignment:       { type: number, format: float }
+
+    ProfileDto:
+      type: object
+      required: [id, userId, name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent, completionScore, verificationStatus, isVerified, photos, realLifeAnswers, storyPrompts, createdAt, updatedAt]
+      properties:
+        id:               { type: string, format: uuid }
+        userId:           { type: string, format: uuid }
+        name:             { type: string, example: "Arjun Sharma" }
+        dateOfBirth:      { type: string, format: date, example: "1995-04-15" }
+        gender:           { $ref: '#/components/schemas/Gender' }
+        currentCity:      { type: string, example: "Toronto" }
+        currentCountry:   { type: string, example: "Canada" }
+        settlementIntent: { type: string, example: "Open to moving back to India after 5 years" }
+        bio:              { type: string, nullable: true }
+        completionScore:  { type: integer, minimum: 0, maximum: 100 }
+        verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+        isVerified:       { type: boolean }
+        photos:           { type: array, items: { $ref: '#/components/schemas/MediaDto' } }
+        realLifeAnswers:  { type: array, items: { $ref: '#/components/schemas/RealLifeAnswerDto' } }
+        storyPrompts:     { type: array, items: { $ref: '#/components/schemas/StoryPromptAnswerDto' } }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
+
+    DiscoveryItemDto:
+      type: object
+      required: [userId, name, age, currentCity, currentCountry, settlementIntent, completionScore, verificationStatus, totalScore, scoreBreakdown]
+      properties:
+        userId:           { type: string, format: uuid }
+        name:             { type: string }
+        age:              { type: integer }
+        currentCity:      { type: string }
+        currentCountry:   { type: string }
+        settlementIntent: { type: string }
+        completionScore:  { type: integer }
+        verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+        photoUrl:         { type: string, format: uri, nullable: true }
+        totalScore:       { type: number, format: float }
+        scoreBreakdown:   { $ref: '#/components/schemas/ScoreBreakdown' }
+
+    ConversationSummaryDto:
+      type: object
+      required: [id, matchId, otherUser, isArchived, createdAt]
+      properties:
+        id:              { type: string, format: uuid }
+        matchId:         { type: string, format: uuid }
+        otherUser:
+          type: object
+          required: [userId, name]
+          properties:
+            userId: { type: string, format: uuid }
+            name:   { type: string }
+            photoUrl: { type: string, format: uri, nullable: true }
+        lastMessage:
+          type: object
+          nullable: true
+          properties:
+            type:      { $ref: '#/components/schemas/MessageType' }
+            content:   { type: string }
+            createdAt: { type: string, format: date-time }
+        isArchived:   { type: boolean }
+        lastMessageAt: { type: string, format: date-time, nullable: true }
+        createdAt:    { type: string, format: date-time }
+
+    MessageDto:
+      type: object
+      required: [id, conversationId, senderId, type, content, createdAt]
+      properties:
+        id:             { type: string, format: uuid }
+        conversationId: { type: string, format: uuid }
+        senderId:       { type: string, format: uuid }
+        type:           { $ref: '#/components/schemas/MessageType' }
+        content:        { type: string, description: "Text body or media URL." }
+        mediaUrl:       { type: string, format: uri, nullable: true }
+        durationSeconds: { type: integer, nullable: true, description: "Voice message duration." }
+        flagCount:      { type: integer, minimum: 0 }
+        isHidden:       { type: boolean }
+        readAt:         { type: string, format: date-time, nullable: true }
+        createdAt:      { type: string, format: date-time }
+
+    MembershipDto:
+      type: object
+      required: [id, userId, plan, provider, status, createdAt]
+      properties:
+        id:           { type: string, format: uuid }
+        userId:       { type: string, format: uuid }
+        plan:         { $ref: '#/components/schemas/MembershipPlan' }
+        provider:     { $ref: '#/components/schemas/PaymentProvider' }
+        status:       { $ref: '#/components/schemas/MembershipStatus' }
+        providerSubId: { type: string, nullable: true, example: "sub_1NxXxXxXxXxXxX" }
+        expiresAt:    { type: string, format: date-time, nullable: true }
+        createdAt:    { type: string, format: date-time }
+
+    FlagDto:
+      type: object
+      required: [id, reporterId, targetUserId, targetEntityType, reason, status, createdAt]
+      properties:
+        id:               { type: string, format: uuid }
+        reporterId:       { type: string, format: uuid }
+        targetUserId:     { type: string, format: uuid }
+        targetEntityType: { type: string, example: "Message" }
+        targetEntityId:   { type: string, format: uuid, nullable: true }
+        reason:           { $ref: '#/components/schemas/FlagReason' }
+        description:      { type: string, nullable: true }
+        status:           { $ref: '#/components/schemas/FlagStatus' }
+        actionTaken:      { $ref: '#/components/schemas/FlagAction', nullable: true }
+        moderatorId:      { type: string, format: uuid, nullable: true }
+        resolvedAt:       { type: string, format: date-time, nullable: true }
+        createdAt:        { type: string, format: date-time }
+
+    # ── Standard response wrappers ────────────────────────────────────────────
+
+    ErrorResponse:
+      type: object
+      required: [success, error]
+      properties:
+        success:   { type: boolean, enum: [false] }
+        error:     { $ref: '#/components/schemas/ApiError' }
+        requestId: { type: string }
+
+  # ── Reusable Parameters ───────────────────────────────────────────────────
+
+  parameters:
+    convIdPath:
+      name: convId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Conversation UUID
+
+    msgIdPath:
+      name: msgId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Message UUID
+
+    userIdPath:
+      name: userId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: User UUID
+
+    flagIdPath:
+      name: flagId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Flag UUID
+
+    cursorQuery:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+      description: Opaque pagination cursor from a previous response
+
+    limitQuery:
+      name: limit
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      description: Number of items per page
+
+  # ── Reusable Responses ────────────────────────────────────────────────────
+
+  responses:
+    400BadRequest:
+      description: Validation error or bad request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            success: false
+            error: { code: VALIDATION_ERROR, message: "Phone must be in E.164 format" }
+
+    401Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            success: false
+            error: { code: UNAUTHORIZED, message: "Access token is invalid or expired" }
+
+    403Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+    404NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+    429TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            success: false
+            error: { code: RATE_LIMIT_EXCEEDED, message: "Too many requests. Try again in 3600 seconds.", details: { retryAfterSeconds: 3600 } }
+
+    500InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+# ── Tags ──────────────────────────────────────────────────────────────────────
+
+tags:
+  - name: Health
+    description: Service health and dependency checks
+  - name: Auth
+    description: Phone OTP authentication, JWT tokens, Firebase token
+  - name: Profile
+    description: User profile creation and management
+  - name: Discover
+    description: Compatibility-scored discovery feed
+  - name: Conversations
+    description: Real-time conversation management and messaging
+  - name: Messages
+    description: Individual message actions (flagging)
+  - name: Payment — Stripe
+    description: Stripe Checkout sessions and webhook ingestion
+  - name: Payment — Razorpay
+    description: Razorpay orders, payment capture, and webhook ingestion
+  - name: Payment — Membership
+    description: Founding Member membership status
+  - name: Payment — Diamonds
+    description: Diamond currency balance, spend, and purchase
+  - name: Admin — Auth
+    description: Admin user login (email + password + optional TOTP)
+  - name: Admin — Moderation
+    description: Flag review queue and resolution
+  - name: Admin — Payment
+    description: Refund processing and ledger reversal
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+
+paths:
+
+  # ── Health ─────────────────────────────────────────────────────────────────
+
+  /api/v1/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      description: Returns DB and Redis dependency status. Returns 503 if any dependency is unhealthy.
+      operationId: getHealth
+      responses:
+        '200':
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      status:    { type: string, enum: [healthy, degraded] }
+                      checks:    { type: object, additionalProperties: { type: string, enum: [ok, error] } }
+                      timestamp: { type: string, format: date-time }
+              example:
+                success: true
+                data:
+                  status: healthy
+                  checks: { database: ok, redis: ok }
+                  timestamp: "2026-05-28T10:00:00.000Z"
+        '503':
+          description: One or more dependencies unhealthy
+          content:
+            application/json:
+              example:
+                success: false
+                data:
+                  status: degraded
+                  checks: { database: ok, redis: error }
+                  timestamp: "2026-05-28T10:00:00.000Z"
+
+  # ── Auth ───────────────────────────────────────────────────────────────────
+
+  /api/v1/auth/otp/request:
+    post:
+      tags: [Auth]
+      summary: Request OTP via SMS
+      description: |
+        Sends a 6-digit OTP to the given phone via Twilio Verify.
+        Rate-limited to **3 requests per phone per hour**.
+        No DB query is performed; no user row is created here.
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  pattern: '^\+[1-9]\d{1,14}$'
+                  example: "+919876543210"
+                  description: E.164 format phone number
+            example:
+              phone: "+919876543210"
+      responses:
+        '200':
+          description: OTP sent successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "OTP sent to +91987****210", expiresInSeconds: 600 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and get JWT pair
+      description: |
+        Verifies the OTP code. On success:
+        - Creates or updates the user row (upsert on phone number)
+        - Creates a device record with the provided fingerprint
+        - Issues an access token (15 min) + refresh token (30 days)
+        - Publishes `USER_REGISTERED` CloudEvent for new users only
+        - Stamps `isTrusted = true` on the device (enables trusted-device login next time)
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code, deviceFingerprint]
+              properties:
+                phone:             { type: string, pattern: '^\+[1-9]\d{1,14}$', example: "+919876543210" }
+                code:              { type: string, pattern: '^\d{6}$', example: "123456" }
+                deviceFingerprint: { type: string, minLength: 8, maxLength: 200, description: "UUID or fingerprint generated by the client on first install." }
+                deviceName:        { type: string, maxLength: 100, example: "iPhone 15 Pro", nullable: true }
+                platform:          { type: string, maxLength: 50, example: "iOS 17.4", nullable: true }
+      responses:
+        '200':
+          description: OTP verified; JWT pair issued
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  accessToken: "eyJhbGciOiJIUzI1NiJ9..."
+                  refreshToken: "dGhpcyBpcyBhIHJlZnJlc2g..."
+                  expiresIn: 900
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/token/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      description: |
+        Exchanges a valid refresh token for a new JWT pair.
+        The old refresh token is **revoked immediately** (one-time use).
+        Reuse of an already-revoked token triggers revocation of **all** devices for that user.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string, minLength: 1 }
+      responses:
+        '200':
+          description: New JWT pair issued
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  accessToken: "eyJhbGciOiJIUzI1NiJ9..."
+                  refreshToken: "bmV3UmVmcmVzaFRva2Vu..."
+                  expiresIn: 900
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/trusted-device:
+    post:
+      tags: [Auth]
+      summary: Login via trusted device (skip OTP)
+      description: |
+        Issues a new JWT pair without requiring an OTP if the device fingerprint
+        is trusted and within its TTL window (default 90 days).
+        Returns 401 `DEVICE_NOT_TRUSTED` when the device is unknown or expired —
+        client must fall back to the full OTP flow.
+        Rate-limited to **10 attempts per phone per hour**.
+      operationId: trustedDeviceLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, deviceFingerprint]
+              properties:
+                phone:             { type: string, pattern: '^\+[1-9]\d{7,14}$', example: "+919876543210" }
+                deviceFingerprint: { type: string, format: uuid, description: "UUID v4 generated on first install." }
+      responses:
+        '200':
+          description: JWT pair issued without OTP
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  accessToken: "eyJhbGciOiJIUzI1NiJ9..."
+                  refreshToken: "dHJ1c3RlZFJlZnJlc2g..."
+                  expiresIn: 900
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401':
+          description: Device not trusted or trust expired
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: DEVICE_NOT_TRUSTED, message: "Device is not trusted. Complete OTP verification to establish trust." }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout current device
+      description: Revokes the refresh token for the current device only.
+      operationId: logout
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Logged out successfully" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/logout/all:
+    post:
+      tags: [Auth]
+      summary: Logout all devices
+      description: Revokes all refresh tokens for the authenticated user across every device.
+      operationId: logoutAll
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: All devices logged out
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Logged out from all devices" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/firebase-token:
+    get:
+      tags: [Auth]
+      summary: Get Firebase custom auth token
+      description: |
+        Issues a Firebase custom auth token for the authenticated user.
+        Flutter clients exchange this for a Firebase ID token via
+        `signInWithCustomToken()` to get direct Firestore read access.
+        Returns 503 when Firebase is not configured (dev environments without credentials).
+      operationId: getFirebaseToken
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Firebase custom auth token
+          content:
+            application/json:
+              example:
+                success: true
+                data: { token: "eyJhbGciOiJSUzI1NiJ9..." }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '503':
+          description: Firebase not configured
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: FIREBASE_NOT_CONFIGURED, message: "Firebase is not configured on this server" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Profile ────────────────────────────────────────────────────────────────
+
+  /api/v1/profile:
+    post:
+      tags: [Profile]
+      summary: Create user profile
+      description: Creates the profile for the authenticated user. Can only be done once.
+      operationId: createProfile
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, dateOfBirth, gender, currentCity, currentCountry, settlementIntent]
+              properties:
+                name:             { type: string, minLength: 2, maxLength: 100, example: "Arjun Sharma" }
+                dateOfBirth:      { type: string, format: date, example: "1995-04-15", description: "Must be 18+ years ago." }
+                gender:           { $ref: '#/components/schemas/Gender' }
+                currentCity:      { type: string, maxLength: 100, example: "Toronto" }
+                currentCountry:   { type: string, maxLength: 100, example: "Canada" }
+                settlementIntent: { type: string, maxLength: 200, example: "Open to moving back to India after 5 years" }
+                bio:              { type: string, maxLength: 500, nullable: true }
+      responses:
+        '201':
+          description: Profile created
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "550e8400-e29b-41d4-a716-446655440000", userId: "usr-uuid", name: "Arjun Sharma", completionScore: 40 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '409':
+          description: Profile already exists for this user
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PROFILE_ALREADY_EXISTS, message: "A profile already exists for this user" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/me:
+    get:
+      tags: [Profile]
+      summary: Get own profile
+      description: Returns the full profile of the authenticated user including all photos, real-life answers, and story prompts.
+      operationId: getOwnProfile
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Own profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:    { $ref: '#/components/schemas/ProfileDto' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404':
+          description: Profile not yet created
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PROFILE_NOT_FOUND, message: "No profile found for this user" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/real-life/{questionKey}:
+    put:
+      tags: [Profile]
+      summary: Upsert real-life question answer
+      description: |
+        Creates or updates the answer to one of the 12 real-life questions.
+        The value can be a plain string or an array of strings (for multi-select questions).
+        Recalculates `completionScore` after the upsert.
+      operationId: upsertRealLifeAnswer
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: questionKey
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/RealLifeQuestionKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:
+                  oneOf:
+                    - type: string
+                      minLength: 1
+                      maxLength: 500
+                    - type: array
+                      items: { type: string, minLength: 1, maxLength: 200 }
+                      minItems: 1
+                      maxItems: 20
+            examples:
+              string_value:
+                value: { value: "Yes, I want my parents involved in the search" }
+              array_value:
+                value: { value: ["Hindi", "English"] }
+      responses:
+        '200':
+          description: Answer upserted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { questionKey: "KIDS", value: "Yes, I want 2-3 children", updatedAt: "2026-05-28T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/story/{promptKey}:
+    put:
+      tags: [Profile]
+      summary: Upsert story prompt answer
+      description: |
+        Creates or updates the answer to one of the 3 story prompts.
+        Recalculates `completionScore` after the upsert.
+      operationId: upsertStoryPrompt
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: promptKey
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/StoryPromptKey' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: Story prompt upserted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { promptKey: "TYPICAL_SUNDAY", answer: "I spend Sundays cooking and calling family back home.", updatedAt: "2026-05-28T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/media:
+    post:
+      tags: [Profile]
+      summary: Upload profile photo
+      description: |
+        Uploads a profile photo to S3. Max **6 photos per user**.
+        Accepted types: `image/jpeg`, `image/png`, `image/webp`. Max **5 MB**.
+        Form field name must be `photo`.
+      operationId: uploadProfilePhoto
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: "JPEG / PNG / WebP. Max 5 MB."
+      responses:
+        '201':
+          description: Photo uploaded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "media-uuid", type: "PHOTO", url: "https://cdn.abroadmatrimony.com/photos/user-uuid/photo-uuid.jpg", isVerified: false, createdAt: "2026-05-28T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '409':
+          description: Photo limit reached (max 6)
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PHOTO_LIMIT_EXCEEDED, message: "Maximum 6 photos allowed per user" }
+        '413':
+          description: File too large (> 5 MB)
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: FILE_TOO_LARGE, message: "Photo must be under 5 MB" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profiles/{id}:
+    get:
+      tags: [Profile]
+      summary: Get public profile by ID
+      description: Returns another user's public profile. Authenticated users only.
+      operationId: getProfileById
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Profile UUID
+      responses:
+        '200':
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:    { $ref: '#/components/schemas/ProfileDto' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Discover ───────────────────────────────────────────────────────────────
+
+  /api/v1/discover:
+    get:
+      tags: [Discover]
+      summary: Paginated discovery feed
+      description: |
+        Returns a compatibility-scored list of potential matches, ordered by `totalScore` descending.
+        Uses cursor-based pagination — pass the `nextCursor` from the previous response to fetch
+        the next page. The scoring algorithm weights 9 dimensions (verification, settlement intent,
+        real-life answers, profile completeness, check-in recency, age compatibility, group
+        membership, language match, faith alignment).
+      operationId: getDiscoverFeed
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Discovery feed
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - userId: "usr-uuid-1"
+                      name: "Priya Nair"
+                      age: 28
+                      currentCity: "London"
+                      currentCountry: "UK"
+                      settlementIntent: "Open to anywhere"
+                      completionScore: 85
+                      verificationStatus: "APPROVED"
+                      photoUrl: "https://cdn.abroadmatrimony.com/photos/usr-uuid-1/main.jpg"
+                      totalScore: 0.87
+                      scoreBreakdown: { verification: 1.0, settlementIntent: 0.8, realLifeAnswers: 0.9, profileCompleteness: 0.85, checkInRecency: 0.7, ageCompatibility: 0.9, groupMembership: 0.5, languageMatch: 1.0, faithAlignment: 0.8 }
+                  nextCursor: "eyJsYXN0SWQiOiJ1c3ItdXVpZC0xIn0"
+                  hasMore: true
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Conversations ──────────────────────────────────────────────────────────
+
+  /api/v1/conversations:
+    get:
+      tags: [Conversations]
+      summary: List conversations
+      description: Returns all conversations for the authenticated user, newest-first.
+      operationId: listConversations
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Conversation list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "conv-uuid"
+                    matchId: "match-uuid"
+                    otherUser: { userId: "usr-uuid-2", name: "Priya Nair", photoUrl: null }
+                    lastMessage: { type: "TEXT", content: "Hello!", createdAt: "2026-05-28T09:00:00.000Z" }
+                    isArchived: false
+                    lastMessageAt: "2026-05-28T09:00:00.000Z"
+                    createdAt: "2026-05-27T10:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/conversations/{convId}:
+    get:
+      tags: [Conversations]
+      summary: Get single conversation
+      description: Returns conversation metadata for the given conversation ID.
+      operationId: getConversation
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/convIdPath'
+      responses:
+        '200':
+          description: Conversation metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:    { $ref: '#/components/schemas/ConversationSummaryDto' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/conversations/{convId}/messages:
+    get:
+      tags: [Conversations]
+      summary: Get paginated message history
+      description: |
+        Returns messages for a conversation, newest-first. Use `cursor` from the
+        previous response for older pages. This is a REST fallback — Flutter clients
+        should subscribe to the Firestore real-time listener for live updates.
+      operationId: getConversationMessages
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/convIdPath'
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Message list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "msg-uuid"
+                    conversationId: "conv-uuid"
+                    senderId: "usr-uuid-1"
+                    type: "TEXT"
+                    content: "Hello!"
+                    flagCount: 0
+                    isHidden: false
+                    createdAt: "2026-05-28T09:00:00.000Z"
+                meta: { hasMore: true, cursor: "eyJsYXN0SWQiOiJtc2ctdXVpZCJ9" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    post:
+      tags: [Conversations]
+      summary: Send a message
+      description: |
+        Sends a text, image, or voice message to a conversation.
+        - **TEXT**: `content` is the message body.
+        - **IMAGE / VOICE**: `content` must be the S3/CloudFront URL obtained from `GET /upload-url`.
+        SYSTEM messages cannot be sent by users.
+      operationId: sendMessage
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/convIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, content]
+              properties:
+                type:            { $ref: '#/components/schemas/MessageType', description: "Must not be SYSTEM." }
+                content:         { type: string, minLength: 1 }
+                durationSeconds: { type: integer, minimum: 1, nullable: true, description: "Voice message duration in seconds." }
+            examples:
+              text_message:
+                value: { type: "TEXT", content: "Hello! Nice to meet you." }
+              image_message:
+                value: { type: "IMAGE", content: "https://cdn.abroadmatrimony.com/messages/conv-uuid/img-uuid.jpg" }
+              voice_message:
+                value: { type: "VOICE", content: "https://cdn.abroadmatrimony.com/messages/conv-uuid/voice-uuid.m4a", durationSeconds: 12 }
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "msg-uuid", conversationId: "conv-uuid", senderId: "usr-uuid-1", type: "TEXT", content: "Hello!", flagCount: 0, isHidden: false, createdAt: "2026-05-28T09:05:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403':
+          description: Conversation archived or user not a participant
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONVERSATION_ARCHIVED, message: "This conversation has been archived" }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/conversations/{convId}/upload-url:
+    get:
+      tags: [Conversations]
+      summary: Get presigned S3 upload URL
+      description: |
+        Returns a presigned S3 PUT URL for direct media upload from the client.
+        After uploading, use the returned `mediaUrl` as `content` when sending the message.
+        URL is valid for **15 minutes**.
+      operationId: getUploadUrl
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/convIdPath'
+        - name: type
+          in: query
+          required: true
+          schema: { type: string, enum: [image, voice] }
+        - name: mimeType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [image/jpeg, image/png, image/webp, audio/m4a, audio/webm]
+      responses:
+        '200':
+          description: Presigned upload URL
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  uploadUrl: "https://s3.ap-south-1.amazonaws.com/abroad-matrimony/messages/conv-uuid/img-uuid.jpg?X-Amz-Signature=..."
+                  mediaUrl: "https://cdn.abroadmatrimony.com/messages/conv-uuid/img-uuid.jpg"
+                  expiresInSeconds: 900
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/conversations/{convId}/read:
+    post:
+      tags: [Conversations]
+      summary: Mark messages as read
+      description: |
+        REST fallback for marking all messages up to and including `lastReadMessageId` as read.
+        Flutter clients should use Firestore transactions for real-time read receipts;
+        this endpoint is for offline sync or web clients.
+      operationId: markConversationRead
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/convIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lastReadMessageId]
+              properties:
+                lastReadMessageId: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Messages marked as read
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Messages marked as read" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Messages ───────────────────────────────────────────────────────────────
+
+  /api/v1/messages/{msgId}/flag:
+    post:
+      tags: [Messages]
+      summary: Flag a message for moderation
+      description: |
+        Reports a message to the moderation queue. A flag is created in Postgres and the
+        Firestore `flagCount` is incremented. At 3+ flags the message is auto-hidden.
+        Users cannot flag their own messages.
+      operationId: flagMessage
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/msgIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:      { $ref: '#/components/schemas/FlagReason' }
+                description: { type: string, maxLength: 500, nullable: true }
+      responses:
+        '201':
+          description: Flag created
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "flag-uuid", reason: "HARASSMENT", status: "OPEN", createdAt: "2026-05-28T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403':
+          description: Cannot flag own message
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: FLAG_SELF_ERROR, message: "You cannot flag your own message" }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already flagged this message
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: ALREADY_FLAGGED, message: "You have already flagged this message" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Payment — Stripe ───────────────────────────────────────────────────────
+
+  /api/v1/payment/stripe/checkout:
+    post:
+      tags: [Payment — Stripe]
+      summary: Create Stripe Checkout session (Founding Member)
+      description: |
+        Creates a Stripe Checkout session in **subscription mode** for the Founding Member plan.
+        Inserts a `PaymentIntent` row with `status: PENDING`. Membership is activated on
+        `checkout.session.completed` webhook.
+      operationId: createStripeCheckout
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: string, format: email, nullable: true, description: "Pre-fills the Stripe Checkout email field." }
+      responses:
+        '201':
+          description: Checkout session created
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  checkoutUrl: "https://checkout.stripe.com/pay/cs_test_..."
+                  sessionId: "cs_test_a1b2c3..."
+        '400':
+          description: Stripe price ID not configured
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PAYMENT_CONFIG_ERROR, message: "Stripe price ID not configured" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/payment/stripe/webhook:
+    post:
+      tags: [Payment — Stripe]
+      summary: Stripe webhook endpoint
+      description: |
+        Receives Stripe events. No Bearer token — the `Stripe-Signature` header is the
+        security mechanism (HMAC-SHA256 of raw body).
+
+        **Handled events:**
+        - `checkout.session.completed` → activates membership or credits diamonds
+        - `invoice.payment_failed` → marks membership PAST_DUE
+        - `customer.subscription.deleted` → cancels membership
+
+        ⚠️ Must receive the **raw** request body (not JSON-parsed).
+      operationId: stripeWebhook
+      parameters:
+        - name: Stripe-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256 signature from Stripe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Event received and processed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { received: true }
+        '400':
+          description: Invalid signature
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: WEBHOOK_SIGNATURE_INVALID, message: "Stripe signature verification failed" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Payment — Razorpay ─────────────────────────────────────────────────────
+
+  /api/v1/payment/razorpay/order:
+    post:
+      tags: [Payment — Razorpay]
+      summary: Create Razorpay order
+      description: |
+        Creates a Razorpay order and a `PaymentIntent` row with `status: PENDING`.
+        Returns `orderId` and `keyId` for the Flutter Razorpay SDK.
+      operationId: createRazorpayOrder
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountPaise]
+              properties:
+                amountPaise: { type: integer, minimum: 1, example: 99900, description: "Amount in paise. 99900 = ₹999." }
+      responses:
+        '201':
+          description: Razorpay order created
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  orderId: "order_test_abc123"
+                  amount: 99900
+                  currency: "INR"
+                  keyId: "rzp_test_key"
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/payment/razorpay/capture:
+    post:
+      tags: [Payment — Razorpay]
+      summary: Capture Razorpay payment (verify signature)
+      description: |
+        After the Flutter Razorpay SDK completes payment, the client sends the three
+        identifiers for server-side signature verification. The server verifies
+        `HMAC-SHA256(orderId + "|" + paymentId, keySecret)` and marks the `PaymentIntent` SUCCEEDED.
+      operationId: captureRazorpayPayment
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpayOrderId, razorpayPaymentId, razorpaySignature]
+              properties:
+                razorpayOrderId:   { type: string, minLength: 1, example: "order_test_abc123" }
+                razorpayPaymentId: { type: string, minLength: 1, example: "pay_test_xyz789" }
+                razorpaySignature: { type: string, minLength: 1, example: "a665a45920422f9d417e4867efdc4fb8..." }
+      responses:
+        '200':
+          description: Signature valid; payment marked as succeeded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Payment captured successfully" }
+        '400':
+          description: Invalid signature
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PAYMENT_SIGNATURE_INVALID, message: "Payment signature verification failed" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404':
+          description: No matching PaymentIntent found
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PAYMENT_NOT_FOUND, message: "No payment intent found for this order" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/payment/razorpay/webhook:
+    post:
+      tags: [Payment — Razorpay]
+      summary: Razorpay webhook endpoint
+      description: |
+        Receives Razorpay events. No Bearer token — the `X-Razorpay-Signature` header is the
+        security mechanism (HMAC-SHA256 of raw body using webhook secret).
+
+        **Handled events:**
+        - `payment.captured` → activates membership or credits diamonds
+        - `payment.failed` → marks `PaymentIntent` FAILED
+
+        ⚠️ Must receive the **raw** request body.
+      operationId: razorpayWebhook
+      parameters:
+        - name: X-Razorpay-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256 signature from Razorpay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200':
+          description: Event received and processed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { received: true }
+        '400':
+          description: Invalid signature
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: WEBHOOK_SIGNATURE_INVALID, message: "Razorpay signature verification failed" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Payment — Membership ───────────────────────────────────────────────────
+
+  /api/v1/payment/membership:
+    get:
+      tags: [Payment — Membership]
+      summary: Get active membership
+      description: Returns the current user's active membership, or `null` if none.
+      operationId: getActiveMembership
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Active membership or null
+          content:
+            application/json:
+              examples:
+                active:
+                  value:
+                    success: true
+                    data:
+                      id: "mem-uuid"
+                      userId: "usr-uuid"
+                      plan: "FOUNDING_MEMBER"
+                      provider: "STRIPE"
+                      status: "ACTIVE"
+                      providerSubId: "sub_1NxXxXxXxXxXxX"
+                      expiresAt: null
+                      createdAt: "2026-05-28T10:00:00.000Z"
+                none:
+                  value:
+                    success: true
+                    data: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Payment — Diamonds ─────────────────────────────────────────────────────
+
+  /api/v1/payment/diamonds/balance:
+    get:
+      tags: [Payment — Diamonds]
+      summary: Get diamond balance
+      description: Returns the current diamond balance derived from the append-only ledger.
+      operationId: getDiamondBalance
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Current balance
+          content:
+            application/json:
+              example:
+                success: true
+                data: { balance: 150 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/payment/diamonds/spend:
+    post:
+      tags: [Payment — Diamonds]
+      summary: Spend diamonds
+      description: |
+        Deducts diamonds from the user's balance. Appends a negative entry to the
+        `DiamondLedger` in a database transaction. Returns the new balance.
+        Returns 402 if the user has insufficient diamonds.
+      operationId: spendDiamonds
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, reason]
+              properties:
+                amount:    { type: integer, minimum: 1, example: 30 }
+                reason:    { $ref: '#/components/schemas/DiamondReason' }
+                reference: { type: string, maxLength: 100, nullable: true, description: "Optional context stored in ledger metadata." }
+      responses:
+        '200':
+          description: Diamonds deducted; new balance returned
+          content:
+            application/json:
+              example:
+                success: true
+                data: { newBalance: 120 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '402':
+          description: Insufficient diamonds
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INSUFFICIENT_DIAMONDS, message: "Insufficient diamond balance" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/payment/diamonds/purchase:
+    post:
+      tags: [Payment — Diamonds]
+      summary: Create Stripe Checkout session (diamond purchase)
+      description: |
+        Creates a Stripe Checkout session in **payment (one-time) mode** for a diamond package.
+        Diamonds are credited via the `checkout.session.completed` webhook.
+
+        Available packages:
+        | Key | Diamonds | Price |
+        |-----|----------|-------|
+        | DIAMONDS_50  | 50  | ₹499 |
+        | DIAMONDS_100 | 100 | ₹899 |
+        | DIAMONDS_200 | 200 | ₹1499|
+      operationId: purchaseDiamonds
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packageKey]
+              properties:
+                packageKey: { type: string, enum: [DIAMONDS_50, DIAMONDS_100, DIAMONDS_200], example: "DIAMONDS_100" }
+                email:      { type: string, format: email, nullable: true }
+      responses:
+        '201':
+          description: Diamond checkout session created
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  checkoutUrl: "https://checkout.stripe.com/pay/cs_diamond_..."
+                  sessionId: "cs_diamond_xyz..."
+        '400':
+          description: Invalid package key
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INVALID_DIAMOND_PACKAGE, message: "Unknown diamond package: DIAMONDS_INVALID" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Auth ───────────────────────────────────────────────────────────
+
+  /admin/auth/login:
+    post:
+      tags: [Admin — Auth]
+      summary: Admin login
+      description: |
+        Authenticates an admin user with email + bcrypt password + optional TOTP code.
+        Returns an admin JWT (longer-lived than user tokens) carrying `AdminRole`.
+        TOTP is required once the admin has enabled 2FA on their account.
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, format: email, example: "admin@abroadmatrimony.com" }
+                password: { type: string, minLength: 1 }
+                totpCode: { type: string, pattern: '^\d{6}$', nullable: true, description: "6-digit TOTP code (required if 2FA enabled)." }
+      responses:
+        '200':
+          description: Admin JWT issued
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  accessToken: "eyJhbGciOiJIUzI1NiJ9..."
+                  expiresIn: 28800
+                  admin: { id: "admin-uuid", email: "admin@abroadmatrimony.com", role: "SUPERADMIN" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401':
+          description: Invalid credentials or TOTP code
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INVALID_CREDENTIALS, message: "Invalid email or password" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Moderation ─────────────────────────────────────────────────────
+
+  /admin/users/{userId}/flags:
+    get:
+      tags: [Admin — Moderation]
+      summary: List flags for a user
+      description: |
+        Returns all moderation flags reported against a specific user.
+        Requires **MODERATOR** role or higher.
+      operationId: listUserFlags
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Flag list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "flag-uuid"
+                    reporterId: "usr-uuid-reporter"
+                    targetUserId: "usr-uuid-target"
+                    targetEntityType: "Message"
+                    reason: "HARASSMENT"
+                    status: "OPEN"
+                    createdAt: "2026-05-28T09:00:00.000Z"
+                meta: { hasMore: false, total: 1 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/flags/{flagId}:
+    put:
+      tags: [Admin — Moderation]
+      summary: Resolve or dismiss a flag
+      description: |
+        Updates the flag status to RESOLVED or DISMISSED and optionally records an action
+        (warn, remove message, suspend, ban). Requires **MODERATOR** role or higher.
+      operationId: resolveFlag
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/flagIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:     { type: string, enum: [RESOLVED, DISMISSED] }
+                actionTaken: { $ref: '#/components/schemas/FlagAction', nullable: true }
+                resolution:  { type: string, maxLength: 1000, nullable: true, description: "Human-readable moderation note." }
+            example:
+              status: "RESOLVED"
+              actionTaken: "USER_WARNED"
+              resolution: "Warned user about inappropriate language"
+      responses:
+        '200':
+          description: Flag resolved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "flag-uuid", status: "RESOLVED", actionTaken: "USER_WARNED", resolvedAt: "2026-05-28T11:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Payment ────────────────────────────────────────────────────────
+
+  /admin/payment/refund:
+    post:
+      tags: [Admin — Payment]
+      summary: Process a payment refund
+      description: |
+        Records a refund for a payment and optionally reverses diamond credits.
+        Marks the `PaymentIntent` as REFUNDED and, if `diamondAmount > 0`, appends
+        a `REFUND` entry to the `DiamondLedger`. Requires **SUPERADMIN** role.
+      operationId: adminRefund
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [providerPaymentId, reason]
+              properties:
+                providerPaymentId: { type: string, minLength: 1, description: "Stripe session ID (cs_...) or Razorpay payment ID (pay_...)." }
+                reason:            { type: string, minLength: 1, maxLength: 200 }
+                diamondAmount:     { type: integer, minimum: 0, default: 0, description: "Diamonds to reverse. 0 if payment had no diamond component." }
+                userId:            { type: string, format: uuid, nullable: true, description: "Required when diamondAmount > 0." }
+            example:
+              providerPaymentId: "cs_test_a1b2c3..."
+              reason: "Customer requested refund within 48 hours"
+              diamondAmount: 100
+              userId: "usr-uuid"
+      responses:
+        '200':
+          description: Refund recorded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Refund processed successfully" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: PAYMENT_NOT_FOUND, message: "No payment found for this provider payment ID" }
+        '500': { $ref: '#/components/responses/500InternalError' }
