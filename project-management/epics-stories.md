@@ -1237,3 +1237,386 @@ presence/{userId}                  [Realtime DB — not Firestore]
 ### ADMIN-005 · Audit Log Viewer ⏳
 ### ADMIN-006 · Moderation Queue ⏳
 ### ADMIN-007 · KPI Dashboard ⏳
+### ADMIN-008 · Event Management ⏳
+### ADMIN-009 · Weekly Prompt Management ⏳
+### ADMIN-010 · Group Management ⏳
+
+---
+
+## PHASE 5b — Connections + Groups + Verification
+
+### CONN-001 · Send Connection Request ⏳
+**Story:** As a user viewing a match or introduction, I send a connection request so we can move toward a deeper conversation.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/connections` accepts `{ targetUserId }` with requireAuth
+- [ ] Validates target user exists and is not already connected / blocked
+- [ ] Max 10 open outgoing requests at a time; returns 409 if exceeded
+- [ ] Creates `connection` row with status `PENDING`, publishes `connection.requested` CloudEvent
+- [ ] Returns 201 `{ connectionId, status: "PENDING" }`
+- [ ] 400 if self-connect; 404 if user not found; 409 if already connected
+
+### CONN-002 · Accept Connection (Reply) ⏳
+**Story:** As a user with an incoming request, I reply to accept — optionally with a first message so the conversation has immediate context.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/connections/:id/reply` accepts `{ message? }` with requireAuth
+- [ ] Only the target (recipient) of the connection can call this
+- [ ] Sets status `ACCEPTED`, creates a Firestore conversation if message provided
+- [ ] Returns 200 `{ connectionId, status: "ACCEPTED", conversationId? }`
+- [ ] 403 if caller is not the recipient; 404 if connection not found; 409 if already accepted
+
+### CONN-003 · Pass (Silent Decline) ⏳
+**Story:** As a user, I pass on a connection request without sending a rejection notification.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/connections/:id/pass` with requireAuth
+- [ ] Only the recipient can pass; sets status `DECLINED`
+- [ ] No notification sent to requester (silent)
+- [ ] Returns 200 `{ connectionId, status: "DECLINED" }`
+
+### CONN-004 · List Connections by State ⏳
+**Story:** As a user, I see my incoming, outgoing, and accepted connections in separate tabs.
+
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/connections?type=incoming|outgoing|accepted` with requireAuth
+- [ ] Paginated cursor-based, default limit 20
+- [ ] Each item includes: other user's name, avatar, contextLabel, timestamp
+- [ ] `type` defaults to `incoming` if omitted
+
+### GROUP-001 · Admin: Create Group ⏳
+**Story:** As an admin, I create regional groups with expiry dates, member limits, credit costs, and tags.
+
+**Acceptance Criteria:**
+- [ ] `POST /admin/groups` — name, description, region, expiresAt, maxMembers, creditCost, tags[]
+- [ ] `PUT /admin/groups/:id` — update any field
+- [ ] `DELETE /admin/groups/:id` — closes group (sets expiresAt to now)
+- [ ] Groups have status: OPEN, FULL, EXPIRED
+
+### GROUP-002 · List Available Groups ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/groups` — all OPEN groups (not user's 2 active ones), sorted by expiresAt ASC
+- [ ] Shows: name, memberCount, expiresAt countdown, creditCost, tags[]
+- [ ] `GET /api/v1/groups/mine` — user's active groups (max 2)
+
+### GROUP-003 · Join Group with Credits ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/groups/:id/join` — free join if slots available and group not expiring (within 48h)
+- [ ] `POST /api/v1/groups/:id/join-early` — spends `group.creditCost` credits for expiring groups
+- [ ] Enforces 2-slot limit; returns 409 if both slots full
+- [ ] `GET /api/v1/groups/:id/expiry` — returns `{ expiresAt, hoursRemaining, creditCostToJoin }`
+
+### VER-001 · Submit Identity Verification ⏳
+**Story:** As a user, I submit my ID document and selfie so an admin can verify my identity.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/verification` — multipart: `idType` (PASSPORT|DRIVERS_LICENCE|NATIONAL_ID), `idFront`, `idBack?`, `selfie`
+- [ ] Files validated: JPEG/PNG/WebP only, max 10 MB each
+- [ ] Uploaded to S3 under `verification/<userId>/<type>-<uuid>.<ext>`
+- [ ] Creates `verification_submission` row with status `PENDING_REVIEW`
+- [ ] Returns 201 `{ submissionId, status: "PENDING_REVIEW" }`
+- [ ] Rate-limit: 3 submissions per user per 24h (prevent spam)
+
+### VER-002 · Admin Verification Queue ⏳
+**Acceptance Criteria:**
+- [ ] `GET /admin/verification/queue?status=pending|approved|rejected&limit=20` — paginated
+- [ ] Each item: userId, idType, idFront (S3 URL), idBack?, selfie, submittedAt
+- [ ] Requires MODERATOR role or above
+
+### VER-003 · Admin Approve/Reject Verification ⏳
+**Acceptance Criteria:**
+- [ ] `PUT /admin/verification/:submissionId` — `{ action: "APPROVE"|"REJECT", reason? }`
+- [ ] On APPROVE: sets user's verification layer `face` to verified, recalculates trust score
+- [ ] On REJECT: notifies user via notification worker with reason
+- [ ] Requires MODERATOR role
+
+---
+
+## PHASE 9 — Habits / Consistency Hub
+
+### HABIT-001 · Habit Management CRUD ⏳
+**Story:** As a user, I create and manage a list of personal habits so the app can track my daily consistency.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/habits` — name (max 40 chars), icon (emoji or preset key)
+- [ ] `GET /api/v1/habits` — list user's habits ordered by createdAt
+- [ ] `PUT /api/v1/habits/:id` — rename or change icon
+- [ ] `DELETE /api/v1/habits/:id` — soft-delete (logs preserved)
+- [ ] Max 10 habits per user; returns 409 if limit reached
+- [ ] Requires requireAuth
+
+### HABIT-002 · Daily Habit Logging ⏳
+**Story:** As a user, I log that I completed a habit today so my streak is tracked.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/habits/:id/log` — body `{ completedAt?: ISO8601 }` (defaults to now)
+- [ ] Idempotent — only 1 log per habit per calendar day (UTC); duplicate returns 200 not 201
+- [ ] Returns 201 `{ logId, habitId, completedAt, currentStreak }`
+- [ ] Streak = consecutive days with a log; broken streak resets to 0
+
+### HABIT-003 · Streak Data & Weekly Dots ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/habits/streaks` — all habits with: currentStreak, longestStreak, thisWeekDots (7-element boolean array Mon–Sun)
+- [ ] `GET /api/v1/habits/:id/history?weeks=8` — streak data for bar chart
+
+### HABIT-004 · Weekly Reflection ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/habits/reflection` — generated weekly insight text
+- [ ] Rule-based v1: "You are most consistent on [day pattern]. That pattern increases compatibility with users who prefer [style]."
+- [ ] Generated once on Monday, cached in Redis for 7 days
+- [ ] Includes: `{ insight, whyItMatters, weekStartDate }`
+
+### HABIT-005 · Summary Visibility Toggle ⏳
+**Acceptance Criteria:**
+- [ ] `PUT /api/v1/habits/summary-visibility` — `{ visible: boolean }`
+- [ ] When visible=true: habit summary (consistency score) included in profile viewed by others
+- [ ] Default: private (false)
+
+---
+
+## PHASE 10 — Introductions (Weekly Drop)
+
+### INTRO-001 · Weekly Intro Compute Job ⏳
+**Story:** Every Sunday at 9 AM GMT, the system curates 5 best-matched profiles per user from their active groups.
+
+**Acceptance Criteria:**
+- [ ] BullMQ cron job runs Sunday 09:00 UTC
+- [ ] For each active user in a group: fetches top-5 scored profiles from that group
+- [ ] Applies filters: not already connected, not blocked, not previously introduced this cycle
+- [ ] Stores results in `weekly_introductions` table with `weekOf` date
+- [ ] Generates rule-based "Why this match?" text for each intro (top 2-3 dimensions)
+- [ ] Publishes `introduction.batch_ready` CloudEvent
+
+### INTRO-002 · Get This Week's Introductions ⏳
+**Story:** As a user, I see my curated weekly introductions.
+
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/introductions` — returns up to 5 intros for current week
+- [ ] Each intro: profile summary, whyThisMatch text, compatibilityScore, compatibilityTags[], isUnlocked
+- [ ] If Sunday hasn't happened and user hasn't paid to unlock: `isUnlocked: false`
+- [ ] Returns `{ introductions[], weekOf, refreshesAt, unlockedEarlyAt? }`
+
+### INTRO-003 · Introduction Detail ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/introductions/:id` — full match context
+- [ ] Includes: compatibilityScore (0–100), dimensions[] (name + score + label), whyThisMatch, profile snapshot
+- [ ] 403 if introduction belongs to different user; 404 if not found
+
+### INTRO-004 · Unlock Early ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/introductions/unlock-early` — spends 300 credits
+- [ ] Unlocks current week's batch immediately (sets `unlockedEarlyAt`)
+- [ ] Idempotent — already unlocked returns 200, no double charge
+- [ ] 402 if insufficient credits
+
+### INTRO-005 · Match Context for Profile ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/profiles/:id/match-context` — returns score + dimension breakdown for any profile
+- [ ] Dimension response: `[{ name: "Life abroad plan", score: 92, label: "Aligned" }, ...]`
+- [ ] Cached in Redis 1 hour; invalidated on profile update
+
+---
+
+## PHASE 11 — Gatherings / Events
+
+### EVENT-001 · Event Management (Admin) ⏳
+**Acceptance Criteria:**
+- [ ] `POST /admin/events` — title, description, scheduledAt, tags (Virtual|Moderated|FamilySafe), maxAttendees?, meetingUrl?
+- [ ] `PUT /admin/events/:id` — update any field
+- [ ] `DELETE /admin/events/:id` — cancel event (notifies RSVPs)
+- [ ] Requires SUPERADMIN role
+
+### EVENT-002 · List Events ⏳
+**Story:** As a user, I see upcoming community gatherings with a personalised "why invited" reason.
+
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/events` — upcoming events sorted by scheduledAt ASC
+- [ ] Each event includes: title, scheduledAt, attendeeCount, tags[], whyInvited text, hasRsvp
+- [ ] `whyInvited` generated from: user's current group region, relocation openness, profile section completeness
+- [ ] Filters: `?tag=virtual` `?upcoming=true` `?limit=10`
+
+### EVENT-003 · RSVP ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/events/:id/rsvp` — register attendance
+- [ ] `DELETE /api/v1/events/:id/rsvp` — cancel
+- [ ] `GET /api/v1/events/calendar` — this week's milestone dates (intro drop Sunday, prompts open, check-ins)
+- [ ] RSVP capped at `maxAttendees` if set; returns 409 when full
+- [ ] Post-event attendance stored; used by ALG-006 (event co-attendance boost)
+
+---
+
+## PHASE 12 — Weekly Prompts
+
+### PROMPT-001 · Prompt Management (Admin) ⏳
+**Acceptance Criteria:**
+- [ ] `POST /admin/prompts` — text, opensAt, closesAt (default 7 days)
+- [ ] `GET /admin/prompts` — list with: responseCount, resonateCount, chatStartRate
+- [ ] `PUT /admin/prompts/:id` — update or reschedule
+- [ ] Only one prompt active at a time; returns 409 if another is open
+
+### PROMPT-002 · Get Current Prompt ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/prompts/current` — active prompt text, daysLeft, totalResponses, userHasResponded
+- [ ] 404 if no active prompt this week
+
+### PROMPT-003 · Submit Prompt Response ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/prompts/current/response` — `{ type: "text"|"voice", content?: string, voiceUrl?: string }`
+- [ ] Voice: S3 URL from pre-signed upload (audio/mpeg or audio/mp4, max 60 seconds)
+- [ ] Text: max 500 characters
+- [ ] One response per user per prompt; update replaces previous
+- [ ] Returns 201 `{ responseId, promptId, type, createdAt }`
+
+### PROMPT-004 · Browse Community Responses ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/prompts/current/responses?limit=20&cursor=` — paginated community answers
+- [ ] Each: responder profile summary, responseType, content/voiceUrl, resonateCount, hasResonated, canStartChat
+- [ ] Ordered by: resonateCount DESC (break ties by createdAt DESC)
+
+### PROMPT-005 · Resonate + Start Chat ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/prompts/responses/:id/resonate` — soft agreement reaction
+- [ ] `DELETE /api/v1/prompts/responses/:id/resonate` — remove
+- [ ] Idempotent; cannot resonate own response
+- [ ] Resonate creates matching signal (ALG-003 dimension 12)
+- [ ] When user taps "Start chat" on a prompt response: opens conversation with prompt answer embedded as `sharedSpark`
+
+---
+
+## PHASE 13 — Saved Profiles
+
+### SAVE-001 · Save Profile ⏳
+**Story:** As a user, I save a profile to my private shortlist so I can revisit and compare later.
+
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/saved-profiles/:userId` — `{ label?: "HIGH_FIT"|"MAYBE" }` — default no label
+- [ ] `DELETE /api/v1/saved-profiles/:userId` — remove from shortlist
+- [ ] Max 50 saved profiles; returns 409 if exceeded
+- [ ] Cannot save own profile; returns 400
+- [ ] `savedAt` stored for "Expiring" label (computed when their group expires soon)
+
+### SAVE-002 · List Saved Profiles ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/saved-profiles` — private list, sorted by savedAt DESC
+- [ ] Each: profile snapshot, label, savedAt, groupExpiresAt (for Expiring badge), compatibilityScore
+- [ ] `GET /api/v1/saved-profiles/compare?ids=a,b` — side-by-side comparison of 2 saved profiles
+
+### SAVE-003 · Label + Notes ⏳
+**Acceptance Criteria:**
+- [ ] `PUT /api/v1/saved-profiles/:userId/label` — `{ label: "HIGH_FIT"|"MAYBE"|null }`
+- [ ] `POST /api/v1/saved-profiles/:userId/note` — `{ note: string }` max 300 chars
+- [ ] Notes are private; never included in any response to other users
+
+---
+
+## PHASE 14 — Signals Dashboard
+
+### SIGNAL-001 · Profile View Logging ⏳
+**Story:** As a user, knowing who viewed my profile and when drives engagement and helps me prioritise replies.
+
+**Acceptance Criteria:**
+- [ ] Every `GET /api/v1/profiles/:id` call (by a different user) appends a `profile_view` event: `{ viewerId, viewedId, viewedAt }`
+- [ ] Self-views not logged; admin views not logged
+- [ ] Events stored in append-only `profile_views` table; never read back to the viewer (privacy)
+
+### SIGNAL-002 · Weekly Metrics ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/signals/week` — `{ profileViews: { count, delta }, newConnections: { count, delta }, activeChats: { count, newThisWeek }, savedProfiles: { count, delta } }`
+- [ ] Delta = this week vs last week (positive/negative integer)
+- [ ] Cached Redis 1 hour
+
+### SIGNAL-003 · Action Queue ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/signals/action-queue` — ordered list of priority nudges
+- [ ] Sources: unanswered incoming connections, conversations waiting on user reply, incomplete profile sections, incomplete values answers
+- [ ] Each item: `{ type, title, description, cta, urgency: "now"|"today"|"this_week" }`
+
+### SIGNAL-004 · Momentum Chart ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/signals/momentum` — `{ days: [{ date, views }] }` — last 7 days
+- [ ] Used to render bar chart on Your Week screen
+
+---
+
+## PHASE 15 — Trust Center
+
+### TRUST-001 · Trust Score Calculation ⏳
+**Story:** As a user, I see a trust score that reflects how verified and complete my profile is.
+
+**Acceptance Criteria:**
+- [ ] Trust score (0–100) calculated from: phone (20pts), face/selfie verified (25pts), voice intro uploaded (15pts), work verification (20pts), education verification (20pts)
+- [ ] Recalculated on any verification layer change
+- [ ] Cached; exposed on own profile and to matched users
+
+### TRUST-002 · Trust Center Endpoint ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/trust-center` — `{ score, layers: { phone, face, voiceIntro, work, education }, privacyControls, accessLevel }`
+- [ ] Each layer: `{ verified: boolean, verifiedAt?, label }`
+
+### TRUST-003 · Privacy Controls ⏳
+**Acceptance Criteria:**
+- [ ] `PUT /api/v1/profile/privacy-controls` — `{ showLastName: boolean, showWorkplace: boolean, showEducation: boolean, showFamilyDetails: boolean }`
+- [ ] Settings applied before mutual connection; after mutual all fields unlock
+- [ ] `GET /api/v1/profile/access-levels` — returns the 3 tier definitions (Basic/Trusted/Family-aware)
+
+### TRUST-004 · Pause Visibility ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/profile/pause-visibility` — user stops appearing in any discover, introductions, or group
+- [ ] `DELETE /api/v1/profile/pause-visibility` — resume
+- [ ] Paused status stored on user row; respected by all feed/introduction queries
+
+### TRUST-005 · Block + Report ⏳
+**Acceptance Criteria:**
+- [ ] `POST /api/v1/users/:id/block` — block: removes from each other's feeds, cannot message
+- [ ] `DELETE /api/v1/users/:id/block` — unblock
+- [ ] `GET /api/v1/users/blocked` — list blocked users
+- [ ] Block is mutual-invisible: blocked user cannot see blocker's profile
+- [ ] Report reuses existing `POST /api/v1/messages/:msgId/flag` pattern extended for user-level reports
+
+---
+
+## PHASE 16 — Algorithm v2 + Match Tuning
+
+### ALG-001–009 · New Matching Dimensions ⏳
+**Story:** As a user, my matches improve as I add habits, answer prompts, and attend events — because all those signals feed the algorithm.
+
+**Dimension specification:**
+| # | Dimension | Data source | Weight |
+|---|-----------|------------|--------|
+| 10 | Weekly rhythm similarity | Habit log time-of-day patterns | TBD |
+| 11 | Consistency score | Habit streak + variance | TBD |
+| 12 | Prompt resonance | Shared resonate events on same prompt answers | TBD |
+| 13 | Settlement intent | Match Tuning Q1 answer alignment | TBD |
+| 14 | Family involvement | Match Tuning Q2 answer alignment | TBD |
+| 15 | Event co-attendance | Both RSVP'd same event | TBD |
+| 16 | Communication style | Voice intro presence, prompt answer depth | TBD |
+| 17 | Profile momentum | Profile views velocity (7-day trend) | TBD |
+| 18 | Trust depth | Count of verified layers | TBD |
+
+**Acceptance Criteria (all dimensions):**
+- [ ] Each dimension returns a `{ name, score: 0–100, label: string }` tuple
+- [ ] Total score = weighted sum of all 18 dimensions (weights configurable via feature flags)
+- [ ] Dimension scores cached per pair, invalidated on any data change for either user
+- [ ] Per-dimension output included in `GET /api/v1/profiles/:id/match-context` response
+
+### ALG-010 · Match Tuning Endpoints ⏳
+**Acceptance Criteria:**
+- [ ] `GET /api/v1/profile/match-tuning` — `{ answers: { longTermLocation?, familyInvolvement? } }`
+- [ ] `POST /api/v1/profile/match-tuning` — `{ longTermLocation: string, familyInvolvement: string }`
+- [ ] On save: enqueues BullMQ job to re-score all pairs for this user
+- [ ] `GET /api/v1/profile/match-tuning/impact` — `{ currentTopMatch, projectedTopMatch, dimensionsAffected[] }` (preview before committing)
+
+---
+
+## Design Decisions Log (Figma Analysis Session — 2026-05-28)
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Identity verification partner | Manual admin review | No third-party SDK. User uploads to S3; admin reviews in admin panel. MVP-safe. |
+| "Why this match?" text | Rule-based templates (v1) + LLM cached (v2) | Templates ship with Phase 10. LLM enhancement follows in Phase 16. |
+| £2.99/year Founding Member price | TBD — placeholder in design | Final price not confirmed. Stripe price ID to be added once finalised. |
+| Credits vs Diamonds | Same system — UI renamed to "Credits" | Backend `diamond_ledger` stays; display name changes to "credits" everywhere. |
+| Email authentication | Required (not future) | OB7 Figma screen explicitly shows "Continue with email" as primary CTA. |
+| Habits cadence | Daily logging | "Log today" CTA per habit; 7-dot weekly tracker confirms daily not weekly. |
+| Voice intro storage | S3 (same adapter as photos) | Profile completion hub lists it alongside photos as a section. Audio: mpeg/mp4, max 60s. |
+| Group credit cost | Admin-configurable per group | Design shows variable prices (80, 120 credits) per group — not a fixed constant. |

@@ -150,6 +150,51 @@ components:
       type: string
       enum: [PARENTS_LOVE, DEAL_BREAKER, TYPICAL_SUNDAY]
 
+    ConnectionStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, PASSED, WITHDRAWN]
+      description: Lifecycle state of a connection request.
+
+    GroupAccessType:
+      type: string
+      enum: [OPEN, CREDIT_GATED, INVITE_ONLY]
+      description: How a user gains access to a group.
+
+    IdDocumentType:
+      type: string
+      enum: [PASSPORT, DRIVING_LICENCE, NATIONAL_ID]
+      description: Type of government-issued ID document uploaded for verification.
+
+    HabitKey:
+      type: string
+      enum: [MORNING_ROUTINE, EXERCISE, HEALTHY_EATING, MINDFULNESS, JOURNALING, SOCIAL_CONNECTION, LEARNING]
+      description: Canonical key for a trackable daily habit.
+
+    SavedProfileLabel:
+      type: string
+      enum: [HIGH_FIT, EXPIRING, MAYBE]
+      description: User-applied label on a saved profile card.
+
+    EventTag:
+      type: string
+      enum: [SOCIAL, CULTURAL, PROFESSIONAL, WELLNESS]
+      description: Category tag for a community gathering.
+
+    PromptResponseType:
+      type: string
+      enum: [TEXT, VOICE]
+      description: Medium used to answer the weekly community prompt.
+
+    VerificationLayer:
+      type: string
+      enum: [PHONE, FACE, VOICE_INTRO, WORK, EDUCATION]
+      description: One of the five trust verification layers. Each layer has a point value (Phone=20, Face=25, Voice=15, Work=20, Education=20).
+
+    CreditTransactionReason:
+      type: string
+      enum: [PURCHASE, INTRO_UNLOCK, GROUP_JOIN, EVENT_RSVP, ADMIN_GRANT, REFUND, EXPIRY]
+      description: Reason for a credit ledger entry. Maps to DiamondReason on the backend.
+
     # ── Domain objects ────────────────────────────────────────────────────────
 
     TokenPair:
@@ -193,17 +238,40 @@ components:
 
     ScoreBreakdown:
       type: object
-      required: [verification, settlementIntent, realLifeAnswers, profileCompleteness, checkInRecency, ageCompatibility, groupMembership, languageMatch, faithAlignment]
+      description: |
+        18-dimension compatibility score breakdown. Each field is a normalised float 0.0–1.0.
+        Dimensions 1–9 are v1 (currently active). Dimensions 10–18 are v2 (behind feature flag ALG_V2).
+      required:
+        - verification
+        - settlementIntent
+        - realLifeAnswers
+        - profileCompleteness
+        - checkInRecency
+        - ageCompatibility
+        - groupMembership
+        - languageMatch
+        - faithAlignment
       properties:
-        verification:         { type: number, format: float }
-        settlementIntent:     { type: number, format: float }
-        realLifeAnswers:      { type: number, format: float }
-        profileCompleteness:  { type: number, format: float }
-        checkInRecency:       { type: number, format: float }
-        ageCompatibility:     { type: number, format: float }
-        groupMembership:      { type: number, format: float }
-        languageMatch:        { type: number, format: float }
-        faithAlignment:       { type: number, format: float }
+        # v1 dimensions (always present)
+        verification:         { type: number, format: float, description: "Trust score layer completion ratio." }
+        settlementIntent:     { type: number, format: float, description: "Alignment on where to settle long-term." }
+        realLifeAnswers:      { type: number, format: float, description: "Weighted dot-product of Real Life question answers." }
+        profileCompleteness:  { type: number, format: float, description: "Proportion of profile fields filled." }
+        checkInRecency:       { type: number, format: float, description: "Decay-weighted Sunday check-in activity." }
+        ageCompatibility:     { type: number, format: float, description: "Gaussian score centred on preferred age delta." }
+        groupMembership:      { type: number, format: float, description: "Overlap of shared regional groups." }
+        languageMatch:        { type: number, format: float, description: "Primary language compatibility." }
+        faithAlignment:       { type: number, format: float, description: "Faith-in-practice answer similarity." }
+        # v2 dimensions (present when ALG_V2 feature flag is on)
+        weeklyRhythm:         { type: number, format: float, nullable: true, description: "v2 — Similarity in weekly habit cadence." }
+        consistencyScore:     { type: number, format: float, nullable: true, description: "v2 — Habit streak depth and recency." }
+        promptResonance:      { type: number, format: float, nullable: true, description: "v2 — Mutual resonate signals on weekly prompts." }
+        settlementIntentV2:   { type: number, format: float, nullable: true, description: "v2 — Refined settlement alignment using Match Tuning inputs." }
+        familyStyle:          { type: number, format: float, nullable: true, description: "v2 — Parenting and family structure preference match." }
+        eventCoAttendance:    { type: number, format: float, nullable: true, description: "v2 — Shared gathering attendance overlap." }
+        communicationStyle:   { type: number, format: float, nullable: true, description: "v2 — Response cadence and voice-vs-text preference." }
+        profileMomentum:      { type: number, format: float, nullable: true, description: "v2 — Recent profile completion velocity." }
+        trustDepth:           { type: number, format: float, nullable: true, description: "v2 — Composite trust layer score (0–100 normalised)." }
 
     ProfileDto:
       type: object
@@ -313,6 +381,309 @@ components:
         resolvedAt:       { type: string, format: date-time, nullable: true }
         createdAt:        { type: string, format: date-time }
 
+    # ── Connection DTOs ───────────────────────────────────────────────────────
+
+    ConnectionDto:
+      type: object
+      required: [id, requesterId, recipientId, status, createdAt]
+      properties:
+        id:           { type: string, format: uuid }
+        requesterId:  { type: string, format: uuid }
+        recipientId:  { type: string, format: uuid }
+        status:       { $ref: '#/components/schemas/ConnectionStatus' }
+        message:      { type: string, nullable: true, description: "Optional intro message sent with the request." }
+        resolvedAt:   { type: string, format: date-time, nullable: true }
+        createdAt:    { type: string, format: date-time }
+        otherUser:
+          type: object
+          nullable: true
+          description: "Summary of the other party. Populated in list/detail views."
+          properties:
+            userId:   { type: string, format: uuid }
+            name:     { type: string }
+            photoUrl: { type: string, format: uri, nullable: true }
+            age:      { type: integer, nullable: true }
+            city:     { type: string, nullable: true }
+
+    # ── Group DTOs ────────────────────────────────────────────────────────────
+
+    GroupDto:
+      type: object
+      required: [id, name, region, country, memberCount, maxMembers, accessType, creditCost, isJoined, expiresAt, createdAt]
+      properties:
+        id:          { type: string, format: uuid }
+        name:        { type: string, example: "UK Indians — London" }
+        region:      { type: string, example: "London" }
+        country:     { type: string, example: "UK" }
+        description: { type: string, nullable: true }
+        memberCount: { type: integer }
+        maxMembers:  { type: integer }
+        accessType:  { $ref: '#/components/schemas/GroupAccessType' }
+        creditCost:  { type: integer, description: "Credits required to join. 0 for OPEN groups." }
+        isJoined:    { type: boolean }
+        expiresAt:   { type: string, format: date-time, nullable: true, description: "When the user's membership in this group expires." }
+        createdAt:   { type: string, format: date-time }
+
+    # ── Verification DTOs ─────────────────────────────────────────────────────
+
+    VerificationLayerDto:
+      type: object
+      required: [layer, isComplete, points]
+      properties:
+        layer:      { $ref: '#/components/schemas/VerificationLayer' }
+        isComplete: { type: boolean }
+        points:     { type: integer, description: "Points this layer contributes to trust score (Phone=20, Face=25, Voice=15, Work=20, Education=20)." }
+        completedAt: { type: string, format: date-time, nullable: true }
+
+    VerificationStatusDto:
+      type: object
+      required: [status, trustScore, layers, submittedAt]
+      properties:
+        status:      { $ref: '#/components/schemas/VerificationStatus' }
+        trustScore:  { type: integer, minimum: 0, maximum: 100, description: "Sum of points from completed layers." }
+        layers:      { type: array, items: { $ref: '#/components/schemas/VerificationLayerDto' } }
+        rejectionReason: { type: string, nullable: true }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        reviewedAt:  { type: string, format: date-time, nullable: true }
+
+    # ── Habit DTOs ────────────────────────────────────────────────────────────
+
+    HabitDayDto:
+      type: object
+      required: [date, logged]
+      properties:
+        date:   { type: string, format: date }
+        logged: { type: boolean }
+
+    HabitDto:
+      type: object
+      required: [habitKey, label, icon, isLoggedToday, currentStreak, weekHistory]
+      properties:
+        habitKey:      { $ref: '#/components/schemas/HabitKey' }
+        label:         { type: string, example: "Morning Routine" }
+        icon:          { type: string, example: "☀️", description: "Emoji icon for the habit." }
+        isLoggedToday: { type: boolean }
+        currentStreak: { type: integer, description: "Consecutive days logged." }
+        weekHistory:   { type: array, items: { $ref: '#/components/schemas/HabitDayDto' }, maxItems: 7 }
+
+    HabitStreakDto:
+      type: object
+      required: [totalDaysLogged, longestStreak, currentStreak, lastLoggedAt]
+      properties:
+        totalDaysLogged: { type: integer }
+        longestStreak:   { type: integer }
+        currentStreak:   { type: integer }
+        lastLoggedAt:    { type: string, format: date-time, nullable: true }
+
+    HabitReflectionDto:
+      type: object
+      required: [weekOf, reflectionText, generatedAt]
+      properties:
+        weekOf:         { type: string, format: date, description: "ISO date of the Monday starting the reflected week." }
+        reflectionText: { type: string, description: "AI-generated or template-based weekly reflection." }
+        generatedAt:    { type: string, format: date-time }
+
+    # ── Introduction DTOs ─────────────────────────────────────────────────────
+
+    MatchDimensionDto:
+      type: object
+      required: [dimension, score, label]
+      properties:
+        dimension: { type: string, example: "familyStyle", description: "Camel-case dimension key from ScoreBreakdown." }
+        score:     { type: number, format: float, minimum: 0, maximum: 1 }
+        label:     { type: string, example: "Life abroad", description: "Human-readable dimension name for display." }
+
+    MatchContextDto:
+      type: object
+      required: [totalScore, topDimensions, explanationText]
+      properties:
+        totalScore:      { type: number, format: float, description: "Overall compatibility score 0.0–1.0." }
+        topDimensions:   { type: array, items: { $ref: '#/components/schemas/MatchDimensionDto' }, maxItems: 3 }
+        explanationText: { type: string, description: "Rule-based or LLM-cached 'Why this match?' narrative." }
+
+    IntroductionDto:
+      type: object
+      required: [id, weekOf, profile, matchContext, status, creditCost]
+      properties:
+        id:           { type: string, format: uuid }
+        weekOf:       { type: string, format: date, description: "Monday of the week this intro was dropped." }
+        profile:
+          type: object
+          required: [userId, name, age, city, country, photoUrl, completionScore]
+          properties:
+            userId:          { type: string, format: uuid }
+            name:            { type: string }
+            age:             { type: integer }
+            city:            { type: string }
+            country:         { type: string }
+            photoUrl:        { type: string, format: uri, nullable: true }
+            completionScore: { type: integer }
+        matchContext: { $ref: '#/components/schemas/MatchContextDto' }
+        status:       { type: string, enum: [PENDING, CONNECTED, PASSED], description: "User's action on this intro." }
+        creditCost:   { type: integer, description: "Credits required to unlock this introduction." }
+        unlockedAt:   { type: string, format: date-time, nullable: true }
+        expiresAt:    { type: string, format: date-time, nullable: true, description: "When this intro expires if no action taken." }
+
+    # ── Event (Gathering) DTOs ────────────────────────────────────────────────
+
+    EventDto:
+      type: object
+      required: [id, title, description, eventDate, location, tag, rsvpCount, maxRsvp, isRsvped, creditCost, createdAt]
+      properties:
+        id:          { type: string, format: uuid }
+        title:       { type: string, example: "London Diwali Mixer" }
+        description: { type: string }
+        eventDate:   { type: string, format: date-time }
+        location:    { type: string, example: "Canary Wharf, London" }
+        onlineUrl:   { type: string, format: uri, nullable: true, description: "Video link for virtual events." }
+        tag:         { $ref: '#/components/schemas/EventTag' }
+        rsvpCount:   { type: integer }
+        maxRsvp:     { type: integer, nullable: true }
+        isRsvped:    { type: boolean }
+        creditCost:  { type: integer, description: "Credits to RSVP. 0 for free events." }
+        whyInvited:  { type: string, nullable: true, description: "Short personalised reason why this event was surfaced." }
+        createdAt:   { type: string, format: date-time }
+
+    # ── Weekly Prompt DTOs ────────────────────────────────────────────────────
+
+    PromptDto:
+      type: object
+      required: [id, weekOf, promptText, responseType, expiresAt]
+      properties:
+        id:           { type: string, format: uuid }
+        weekOf:       { type: string, format: date }
+        promptText:   { type: string, example: "What does a Sunday well-spent look like for you?" }
+        responseType: { $ref: '#/components/schemas/PromptResponseType' }
+        expiresAt:    { type: string, format: date-time }
+        myResponse:
+          type: object
+          nullable: true
+          properties:
+            text:     { type: string, nullable: true }
+            audioUrl: { type: string, format: uri, nullable: true }
+            submittedAt: { type: string, format: date-time }
+
+    PromptResponseDto:
+      type: object
+      required: [id, promptId, userId, responseType, resonateCount, hasResonated, createdAt]
+      properties:
+        id:            { type: string, format: uuid }
+        promptId:      { type: string, format: uuid }
+        userId:        { type: string, format: uuid }
+        userName:      { type: string }
+        userPhotoUrl:  { type: string, format: uri, nullable: true }
+        responseType:  { $ref: '#/components/schemas/PromptResponseType' }
+        text:          { type: string, nullable: true }
+        audioUrl:      { type: string, format: uri, nullable: true }
+        durationSeconds: { type: integer, nullable: true }
+        resonateCount: { type: integer }
+        hasResonated:  { type: boolean, description: "True if the authenticated user has resonated this response." }
+        createdAt:     { type: string, format: date-time }
+
+    # ── Saved Profile DTOs ────────────────────────────────────────────────────
+
+    SavedProfileDto:
+      type: object
+      required: [id, targetUserId, label, createdAt]
+      properties:
+        id:           { type: string, format: uuid }
+        targetUserId: { type: string, format: uuid }
+        label:        { $ref: '#/components/schemas/SavedProfileLabel', nullable: true }
+        note:         { type: string, nullable: true, maxLength: 500 }
+        expiresAt:    { type: string, format: date-time, nullable: true, description: "When the save expires (for EXPIRING label)." }
+        createdAt:    { type: string, format: date-time }
+        profile:
+          type: object
+          nullable: true
+          description: "Snapshot of the saved profile. Populated in list views."
+          properties:
+            name:        { type: string }
+            age:         { type: integer }
+            city:        { type: string }
+            country:     { type: string }
+            photoUrl:    { type: string, format: uri, nullable: true }
+            totalScore:  { type: number, format: float, nullable: true }
+
+    # ── Signals DTOs ──────────────────────────────────────────────────────────
+
+    SignalMetricDto:
+      type: object
+      required: [key, label, value, delta]
+      properties:
+        key:   { type: string, example: "profileViews" }
+        label: { type: string, example: "Profile Views" }
+        value: { type: integer }
+        delta: { type: integer, description: "Change vs previous week. Positive = up." }
+
+    ActionQueueItemDto:
+      type: object
+      required: [type, label, targetUserId, priority]
+      properties:
+        type:         { type: string, enum: [RESPOND_TO_INTRO, COMPLETE_PROFILE, LOG_HABIT, RSVP_EVENT, REPLY_TO_CONNECTION], description: "Action category." }
+        label:        { type: string, example: "Reply to Arjun's intro" }
+        targetUserId: { type: string, format: uuid, nullable: true }
+        priority:     { type: integer, minimum: 1, maximum: 5, description: "1 = highest." }
+        expiresAt:    { type: string, format: date-time, nullable: true }
+
+    SignalsWeekDto:
+      type: object
+      required: [weekOf, metrics, actionQueue, momentumScore]
+      properties:
+        weekOf:        { type: string, format: date }
+        metrics:       { type: array, items: { $ref: '#/components/schemas/SignalMetricDto' } }
+        actionQueue:   { type: array, items: { $ref: '#/components/schemas/ActionQueueItemDto' } }
+        momentumScore: { type: integer, minimum: 0, maximum: 100, description: "Overall momentum score for the week." }
+
+    # ── Trust Center DTOs ─────────────────────────────────────────────────────
+
+    TrustLayerDto:
+      type: object
+      required: [layer, isComplete, points, label, description]
+      properties:
+        layer:       { $ref: '#/components/schemas/VerificationLayer' }
+        isComplete:  { type: boolean }
+        points:      { type: integer }
+        label:       { type: string, example: "Face Verified" }
+        description: { type: string, example: "Selfie matched to ID document by admin review." }
+        completedAt: { type: string, format: date-time, nullable: true }
+
+    TrustCenterDto:
+      type: object
+      required: [trustScore, maxScore, layers, isBlocked, isPaused]
+      properties:
+        trustScore:  { type: integer, minimum: 0, maximum: 100 }
+        maxScore:    { type: integer, example: 100 }
+        layers:      { type: array, items: { $ref: '#/components/schemas/TrustLayerDto' } }
+        isBlocked:   { type: boolean, description: "True if the authenticated user has blocked the viewed user (only set on GET /{targetUserId})." }
+        isPaused:    { type: boolean, description: "True if the authenticated user's own profile is paused." }
+
+    # ── Match Tuning DTOs ─────────────────────────────────────────────────────
+
+    MatchTuningDto:
+      type: object
+      required: [updatedAt]
+      properties:
+        maxDistanceKm:      { type: integer, nullable: true, description: "Preferred max distance from current city. Null = no preference." }
+        preferredCountries: { type: array, items: { type: string }, description: "ISO country codes the user prefers to match with." }
+        familyStylePreference: { type: string, nullable: true, enum: [NUCLEAR, JOINT, FLEXIBLE], description: "Preferred family structure." }
+        openToKids:         { type: boolean, nullable: true }
+        ageRangeMin:        { type: integer, nullable: true }
+        ageRangeMax:        { type: integer, nullable: true }
+        updatedAt:          { type: string, format: date-time }
+
+    # ── Credit transaction ─────────────────────────────────────────────────────
+
+    CreditTransactionDto:
+      type: object
+      required: [id, delta, balanceAfter, reason, createdAt]
+      properties:
+        id:           { type: string, format: uuid }
+        delta:        { type: integer, description: "Positive = credit, negative = debit." }
+        balanceAfter: { type: integer, description: "Running balance after this transaction." }
+        reason:       { $ref: '#/components/schemas/CreditTransactionReason' }
+        description:  { type: string, nullable: true }
+        createdAt:    { type: string, format: date-time }
+
     # ── Standard response wrappers ────────────────────────────────────────────
 
     ErrorResponse:
@@ -368,6 +739,69 @@ components:
       schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
       description: Number of items per page
 
+    connectionIdPath:
+      name: connectionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Connection UUID
+
+    groupIdPath:
+      name: groupId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Group UUID
+
+    eventIdPath:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Event (Gathering) UUID
+
+    introIdPath:
+      name: introId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Introduction UUID
+
+    promptIdPath:
+      name: promptId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Weekly Prompt UUID
+
+    responseIdPath:
+      name: responseId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Prompt Response UUID
+
+    targetUserIdPath:
+      name: targetUserId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Target user UUID
+
+    verificationIdPath:
+      name: verificationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: Verification submission UUID
+
+    habitKeyPath:
+      name: habitKey
+      in: path
+      required: true
+      schema: { $ref: '#/components/schemas/HabitKey' }
+      description: Habit canonical key
+
   # ── Reusable Responses ────────────────────────────────────────────────────
 
   responses:
@@ -422,29 +856,57 @@ tags:
   - name: Health
     description: Service health and dependency checks
   - name: Auth
-    description: Phone OTP authentication, JWT tokens, Firebase token
+    description: Phone OTP authentication, JWT tokens, Firebase token, email magic link
   - name: Profile
-    description: User profile creation and management
+    description: User profile creation, media, and management
   - name: Discover
     description: Compatibility-scored discovery feed
+  - name: Connections
+    description: Send, accept, pass, and list connection requests
+  - name: Groups
+    description: Regional community circles — join, leave, browse
+  - name: Verification
+    description: Identity document + selfie submission and status
   - name: Conversations
     description: Real-time conversation management and messaging
   - name: Messages
     description: Individual message actions (flagging)
+  - name: Introductions
+    description: Weekly curated intro drop — unlock, pass, match context
+  - name: Gatherings
+    description: Community events — browse, RSVP, attendees
+  - name: Weekly Prompts
+    description: Weekly text/voice prompt — respond, browse, resonate
+  - name: Saved Profiles
+    description: Save, label, and annotate profiles for later
+  - name: Signals
+    description: Activity signals dashboard and action queue
+  - name: Trust Center
+    description: Trust score layers, block, report, and pause profile
+  - name: Habits
+    description: Daily habit logging, streaks, and weekly reflections
+  - name: Match Tuning
+    description: Personal match preference tuning
   - name: Payment — Stripe
     description: Stripe Checkout sessions and webhook ingestion
   - name: Payment — Razorpay
     description: Razorpay orders, payment capture, and webhook ingestion
   - name: Payment — Membership
     description: Founding Member membership status
-  - name: Payment — Diamonds
-    description: Diamond currency balance, spend, and purchase
+  - name: Payment — Credits
+    description: Credit (diamond) currency balance, spend, purchase, and history
   - name: Admin — Auth
     description: Admin user login (email + password + optional TOTP)
+  - name: Admin — Users
+    description: User search, role management, and suspension
   - name: Admin — Moderation
     description: Flag review queue and resolution
   - name: Admin — Payment
     description: Refund processing and ledger reversal
+  - name: Admin — Analytics
+    description: Platform-level engagement and signup metrics
+  - name: Admin — Verification
+    description: ID document and selfie review queue
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -1787,4 +2249,1947 @@ paths:
               example:
                 success: false
                 error: { code: PAYMENT_NOT_FOUND, message: "No payment found for this provider payment ID" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Auth — Email Magic Link ────────────────────────────────────────────────
+
+  /api/v1/auth/email/link:
+    post:
+      tags: [Auth]
+      summary: Request an email magic link
+      description: |
+        Sends a one-time magic-link to the provided email address. The link is valid
+        for 15 minutes. Rate-limited: 3 requests per email per hour.
+      operationId: requestEmailLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, example: "arjun@example.com" }
+            example:
+              email: "arjun@example.com"
+      responses:
+        '200':
+          description: Email sent (always 200 to prevent enumeration)
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Magic link sent if email is registered" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/email/verify:
+    post:
+      tags: [Auth]
+      summary: Verify an email magic link token
+      description: |
+        Exchanges a magic-link token for a JWT token pair. Token is single-use and
+        expires in 15 minutes. On success, a new UserDevice is registered.
+      operationId: verifyEmailLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:       { type: string, minLength: 32, example: "a1b2c3...64chars" }
+                fingerprint: { type: string, format: uuid, nullable: true, description: "Optional device fingerprint for trusted-device stamping." }
+            example:
+              token: "a1b2c3...64chars"
+      responses:
+        '200':
+          description: JWT pair issued
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  tokens: { accessToken: "eyJhbGci...", refreshToken: "ref_abc...", expiresIn: 900 }
+                  userId: "usr-uuid"
+                  isNewUser: false
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401':
+          description: Token expired or already used
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INVALID_TOKEN, message: "Magic link token is invalid or has expired" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Profile additions ──────────────────────────────────────────────────────
+
+  /api/v1/profile/voice-intro:
+    post:
+      tags: [Profile]
+      summary: Upload voice introduction
+      description: |
+        Uploads a voice intro audio file to S3 and records it as a Media row of type
+        VOICE_INTRO. Accepted formats: audio/mpeg, audio/mp4. Max duration 60 seconds.
+        Max file size 10 MB. Only one voice intro per user; existing one is replaced.
+      operationId: uploadVoiceIntro
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: "Audio file (audio/mpeg or audio/mp4, max 60s, max 10 MB)."
+      responses:
+        '201':
+          description: Voice intro uploaded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "media-uuid", type: "VOICE_INTRO", url: "https://cdn.abroadmatrimony.com/voice/usr-uuid/abc.mp3", createdAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/pause:
+    put:
+      tags: [Profile]
+      summary: Pause or resume profile visibility
+      description: |
+        Toggles the profile's paused state. A paused profile is hidden from the discovery
+        feed and weekly intro drop. No rate limit.
+      operationId: pauseProfile
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paused]
+              properties:
+                paused: { type: boolean }
+            example:
+              paused: true
+      responses:
+        '200':
+          description: Pause state updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { isPaused: true, updatedAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Connections ────────────────────────────────────────────────────────────
+
+  /api/v1/connections:
+    get:
+      tags: [Connections]
+      summary: List connections
+      description: |
+        Returns the authenticated user's connections, filterable by status.
+        Supports cursor pagination (newest first).
+        Rate-limited: 60 requests per minute.
+      operationId: listConnections
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/ConnectionStatus' }
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Paginated connection list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "conn-uuid"
+                    requesterId: "usr-uuid-me"
+                    recipientId: "usr-uuid-arjun"
+                    status: "PENDING"
+                    createdAt: "2026-05-29T08:00:00.000Z"
+                    otherUser: { userId: "usr-uuid-arjun", name: "Arjun", photoUrl: null, age: 30, city: "London" }
+                meta: { hasMore: false, cursor: null }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    post:
+      tags: [Connections]
+      summary: Send a connection request
+      description: |
+        Creates a PENDING connection request from the authenticated user to the target.
+        Requires FOUNDING_MEMBER or VERIFIED role.
+        Duplicate requests (same pair, PENDING) return 409.
+        Rate-limited: 10 requests per hour per user.
+      operationId: sendConnectionRequest
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [recipientId]
+              properties:
+                recipientId: { type: string, format: uuid }
+                message:     { type: string, maxLength: 300, nullable: true }
+            example:
+              recipientId: "usr-uuid-arjun"
+              message: "Loved your answer on faith."
+      responses:
+        '201':
+          description: Connection request sent
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "conn-uuid", status: "PENDING", createdAt: "2026-05-29T08:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '409':
+          description: Connection already exists
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONNECTION_ALREADY_EXISTS, message: "A connection request already exists with this user" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/connections/{connectionId}/accept:
+    put:
+      tags: [Connections]
+      summary: Accept a connection request
+      description: |
+        Accepts a PENDING connection request where the authenticated user is the recipient.
+        Transitions to ACCEPTED and fires CONNECTION_ACCEPTED CloudEvent.
+      operationId: acceptConnection
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/connectionIdPath'
+      responses:
+        '200':
+          description: Connection accepted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "conn-uuid", status: "ACCEPTED", resolvedAt: "2026-05-29T09:00:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Connection is not in PENDING state
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONNECTION_NOT_PENDING, message: "Only PENDING connections can be accepted" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/connections/{connectionId}/pass:
+    put:
+      tags: [Connections]
+      summary: Pass (silently decline) a connection request
+      description: |
+        Transitions a PENDING connection to PASSED. The requester is NOT notified.
+        Only the recipient may pass.
+      operationId: passConnection
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/connectionIdPath'
+      responses:
+        '200':
+          description: Connection passed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "conn-uuid", status: "PASSED", resolvedAt: "2026-05-29T09:05:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Groups ─────────────────────────────────────────────────────────────────
+
+  /api/v1/groups:
+    get:
+      tags: [Groups]
+      summary: List available groups
+      description: |
+        Returns all groups the user can see, including joined groups.
+        Rate-limited: 30 requests per minute.
+      operationId: listGroups
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: country
+          in: query
+          required: false
+          schema: { type: string }
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Group list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "grp-uuid"
+                    name: "UK Indians — London"
+                    region: "London"
+                    country: "UK"
+                    memberCount: 142
+                    maxMembers: 200
+                    accessType: "CREDIT_GATED"
+                    creditCost: 120
+                    isJoined: false
+                    expiresAt: null
+                    createdAt: "2026-01-01T00:00:00.000Z"
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/groups/me:
+    get:
+      tags: [Groups]
+      summary: Get my groups
+      description: Returns the groups the authenticated user has joined (max 2).
+      operationId: getMyGroups
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Joined groups (0–2 items)
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { id: "grp-uuid", name: "UK Indians — London", isJoined: true, expiresAt: "2027-01-01T00:00:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/groups/{groupId}:
+    get:
+      tags: [Groups]
+      summary: Get group detail
+      operationId: getGroup
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/groupIdPath'
+      responses:
+        '200':
+          description: Group detail
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "grp-uuid"
+                  name: "UK Indians — London"
+                  memberCount: 142
+                  accessType: "CREDIT_GATED"
+                  creditCost: 120
+                  isJoined: false
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/groups/{groupId}/join:
+    post:
+      tags: [Groups]
+      summary: Join a group
+      description: |
+        Deducts creditCost credits if CREDIT_GATED. Max 2 groups per user.
+        Rate-limited: 5 requests per hour.
+      operationId: joinGroup
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/groupIdPath'
+      responses:
+        '201':
+          description: Group joined
+          content:
+            application/json:
+              example:
+                success: true
+                data: { groupId: "grp-uuid", joinedAt: "2026-05-29T10:00:00.000Z", creditsSpent: 120, newBalance: 180 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '402':
+          description: Insufficient credits
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INSUFFICIENT_CREDITS, message: "You need 120 credits to join this group" }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already a member, full, or 2-group limit reached
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: GROUP_LIMIT_REACHED, message: "You can only be in 2 groups at once" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/groups/{groupId}/leave:
+    delete:
+      tags: [Groups]
+      summary: Leave a group
+      description: Removes the authenticated user from the group. Credits are NOT refunded.
+      operationId: leaveGroup
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/groupIdPath'
+      responses:
+        '200':
+          description: Left group
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "You have left the group" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Verification ───────────────────────────────────────────────────────────
+
+  /api/v1/verification/status:
+    get:
+      tags: [Verification]
+      summary: Get identity verification status
+      operationId: getVerificationStatus
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Verification status with trust layers
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  status: "UNDER_REVIEW"
+                  trustScore: 45
+                  layers:
+                    - { layer: "PHONE", isComplete: true, points: 20, completedAt: "2026-05-01T00:00:00.000Z" }
+                    - { layer: "FACE", isComplete: false, points: 25, completedAt: null }
+                    - { layer: "VOICE_INTRO", isComplete: true, points: 15, completedAt: "2026-05-10T00:00:00.000Z" }
+                    - { layer: "WORK", isComplete: false, points: 20, completedAt: null }
+                    - { layer: "EDUCATION", isComplete: false, points: 20, completedAt: null }
+                  submittedAt: "2026-05-28T00:00:00.000Z"
+                  reviewedAt: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/verification/id-document:
+    post:
+      tags: [Verification]
+      summary: Submit ID document for verification
+      description: |
+        Uploads a government-issued ID to S3 (type ID_DOCUMENT). Sets status to UNDER_REVIEW.
+        Rate-limited: 3 submissions per 24 hours.
+      operationId: submitIdDocument
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document, documentType]
+              properties:
+                document:     { type: string, format: binary }
+                documentType: { $ref: '#/components/schemas/IdDocumentType' }
+      responses:
+        '201':
+          description: Document submitted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { verificationId: "ver-uuid", status: "UNDER_REVIEW", submittedAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/verification/selfie:
+    post:
+      tags: [Verification]
+      summary: Submit selfie for face verification
+      description: |
+        Uploads a selfie to S3 (type SELFIE) for admin face match against ID document.
+        Rate-limited: 3 submissions per 24 hours.
+      operationId: submitSelfie
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [selfie]
+              properties:
+                selfie: { type: string, format: binary }
+      responses:
+        '201':
+          description: Selfie submitted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { status: "UNDER_REVIEW", submittedAt: "2026-05-29T10:05:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '409':
+          description: No ID document on file
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: ID_DOCUMENT_REQUIRED, message: "Submit your ID document before uploading a selfie" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Introductions (Weekly Drop) ────────────────────────────────────────────
+
+  /api/v1/introductions/this-week:
+    get:
+      tags: [Introductions]
+      summary: Get this week's introduction pool
+      description: |
+        Returns the curated weekly intro drop (up to 5 profiles per group).
+        Computed each Sunday at 09:00 GMT by the WEEKLY_INTRO_COMPUTE BullMQ cron job.
+      operationId: getThisWeekIntroductions
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: This week's intro pool
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  weekOf: "2026-05-25"
+                  intros:
+                    - id: "intro-uuid"
+                      profile: { userId: "usr-uuid", name: "Arjun", age: 30, city: "London", country: "UK", photoUrl: null, completionScore: 78 }
+                      matchContext: { totalScore: 0.86, topDimensions: [{ dimension: "familyStyle", score: 0.92, label: "Family style" }], explanationText: "You share similar family values and settlement timelines." }
+                      status: "PENDING"
+                      creditCost: 300
+                      expiresAt: "2026-06-01T09:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/history:
+    get:
+      tags: [Introductions]
+      summary: Get past introduction history
+      operationId: getIntroductionHistory
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Paginated intro history
+          content:
+            application/json:
+              example:
+                success: true
+                data: []
+                meta: { hasMore: false, cursor: null }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/{introId}/connect:
+    post:
+      tags: [Introductions]
+      summary: Unlock and connect via an introduction
+      description: |
+        Spends creditCost credits and sends a connection request in the same DB transaction.
+        Rate-limited: 20 requests per hour.
+      operationId: connectViaIntroduction
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/introIdPath'
+      responses:
+        '201':
+          description: Introduction unlocked and connection sent
+          content:
+            application/json:
+              example:
+                success: true
+                data: { connectionId: "conn-uuid", creditsSpent: 300, newBalance: 0 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '402':
+          description: Insufficient credits
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INSUFFICIENT_CREDITS, message: "300 credits needed to unlock this introduction" }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already actioned
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INTRO_ALREADY_ACTIONED, message: "You have already actioned this introduction" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/{introId}/pass:
+    post:
+      tags: [Introductions]
+      summary: Pass on an introduction
+      description: Marks the introduction PASSED. No credits charged. Introduced user not notified.
+      operationId: passIntroduction
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/introIdPath'
+      responses:
+        '200':
+          description: Introduction passed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { introId: "intro-uuid", status: "PASSED" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already actioned
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INTRO_ALREADY_ACTIONED, message: "You have already actioned this introduction" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/{introId}/match-context:
+    get:
+      tags: [Introductions]
+      summary: Get match context for an introduction
+      description: |
+        Returns top 3 scored dimensions and the explanation text.
+        LLM generation is behind the MATCH_EXPLAIN_LLM feature flag.
+      operationId: getIntroMatchContext
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/introIdPath'
+      responses:
+        '200':
+          description: Match context
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalScore: 0.86
+                  topDimensions:
+                    - { dimension: "familyStyle", score: 0.92, label: "Family style" }
+                    - { dimension: "weeklyRhythm", score: 0.88, label: "Weekly rhythm" }
+                    - { dimension: "settlementIntent", score: 0.83, label: "Life abroad" }
+                  explanationText: "You both prioritise close-knit family values and have complementary settlement timelines."
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Gatherings (Events) ────────────────────────────────────────────────────
+
+  /api/v1/events:
+    get:
+      tags: [Gatherings]
+      summary: List upcoming gatherings
+      description: Returns upcoming events ordered by eventDate ascending. Rate-limited to 30 req/min.
+      operationId: listEvents
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: tag
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/EventTag' }
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Event list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "evt-uuid"
+                    title: "London Diwali Mixer"
+                    eventDate: "2026-10-20T18:00:00.000Z"
+                    location: "Canary Wharf, London"
+                    tag: "SOCIAL"
+                    rsvpCount: 34
+                    maxRsvp: 60
+                    isRsvped: false
+                    creditCost: 0
+                    whyInvited: "You're in the UK Indians — London circle"
+                    createdAt: "2026-09-01T00:00:00.000Z"
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/events/{eventId}:
+    get:
+      tags: [Gatherings]
+      summary: Get gathering detail
+      operationId: getEvent
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventIdPath'
+      responses:
+        '200':
+          description: Event detail
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "evt-uuid"
+                  title: "London Diwali Mixer"
+                  description: "An evening of conversation, music, and connection."
+                  eventDate: "2026-10-20T18:00:00.000Z"
+                  location: "Canary Wharf, London"
+                  onlineUrl: null
+                  tag: "SOCIAL"
+                  rsvpCount: 34
+                  maxRsvp: 60
+                  isRsvped: false
+                  creditCost: 0
+                  createdAt: "2026-09-01T00:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/events/{eventId}/rsvp:
+    post:
+      tags: [Gatherings]
+      summary: RSVP to a gathering
+      description: Registers attendance. Deducts creditCost if > 0. Rate-limited to 10 per hour.
+      operationId: rsvpEvent
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventIdPath'
+      responses:
+        '201':
+          description: RSVP confirmed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { eventId: "evt-uuid", rsvpedAt: "2026-05-29T10:00:00.000Z", creditsSpent: 0 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '402':
+          description: Insufficient credits
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: INSUFFICIENT_CREDITS, message: "50 credits needed to RSVP" }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already RSVPed or event full
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: EVENT_FULL, message: "This event has reached maximum capacity" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Gatherings]
+      summary: Cancel RSVP
+      description: Removes the RSVP. Credits NOT refunded. Only possible before event date.
+      operationId: cancelRsvp
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventIdPath'
+      responses:
+        '200':
+          description: RSVP cancelled
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "RSVP cancelled" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Event already past
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: EVENT_PAST, message: "Cannot cancel RSVP for a past event" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/events/{eventId}/attendees:
+    get:
+      tags: [Gatherings]
+      summary: List event attendees (anonymised)
+      description: Returns capped list of anonymised attendee summaries. Max 20 regardless of limit.
+      operationId: listEventAttendees
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventIdPath'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Attendee list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { userId: "usr-uuid", name: "Arjun S.", city: "London" }
+                meta: { hasMore: false, total: 34 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Weekly Prompts ─────────────────────────────────────────────────────────
+
+  /api/v1/prompts/current:
+    get:
+      tags: [Weekly Prompts]
+      summary: Get this week's prompt
+      description: Returns the active weekly prompt. Includes the user's response if already submitted.
+      operationId: getCurrentPrompt
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Current weekly prompt
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "prompt-uuid"
+                  weekOf: "2026-05-25"
+                  promptText: "What does a Sunday well-spent look like for you?"
+                  responseType: "TEXT"
+                  expiresAt: "2026-06-01T09:00:00.000Z"
+                  myResponse: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/prompts/{promptId}/respond:
+    post:
+      tags: [Weekly Prompts]
+      summary: Submit a response to a weekly prompt
+      description: |
+        Records the user's text or voice response. One response per user per prompt (upsert).
+        Rate-limited: 5 submissions per prompt per user.
+      operationId: respondToPrompt
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/promptIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [responseType]
+              properties:
+                responseType:    { $ref: '#/components/schemas/PromptResponseType' }
+                text:            { type: string, maxLength: 1000, nullable: true }
+                audioUrl:        { type: string, format: uri, nullable: true }
+                durationSeconds: { type: integer, minimum: 1, maximum: 60, nullable: true }
+            example:
+              responseType: "TEXT"
+              text: "A Sunday for me starts slow — chai, journaling, then a long walk."
+      responses:
+        '201':
+          description: Response recorded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "resp-uuid", promptId: "prompt-uuid", responseType: "TEXT", text: "A Sunday for me...", createdAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/prompts/{promptId}/feed:
+    get:
+      tags: [Weekly Prompts]
+      summary: Browse other users' prompt responses
+      description: Paginated feed of other users' responses ordered by resonateCount desc. Rate-limited to 30 req/min.
+      operationId: getPromptFeed
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/promptIdPath'
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Paginated response feed
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "resp-uuid-2"
+                    userId: "usr-uuid-arjun"
+                    userName: "Arjun"
+                    responseType: "TEXT"
+                    text: "Sunday is family brunch followed by cricket highlights."
+                    resonateCount: 7
+                    hasResonated: false
+                    createdAt: "2026-05-29T08:00:00.000Z"
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/prompts/{promptId}/responses/{responseId}/resonate:
+    post:
+      tags: [Weekly Prompts]
+      summary: Resonate with a prompt response
+      description: Increments resonateCount. Idempotent. Rate-limited to 60 per hour.
+      operationId: resonateResponse
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/promptIdPath'
+        - $ref: '#/components/parameters/responseIdPath'
+      responses:
+        '200':
+          description: Resonated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { responseId: "resp-uuid-2", resonateCount: 8, hasResonated: true }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Weekly Prompts]
+      summary: Un-resonate from a prompt response
+      description: Removes the authenticated user's resonate. Idempotent.
+      operationId: unresonateResponse
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/promptIdPath'
+        - $ref: '#/components/parameters/responseIdPath'
+      responses:
+        '200':
+          description: Un-resonated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { responseId: "resp-uuid-2", resonateCount: 7, hasResonated: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Saved Profiles ─────────────────────────────────────────────────────────
+
+  /api/v1/saved:
+    get:
+      tags: [Saved Profiles]
+      summary: List saved profiles
+      operationId: listSavedProfiles
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: label
+          in: query
+          required: false
+          schema: { $ref: '#/components/schemas/SavedProfileLabel' }
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Saved profile list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "save-uuid"
+                    targetUserId: "usr-uuid-arjun"
+                    label: "HIGH_FIT"
+                    note: "Loved his story prompt"
+                    createdAt: "2026-05-29T08:00:00.000Z"
+                    profile: { name: "Arjun", age: 30, city: "London", country: "UK", photoUrl: null, totalScore: 0.86 }
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/saved/{targetUserId}:
+    post:
+      tags: [Saved Profiles]
+      summary: Save a profile
+      description: Idempotent save. Max 50 per user.
+      operationId: saveProfile
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      responses:
+        '201':
+          description: Profile saved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "save-uuid", targetUserId: "usr-uuid-arjun", createdAt: "2026-05-29T08:00:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Saved list full
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: SAVED_LIST_FULL, message: "You can save up to 50 profiles" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Saved Profiles]
+      summary: Unsave a profile
+      description: Idempotent removal.
+      operationId: unsaveProfile
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      responses:
+        '200':
+          description: Profile unsaved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "Profile removed from saved list" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/saved/{targetUserId}/label:
+    put:
+      tags: [Saved Profiles]
+      summary: Set label on a saved profile
+      operationId: setSavedProfileLabel
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label]
+              properties:
+                label: { $ref: '#/components/schemas/SavedProfileLabel', nullable: true }
+            example:
+              label: "HIGH_FIT"
+      responses:
+        '200':
+          description: Label updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "save-uuid", label: "HIGH_FIT" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/saved/{targetUserId}/note:
+    put:
+      tags: [Saved Profiles]
+      summary: Add or update note on a saved profile
+      operationId: setSavedProfileNote
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note: { type: string, maxLength: 500, nullable: true }
+            example:
+              note: "Loved his story prompt about faith."
+      responses:
+        '200':
+          description: Note updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "save-uuid", note: "Loved his story prompt about faith." }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Signals Dashboard ──────────────────────────────────────────────────────
+
+  /api/v1/signals:
+    get:
+      tags: [Signals]
+      summary: Get weekly signals dashboard
+      description: |
+        Returns activity metrics, week-over-week deltas, action queue, and momentum score.
+        Cached in Redis per user for 15 minutes.
+      operationId: getSignals
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Signals dashboard
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  weekOf: "2026-05-25"
+                  metrics:
+                    - { key: "profileViews", label: "Profile Views", value: 24, delta: 6 }
+                    - { key: "connectionRequests", label: "Connection Requests", value: 3, delta: 1 }
+                    - { key: "resonates", label: "Resonates", value: 11, delta: -2 }
+                    - { key: "introPoolSize", label: "Your Intro Pool", value: 5, delta: 0 }
+                  actionQueue:
+                    - { type: "RESPOND_TO_INTRO", label: "Reply to Arjun's intro", targetUserId: "usr-uuid", priority: 1, expiresAt: "2026-06-01T09:00:00.000Z" }
+                  momentumScore: 72
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Trust Center ───────────────────────────────────────────────────────────
+
+  /api/v1/trust:
+    get:
+      tags: [Trust Center]
+      summary: Get my trust center
+      operationId: getMyTrustCenter
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Own trust data
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  trustScore: 92
+                  maxScore: 100
+                  layers:
+                    - { layer: "PHONE", isComplete: true, points: 20, label: "Phone Verified", description: "OTP confirmed.", completedAt: "2026-05-01T00:00:00.000Z" }
+                    - { layer: "FACE", isComplete: true, points: 25, label: "Face Verified", description: "Selfie matched to ID.", completedAt: "2026-05-15T00:00:00.000Z" }
+                    - { layer: "VOICE_INTRO", isComplete: true, points: 15, label: "Voice Intro", description: "60s voice intro uploaded.", completedAt: "2026-05-10T00:00:00.000Z" }
+                    - { layer: "WORK", isComplete: true, points: 20, label: "Work Verified", description: "Employment doc reviewed.", completedAt: "2026-05-20T00:00:00.000Z" }
+                    - { layer: "EDUCATION", isComplete: false, points: 20, label: "Education", description: "Not yet uploaded.", completedAt: null }
+                  isBlocked: false
+                  isPaused: false
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/trust/{targetUserId}:
+    get:
+      tags: [Trust Center]
+      summary: Get another user's trust score
+      operationId: getUserTrustCenter
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      responses:
+        '200':
+          description: Target user trust data
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  trustScore: 65
+                  maxScore: 100
+                  layers:
+                    - { layer: "PHONE", isComplete: true, points: 20 }
+                    - { layer: "FACE", isComplete: false, points: 25 }
+                    - { layer: "VOICE_INTRO", isComplete: true, points: 15 }
+                    - { layer: "WORK", isComplete: false, points: 20 }
+                    - { layer: "EDUCATION", isComplete: false, points: 20 }
+                  isBlocked: false
+                  isPaused: false
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/trust/{targetUserId}/block:
+    post:
+      tags: [Trust Center]
+      summary: Block a user
+      description: Hides both parties from each other. Withdraws any PENDING connection. Idempotent.
+      operationId: blockUser
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      responses:
+        '200':
+          description: User blocked
+          content:
+            application/json:
+              example:
+                success: true
+                data: { targetUserId: "usr-uuid-arjun", blockedAt: "2026-05-29T10:00:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Trust Center]
+      summary: Unblock a user
+      description: Idempotent.
+      operationId: unblockUser
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      responses:
+        '200':
+          description: User unblocked
+          content:
+            application/json:
+              example:
+                success: true
+                data: { message: "User unblocked" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/trust/blocked:
+    get:
+      tags: [Trust Center]
+      summary: List blocked users
+      operationId: listBlockedUsers
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Blocked users list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { targetUserId: "usr-uuid-arjun", name: "Arjun S.", blockedAt: "2026-05-29T10:00:00.000Z" }
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/trust/{targetUserId}/report:
+    post:
+      tags: [Trust Center]
+      summary: Report a user
+      description: Creates a moderation flag against the target user. Rate-limited to 5 per hour.
+      operationId: reportUser
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/targetUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:      { $ref: '#/components/schemas/FlagReason' }
+                description: { type: string, maxLength: 500, nullable: true }
+            example:
+              reason: "FAKE_IDENTITY"
+              description: "Profile photos appear to be stock images"
+      responses:
+        '201':
+          description: Report submitted
+          content:
+            application/json:
+              example:
+                success: true
+                data: { flagId: "flag-uuid", status: "OPEN" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Habits ─────────────────────────────────────────────────────────────────
+
+  /api/v1/habits:
+    get:
+      tags: [Habits]
+      summary: Get my habits
+      description: Returns all habits with current state, streak, and 7-day dot tracker.
+      operationId: getHabits
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Habit list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - habitKey: "MORNING_ROUTINE"
+                    label: "Morning Routine"
+                    icon: "sunrise"
+                    isLoggedToday: true
+                    currentStreak: 5
+                    weekHistory:
+                      - { date: "2026-05-23", logged: true }
+                      - { date: "2026-05-24", logged: true }
+                      - { date: "2026-05-25", logged: false }
+                      - { date: "2026-05-26", logged: true }
+                      - { date: "2026-05-27", logged: true }
+                      - { date: "2026-05-28", logged: true }
+                      - { date: "2026-05-29", logged: true }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/{habitKey}/log:
+    post:
+      tags: [Habits]
+      summary: Log a habit for today
+      description: Idempotent daily log. Updates streak and consistency score dimension.
+      operationId: logHabit
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/habitKeyPath'
+      responses:
+        '200':
+          description: Habit logged
+          content:
+            application/json:
+              example:
+                success: true
+                data: { habitKey: "MORNING_ROUTINE", loggedAt: "2026-05-29T07:30:00.000Z", currentStreak: 5, isNewLog: true }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/streak:
+    get:
+      tags: [Habits]
+      summary: Get overall habit streak summary
+      operationId: getHabitStreak
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Streak summary
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalDaysLogged: 42
+                  longestStreak: 14
+                  currentStreak: 5
+                  lastLoggedAt: "2026-05-29T07:30:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/reflection:
+    get:
+      tags: [Habits]
+      summary: Get weekly habit reflection
+      description: AI-generated or template-based weekly reflection. Returns 404 if fewer than 3 logs this week.
+      operationId: getHabitReflection
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Weekly reflection
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  weekOf: "2026-05-23"
+                  reflectionText: "You maintained your morning routine for 5 out of 7 days. Consider adding mindfulness to complement your exercise habit."
+                  generatedAt: "2026-05-29T09:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/check-in:
+    post:
+      tags: [Habits]
+      summary: Submit Sunday check-in
+      description: |
+        Records the weekly check-in. Updates checkInRecency scoring dimension.
+        Returns 409 if already checked in this week. Rate-limited: 3 per week.
+      operationId: submitCheckIn
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                mood:  { type: integer, minimum: 1, maximum: 5, nullable: true }
+                notes: { type: string, maxLength: 280, nullable: true }
+      responses:
+        '201':
+          description: Check-in recorded
+          content:
+            application/json:
+              example:
+                success: true
+                data: { checkedInAt: "2026-05-29T09:00:00.000Z", weekOf: "2026-05-25" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '409':
+          description: Already checked in this week
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: ALREADY_CHECKED_IN, message: "You have already checked in this week" }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Match Tuning ───────────────────────────────────────────────────────────
+
+  /api/v1/matches/tuning:
+    get:
+      tags: [Match Tuning]
+      summary: Get current match tuning preferences
+      operationId: getMatchTuning
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Match tuning preferences
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  maxDistanceKm: null
+                  preferredCountries: ["GB", "CA"]
+                  familyStylePreference: "FLEXIBLE"
+                  openToKids: true
+                  ageRangeMin: 26
+                  ageRangeMax: 36
+                  updatedAt: "2026-05-20T10:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    put:
+      tags: [Match Tuning]
+      summary: Update match tuning preferences
+      description: "Partial update — only provided fields are changed. Triggers async rescore via BullMQ. Rate-limited to 10 per hour."
+      operationId: updateMatchTuning
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                maxDistanceKm:         { type: integer, minimum: 0, nullable: true }
+                preferredCountries:    { type: array, items: { type: string }, nullable: true }
+                familyStylePreference: { type: string, enum: [NUCLEAR, JOINT, FLEXIBLE], nullable: true }
+                openToKids:            { type: boolean, nullable: true }
+                ageRangeMin:           { type: integer, minimum: 18, maximum: 80, nullable: true }
+                ageRangeMax:           { type: integer, minimum: 18, maximum: 80, nullable: true }
+            example:
+              preferredCountries: ["GB", "CA"]
+              familyStylePreference: "FLEXIBLE"
+              ageRangeMin: 26
+              ageRangeMax: 36
+      responses:
+        '200':
+          description: Tuning updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { updatedAt: "2026-05-29T10:00:00.000Z", rescoreEnqueued: true }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Payment — Credits (extended) ───────────────────────────────────────────
+
+  /api/v1/payment/credits/transactions:
+    get:
+      tags: [Payment — Credits]
+      summary: Get credit transaction history
+      description: Returns the append-only credit ledger for the user. Newest first. Cursor-paginated.
+      operationId: getCreditTransactions
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/cursorQuery'
+        - $ref: '#/components/parameters/limitQuery'
+      responses:
+        '200':
+          description: Credit transaction history
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { id: "ledger-uuid", delta: 200, balanceAfter: 240, reason: "PURCHASE", description: "Bought 200 credit pack", createdAt: "2026-05-29T08:00:00.000Z" }
+                  - { id: "ledger-uuid-2", delta: -300, balanceAfter: 0, reason: "INTRO_UNLOCK", description: "Unlocked introduction to Arjun", createdAt: "2026-05-29T09:00:00.000Z" }
+                meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Users ──────────────────────────────────────────────────────────
+
+  /admin/users/list:
+    post:
+      tags: [Admin — Users]
+      summary: Search and list users
+      description: Paginated user search with filters. Requires OPS role or higher.
+      operationId: adminListUsers
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                search:             { type: string }
+                role:               { $ref: '#/components/schemas/UserRole' }
+                verificationStatus: { $ref: '#/components/schemas/VerificationStatus' }
+                country:            { type: string }
+                page:               { type: integer, minimum: 1, default: 1 }
+                limit:              { type: integer, minimum: 1, maximum: 100, default: 20 }
+            example:
+              role: "VERIFIED"
+              country: "UK"
+              page: 1
+              limit: 20
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { id: "usr-uuid", phone: "+4479****1234", role: "VERIFIED", country: "UK", verificationStatus: "APPROVED", createdAt: "2026-05-01T00:00:00.000Z" }
+                meta: { hasMore: false, total: 1 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/users/{userId}:
+    get:
+      tags: [Admin — Users]
+      summary: Get full user detail (admin view)
+      description: Admin-level detail including profile, membership, trust score, and flag count. Requires OPS or higher.
+      operationId: adminGetUser
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '200':
+          description: Full user detail
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "usr-uuid"
+                  phone: "+4479****1234"
+                  role: "VERIFIED"
+                  verificationStatus: "APPROVED"
+                  trustScore: 80
+                  membership: { plan: "FOUNDING_MEMBER", status: "ACTIVE" }
+                  creditBalance: 240
+                  flagCount: 0
+                  createdAt: "2026-05-01T00:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/users/{userId}/role:
+    put:
+      tags: [Admin — Users]
+      summary: Update a user's role
+      description: Requires SUPERADMIN. Audit logged.
+      operationId: adminUpdateUserRole
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role:   { $ref: '#/components/schemas/UserRole' }
+                reason: { type: string, maxLength: 200, nullable: true }
+            example:
+              role: "FOUNDING_MEMBER"
+              reason: "Manual upgrade after payment confirmation"
+      responses:
+        '200':
+          description: Role updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { userId: "usr-uuid", role: "FOUNDING_MEMBER", updatedAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/users/{userId}/suspend:
+    put:
+      tags: [Admin — Users]
+      summary: Suspend or reinstate a user
+      description: Sets role to SUSPENDED or reinstates to USER. Revokes all sessions. Requires MODERATOR or higher.
+      operationId: adminSuspendUser
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [suspend]
+              properties:
+                suspend: { type: boolean }
+                reason:  { type: string, maxLength: 200, nullable: true }
+            example:
+              suspend: true
+              reason: "Multiple confirmed harassment reports"
+      responses:
+        '200':
+          description: User suspended or reinstated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { userId: "usr-uuid", role: "SUSPENDED", updatedAt: "2026-05-29T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Analytics ──────────────────────────────────────────────────────
+
+  /admin/analytics/overview:
+    get:
+      tags: [Admin — Analytics]
+      summary: Platform analytics overview
+      description: Top-level metrics cached 60 minutes. Requires ANALYST or higher.
+      operationId: adminGetAnalyticsOverview
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Analytics overview
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalUsers: 4823
+                  verifiedUsers: 1240
+                  activeThisWeek: 892
+                  foundingMembers: 156
+                  totalRevenuePaise: 782500000
+                  connectionsThisWeek: 234
+                  messagesThisWeek: 4512
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/signups:
+    get:
+      tags: [Admin — Analytics]
+      summary: Signup trends
+      description: Daily signup counts for past N days (default 30, max 90). Requires ANALYST or higher.
+      operationId: adminGetSignupTrends
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 90, default: 30 }
+      responses:
+        '200':
+          description: Daily signup counts
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { date: "2026-05-01", count: 12 }
+                  - { date: "2026-05-02", count: 18 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/engagement:
+    get:
+      tags: [Admin — Analytics]
+      summary: Weekly engagement metrics
+      description: Weekly engagement breakdown. Requires ANALYST or higher.
+      operationId: adminGetEngagementMetrics
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: weeks
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 12, default: 4 }
+      responses:
+        '200':
+          description: Weekly engagement data
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - weekOf: "2026-05-18"
+                    messagesSent: 3421
+                    connectionsMade: 198
+                    introsUnlocked: 87
+                    eventsRsvped: 56
+                    habitsLogged: 1204
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Verification ───────────────────────────────────────────────────
+
+  /admin/verification/queue:
+    post:
+      tags: [Admin — Verification]
+      summary: List pending verification submissions
+      description: Filter by status, paginated. Requires OPS or higher.
+      operationId: adminListVerificationQueue
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: { $ref: '#/components/schemas/VerificationStatus' }
+                page:   { type: integer, minimum: 1, default: 1 }
+                limit:  { type: integer, minimum: 1, maximum: 50, default: 20 }
+            example:
+              status: "UNDER_REVIEW"
+              page: 1
+              limit: 20
+      responses:
+        '200':
+          description: Verification queue
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "ver-uuid"
+                    userId: "usr-uuid"
+                    documentType: "PASSPORT"
+                    documentUrl: "https://cdn.abroadmatrimony.com/id/usr-uuid/passport.jpg"
+                    selfieUrl: "https://cdn.abroadmatrimony.com/selfie/usr-uuid/selfie.jpg"
+                    status: "UNDER_REVIEW"
+                    submittedAt: "2026-05-29T08:00:00.000Z"
+                meta: { hasMore: false, total: 3 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/verification/{verificationId}/approve:
+    put:
+      tags: [Admin — Verification]
+      summary: Approve identity verification
+      description: |
+        Marks APPROVED, sets user VerificationStatus = APPROVED, upgrades role to VERIFIED,
+        marks FACE trust layer complete, fires USER_VERIFIED CloudEvent.
+        Requires OPS or higher.
+      operationId: adminApproveVerification
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/verificationIdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 200, nullable: true }
+      responses:
+        '200':
+          description: Verification approved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { verificationId: "ver-uuid", status: "APPROVED", userId: "usr-uuid", newRole: "VERIFIED" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Not in UNDER_REVIEW state
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: VERIFICATION_NOT_REVIEWABLE, message: "This submission is already resolved" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/verification/{verificationId}/reject:
+    put:
+      tags: [Admin — Verification]
+      summary: Reject identity verification
+      description: |
+        Marks REJECTED. Fires VERIFICATION_REJECTED CloudEvent (triggers email).
+        Requires OPS or higher.
+      operationId: adminRejectVerification
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/verificationIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 500 }
+            example:
+              reason: "ID document is blurry and unreadable. Please resubmit."
+      responses:
+        '200':
+          description: Verification rejected
+          content:
+            application/json:
+              example:
+                success: true
+                data: { verificationId: "ver-uuid", status: "REJECTED", reason: "ID document is blurry." }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Not in UNDER_REVIEW state
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: VERIFICATION_NOT_REVIEWABLE, message: "This submission is already resolved" }
         '500': { $ref: '#/components/responses/500InternalError' }

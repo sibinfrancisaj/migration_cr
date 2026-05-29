@@ -13,7 +13,16 @@
     { "key": "conv_id",       "value": "REPLACE_WITH_CONV_ID",   "type": "string" },
     { "key": "msg_id",        "value": "REPLACE_WITH_MSG_ID",    "type": "string" },
     { "key": "user_id",       "value": "REPLACE_WITH_USER_ID",   "type": "string" },
-    { "key": "flag_id",       "value": "REPLACE_WITH_FLAG_ID",   "type": "string" },
+    { "key": "flag_id",             "value": "REPLACE_WITH_FLAG_ID",       "type": "string" },
+    { "key": "connection_id",       "value": "REPLACE_WITH_CONNECTION_ID", "type": "string" },
+    { "key": "group_id",            "value": "REPLACE_WITH_GROUP_ID",      "type": "string" },
+    { "key": "event_id",            "value": "REPLACE_WITH_EVENT_ID",      "type": "string" },
+    { "key": "intro_id",            "value": "REPLACE_WITH_INTRO_ID",      "type": "string" },
+    { "key": "prompt_id",           "value": "REPLACE_WITH_PROMPT_ID",     "type": "string" },
+    { "key": "response_id",         "value": "REPLACE_WITH_RESPONSE_ID",   "type": "string" },
+    { "key": "target_user_id",      "value": "REPLACE_WITH_USER_ID",       "type": "string" },
+    { "key": "verification_id",     "value": "REPLACE_WITH_VER_ID",        "type": "string" },
+    { "key": "habit_key",           "value": "MORNING_ROUTINE",            "type": "string" },
     { "key": "stripe_webhook_secret", "value": "", "type": "string" }
   ],
   "item": [
@@ -901,6 +910,1046 @@
           "response": []
         }
       ]
+    },
+
+    {
+      "name": "Auth — Email",
+      "description": "Email magic link authentication (Continue with email flow).",
+      "item": [
+        {
+          "name": "Request Email Link",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"arjun@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/auth/email/link", "host": ["{{base_url}}"], "path": ["api","v1","auth","email","link"] },
+            "description": "Send a one-time magic link to the provided email. Rate-limited: 3/hour/email."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Email Link",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["const r = pm.response.json(); if (r.success && r.data.tokens) { pm.environment.set('access_token', r.data.tokens.accessToken); pm.environment.set('user_id', r.data.userId); }"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"PASTE_TOKEN_FROM_EMAIL_LINK_HERE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/auth/email/verify", "host": ["{{base_url}}"], "path": ["api","v1","auth","email","verify"] },
+            "description": "Exchange magic-link token for JWT pair. Auto-saves access_token and user_id."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Profile — Extensions",
+      "description": "Voice intro upload and profile pause/resume.",
+      "item": [
+        {
+          "name": "Upload Voice Intro",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "audio", "type": "file", "description": "audio/mpeg or audio/mp4, max 60s, max 10MB" }]
+            },
+            "url": { "raw": "{{base_url}}/api/v1/profile/voice-intro", "host": ["{{base_url}}"], "path": ["api","v1","profile","voice-intro"] },
+            "description": "Upload a voice introduction to S3. One per user — replaces existing."
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paused\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/profile/pause", "host": ["{{base_url}}"], "path": ["api","v1","profile","pause"] },
+            "description": "Pause (or resume) profile visibility from discovery and intro drops."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Connections",
+      "description": "Send, accept, pass, and list connection requests.",
+      "item": [
+        {
+          "name": "List Connections",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/connections?status=PENDING&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","connections"],
+              "query": [{ "key": "status", "value": "PENDING" }, { "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Connection Request",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"recipientId\": \"{{target_user_id}}\",\n  \"message\": \"Loved your answer on faith — would love to connect.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/connections", "host": ["{{base_url}}"], "path": ["api","v1","connections"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Accept Connection",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/connections/:connectionId/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","connections",":connectionId","accept"],
+              "variable": [{ "key": "connectionId", "value": "{{connection_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pass (Decline) Connection",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/connections/:connectionId/pass",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","connections",":connectionId","pass"],
+              "variable": [{ "key": "connectionId", "value": "{{connection_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Groups",
+      "description": "Regional community circles — browse, join, leave.",
+      "item": [
+        {
+          "name": "List Groups",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups?country=UK&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","groups"],
+              "query": [{ "key": "country", "value": "UK" }, { "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get My Groups",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/groups/me", "host": ["{{base_url}}"], "path": ["api","v1","groups","me"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Group Detail",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/:groupId",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","groups",":groupId"],
+              "variable": [{ "key": "groupId", "value": "{{group_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Join Group",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/:groupId/join",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","groups",":groupId","join"],
+              "variable": [{ "key": "groupId", "value": "{{group_id}}" }]
+            },
+            "description": "Deducts creditCost credits if CREDIT_GATED. Max 2 groups per user."
+          },
+          "response": []
+        },
+        {
+          "name": "Leave Group",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/:groupId/leave",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","groups",":groupId","leave"],
+              "variable": [{ "key": "groupId", "value": "{{group_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Verification",
+      "description": "Identity document and selfie submission.",
+      "item": [
+        {
+          "name": "Get Verification Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/verification/status", "host": ["{{base_url}}"], "path": ["api","v1","verification","status"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit ID Document",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "document", "type": "file", "description": "JPEG or PNG, max 10MB" },
+                { "key": "documentType", "value": "PASSPORT", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/v1/verification/id-document", "host": ["{{base_url}}"], "path": ["api","v1","verification","id-document"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Selfie",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "selfie", "type": "file", "description": "JPEG or PNG, max 5MB" }]
+            },
+            "url": { "raw": "{{base_url}}/api/v1/verification/selfie", "host": ["{{base_url}}"], "path": ["api","v1","verification","selfie"] }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Introductions",
+      "description": "Weekly curated intro drop — this week's pool, history, connect, pass.",
+      "item": [
+        {
+          "name": "Get This Week's Introductions",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/introductions/this-week", "host": ["{{base_url}}"], "path": ["api","v1","introductions","this-week"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Introduction History",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/introductions/history?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","introductions","history"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Connect via Introduction",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/introductions/:introId/connect",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","introductions",":introId","connect"],
+              "variable": [{ "key": "introId", "value": "{{intro_id}}" }]
+            },
+            "description": "Spends creditCost credits and sends a connection request."
+          },
+          "response": []
+        },
+        {
+          "name": "Pass on Introduction",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/introductions/:introId/pass",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","introductions",":introId","pass"],
+              "variable": [{ "key": "introId", "value": "{{intro_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Match Context (Why this match?)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/introductions/:introId/match-context",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","introductions",":introId","match-context"],
+              "variable": [{ "key": "introId", "value": "{{intro_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Gatherings",
+      "description": "Community events — browse, RSVP, attendees.",
+      "item": [
+        {
+          "name": "List Events",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/events?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","events"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Event Detail",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/events/:eventId",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","events",":eventId"],
+              "variable": [{ "key": "eventId", "value": "{{event_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "RSVP to Event",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/events/:eventId/rsvp",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","events",":eventId","rsvp"],
+              "variable": [{ "key": "eventId", "value": "{{event_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel RSVP",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/events/:eventId/rsvp",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","events",":eventId","rsvp"],
+              "variable": [{ "key": "eventId", "value": "{{event_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Event Attendees",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/events/:eventId/attendees?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","events",":eventId","attendees"],
+              "variable": [{ "key": "eventId", "value": "{{event_id}}" }],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Weekly Prompts",
+      "description": "Weekly community prompt — respond, browse, resonate.",
+      "item": [
+        {
+          "name": "Get Current Prompt",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/prompts/current", "host": ["{{base_url}}"], "path": ["api","v1","prompts","current"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Respond to Prompt",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"responseType\": \"TEXT\",\n  \"text\": \"A Sunday for me starts slow — chai, journaling, then a long walk.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/prompts/:promptId/respond",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","prompts",":promptId","respond"],
+              "variable": [{ "key": "promptId", "value": "{{prompt_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Browse Prompt Feed",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/prompts/:promptId/feed?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","prompts",":promptId","feed"],
+              "variable": [{ "key": "promptId", "value": "{{prompt_id}}" }],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resonate with Response",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/prompts/:promptId/responses/:responseId/resonate",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","prompts",":promptId","responses",":responseId","resonate"],
+              "variable": [
+                { "key": "promptId", "value": "{{prompt_id}}" },
+                { "key": "responseId", "value": "{{response_id}}" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Un-Resonate from Response",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/prompts/:promptId/responses/:responseId/resonate",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","prompts",":promptId","responses",":responseId","resonate"],
+              "variable": [
+                { "key": "promptId", "value": "{{prompt_id}}" },
+                { "key": "responseId", "value": "{{response_id}}" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Saved Profiles",
+      "description": "Save, label, note, and remove saved profiles.",
+      "item": [
+        {
+          "name": "List Saved Profiles",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","saved"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Save Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved/:targetUserId",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","saved",":targetUserId"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unsave Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved/:targetUserId",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","saved",":targetUserId"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Label on Saved Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"HIGH_FIT\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved/:targetUserId/label",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","saved",":targetUserId","label"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set Note on Saved Profile",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Loved his story prompt about faith.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved/:targetUserId/note",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","saved",":targetUserId","note"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Signals",
+      "description": "Weekly activity signals dashboard.",
+      "item": [
+        {
+          "name": "Get Signals Dashboard",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/signals", "host": ["{{base_url}}"], "path": ["api","v1","signals"] },
+            "description": "Returns profile views, connection requests, resonates, intro pool size, action queue, and momentum score. Redis-cached 15 min."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Trust Center",
+      "description": "Trust score, layers, block, unblock, report.",
+      "item": [
+        {
+          "name": "Get My Trust Center",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/trust", "host": ["{{base_url}}"], "path": ["api","v1","trust"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Trust Score",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trust/:targetUserId",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","trust",":targetUserId"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Block User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trust/:targetUserId/block",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","trust",":targetUserId","block"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unblock User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/trust/:targetUserId/block",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","trust",":targetUserId","block"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Blocked Users",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/trust/blocked?limit=20", "host": ["{{base_url}}"], "path": ["api","v1","trust","blocked"], "query": [{ "key": "limit", "value": "20" }] }
+          },
+          "response": []
+        },
+        {
+          "name": "Report User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"FAKE_IDENTITY\",\n  \"description\": \"Profile photos appear to be stock images\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/trust/:targetUserId/report",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","trust",":targetUserId","report"],
+              "variable": [{ "key": "targetUserId", "value": "{{target_user_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Habits",
+      "description": "Daily habit logging, streaks, weekly reflection, Sunday check-in.",
+      "item": [
+        {
+          "name": "Get My Habits",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/habits", "host": ["{{base_url}}"], "path": ["api","v1","habits"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Log Habit Today",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/habits/:habitKey/log",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","habits",":habitKey","log"],
+              "variable": [{ "key": "habitKey", "value": "{{habit_key}}" }]
+            },
+            "description": "Idempotent daily log. Habit keys: MORNING_ROUTINE, EXERCISE, HEALTHY_EATING, MINDFULNESS, JOURNALING, SOCIAL_CONNECTION, LEARNING"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Habit Streak",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/habits/streak", "host": ["{{base_url}}"], "path": ["api","v1","habits","streak"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Weekly Habit Reflection",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/habits/reflection", "host": ["{{base_url}}"], "path": ["api","v1","habits","reflection"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Submit Sunday Check-In",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mood\": 4,\n  \"notes\": \"Good week — kept up the morning routine.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/habits/check-in", "host": ["{{base_url}}"], "path": ["api","v1","habits","check-in"] }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Match Tuning",
+      "description": "Personal match preference tuning.",
+      "item": [
+        {
+          "name": "Get Match Tuning",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/v1/matches/tuning", "host": ["{{base_url}}"], "path": ["api","v1","matches","tuning"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Match Tuning",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"preferredCountries\": [\"GB\", \"CA\"],\n  \"familyStylePreference\": \"FLEXIBLE\",\n  \"openToKids\": true,\n  \"ageRangeMin\": 26,\n  \"ageRangeMax\": 36\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{base_url}}/api/v1/matches/tuning", "host": ["{{base_url}}"], "path": ["api","v1","matches","tuning"] },
+            "description": "Partial update. Triggers async rescore via BullMQ."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Payment — Credits",
+      "description": "Credit balance, spend, purchase, and transaction history.",
+      "item": [
+        {
+          "name": "Get Credit Transactions",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/payment/credits/transactions?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api","v1","payment","credits","transactions"],
+              "query": [{ "key": "limit", "value": "20" }]
+            },
+            "description": "Append-only credit ledger. Newest first."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Admin — Users",
+      "description": "User search, detail, role management, suspension.",
+      "item": [
+        {
+          "name": "Search Users",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"VERIFIED\",\n  \"country\": \"UK\",\n  \"page\": 1,\n  \"limit\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{admin_url}}/admin/users/list", "host": ["{{admin_url}}"], "path": ["admin","users","list"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Detail",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{admin_url}}/admin/users/:userId",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","users",":userId"],
+              "variable": [{ "key": "userId", "value": "{{user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Role",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"FOUNDING_MEMBER\",\n  \"reason\": \"Manual upgrade after payment confirmation\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/users/:userId/role",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","users",":userId","role"],
+              "variable": [{ "key": "userId", "value": "{{user_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Suspend User",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"suspend\": true,\n  \"reason\": \"Multiple confirmed harassment reports\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/users/:userId/suspend",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","users",":userId","suspend"],
+              "variable": [{ "key": "userId", "value": "{{user_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Admin — Analytics",
+      "description": "Platform-level engagement and signup metrics.",
+      "item": [
+        {
+          "name": "Get Analytics Overview",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{admin_url}}/admin/analytics/overview", "host": ["{{admin_url}}"], "path": ["admin","analytics","overview"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Signup Trends",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{admin_url}}/admin/analytics/signups?days=30",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","analytics","signups"],
+              "query": [{ "key": "days", "value": "30" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Engagement Metrics",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{admin_url}}/admin/analytics/engagement?weeks=4",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","analytics","engagement"],
+              "query": [{ "key": "weeks", "value": "4" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Admin — Verification",
+      "description": "ID document and selfie review queue.",
+      "item": [
+        {
+          "name": "List Verification Queue",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_REVIEW\",\n  \"page\": 1,\n  \"limit\": 20\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": { "raw": "{{admin_url}}/admin/verification/queue", "host": ["{{admin_url}}"], "path": ["admin","verification","queue"] }
+          },
+          "response": []
+        },
+        {
+          "name": "Approve Verification",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"ID matched to selfie. Approved.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/verification/:verificationId/approve",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","verification",":verificationId","approve"],
+              "variable": [{ "key": "verificationId", "value": "{{verification_id}}" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Verification",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }] },
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"ID document is blurry and unreadable. Please resubmit with a clearer photo.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{admin_url}}/admin/verification/:verificationId/reject",
+              "host": ["{{admin_url}}"],
+              "path": ["admin","verification",":verificationId","reject"],
+              "variable": [{ "key": "verificationId", "value": "{{verification_id}}" }]
+            }
+          },
+          "response": []
+        }
+      ]
     }
+
   ]
 }
