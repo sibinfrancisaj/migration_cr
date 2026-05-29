@@ -83,6 +83,15 @@ const envSchema = z.object({
   // Trusted device bypass
   /** How many days a device stays trusted after a successful OTP. Default: 90 days. */
   TRUSTED_DEVICE_TTL_DAYS: z.coerce.number().int().min(1).default(90),
+
+  // Seeder (SEED-004) — never present in production; gateway auth bypass
+  /** Random secret shared between seeder and gateway. Never set in production. */
+  SEEDER_SECRET: z.string().optional(),
+
+  // OpenAI (Phase 8b — libs/ai)
+  OPENAI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().default('gpt-4o-mini'),
+  EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

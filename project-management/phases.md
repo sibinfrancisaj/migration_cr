@@ -245,21 +245,21 @@
 
 ---
 
-## Phase 8a — `apps/seeder` (Automated Data Seeding) ⏳
+## Phase 8a — `apps/seeder` (Automated Data Seeding) ✅
 **Goal:** Standalone seeder service that continuously seeds realistic profile data for testing.
-**Sprint:** 8a | **Status:** Backlog (starts after DB-MIGRATION-001)
+**Sprint:** 8a | **Status:** Complete — 2026-05-29. All seeder suites green.
 
 | Task ID   | Description                                                                        | Status |
 |-----------|------------------------------------------------------------------------------------|--------|
-| SEED-001  | Seeder app scaffold — NX project, TS, BullMQ, Express control API, env guards     | ⏳     |
-| SEED-002  | Profile factory — 500 profiles across UK/Germany/Australia/Canada/India           | ⏳     |
-| SEED-003  | S3 photo assignment — reads `seeder/profile-photos/` prefix, assigns randomly     | ⏳     |
-| SEED-004  | SEEDER_SECRET gateway middleware — bypasses OTP, constructs req.user from token   | ⏳     |
-| SEED-005  | Group auto-join — seeder profiles join REGIONAL (auto) + suggested groups         | ⏳     |
-| SEED-006  | Activity simulator — connections, intro responses, RSVPs, prompts, habits, posts  | ⏳     |
-| SEED-007  | Drip scheduler — 3–5 new profiles at random offset within each 3–4 hour window   | ⏳     |
-| SEED-008  | Seeder control API — `POST /seed/run`, `POST /seed/flush`, `GET /seed/status`    | ⏳     |
-| SEED-009  | Matching re-run trigger — fires batch compute after each drip                     | ⏳     |
+| SEED-001  | Seeder app scaffold — NX project, TS, BullMQ, Express control API, env guards     | ✅     |
+| SEED-002  | Profile factory — 500 profiles across UK/Germany/Australia/Canada/India           | ✅     |
+| SEED-003  | S3 photo assignment — reads `seeder/profile-photos/` prefix, assigns randomly     | ✅     |
+| SEED-004  | SEEDER_SECRET gateway middleware — bypasses OTP, constructs req.user from token   | ✅     |
+| SEED-005  | Group auto-join — seeder profiles join REGIONAL (auto) + suggested groups         | ✅     |
+| SEED-006  | Activity simulator — connections, intro responses, RSVPs, prompts, habits, posts  | ✅     |
+| SEED-007  | Drip scheduler — 3–5 new profiles at random offset within each 3–4 hour window   | ✅     |
+| SEED-008  | Seeder control API — `POST /seed/run`, `POST /seed/flush`, `GET /seed/status`    | ✅     |
+| SEED-009  | Matching re-run trigger — fires batch compute after each drip                     | ✅     |
 
 ---
 

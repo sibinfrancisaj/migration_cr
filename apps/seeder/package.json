@@ -1,0 +1,30 @@
+{
+  "name": "@abroad-matrimony/seeder",
+  "version": "1.0.0",
+  "description": "Automated data seeder for Abroad Matrimony — dev/staging only",
+  "private": true,
+  "main": "dist/src/server.js",
+  "scripts": {
+    "dev": "ts-node -r tsconfig-paths/register src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*",
+    "@abroad-matrimony/cache": "*",
+    "bullmq": "^5.0.0",
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -469,7 +469,7 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | Phase | What | Key dependency |
 |-------|------|----------------|
 | **DB-MIGRATION-001** | Schema migration — all new models | Must run first |
-| **Phase 8a** | `apps/seeder` — automated data seeding | DB-MIGRATION-001 |
+| **Phase 8a** | `apps/seeder` — automated data seeding ✅ 2026-05-29 | DB-MIGRATION-001 |
 | **Phase 8b** | `libs/ai` — OpenAI intelligence layer | DB-MIGRATION-001 |
 | **Phase 8c** | Groups revamp — 4-type taxonomy + social feed | DB-MIGRATION-001 |
 | **Phase 8d** | IntroductionDrop — multi-drop, AI-curated | Phase 8b + 8c |
@@ -887,9 +887,9 @@ Read project-management/phases.md section "NEW SCOPE: Phase 8 Series" for task l
 before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot reach Supabase).
 
 Phase 8 work order:
-  1. DB-MIGRATION-001 — schema migration (pgvector, new models) — PREREQUISITE for all below
-  2. Phase 8a (SEED-001→009) — apps/seeder: autonomous data seeder, port 3100
-  3. Phase 8b (AI-001→007) — libs/ai: OpenAI completions + embeddings + Whisper
+  1. DB-MIGRATION-001 — ✅ DONE — schema migration (pgvector, new models)
+  2. Phase 8a (SEED-001→009) — ✅ DONE (2026-05-29) — 1,091 tests, 77 suites — apps/seeder autonomous data seeder, port 3100
+  3. Phase 8b (AI-001→007) — libs/ai: OpenAI completions + embeddings + Whisper  ← NEXT
   4. Phase 8c (GRP-R-001→007) — Groups revamp: 4-type taxonomy + social feed
   5. Phase 8d (IDROP-001→006) — IntroductionDrop: multi-drop, AI-curated pairings
   6. Phase 8e (ADMIN-001→017) — Admin API + Analytics (expanded 2026-05-29: +GroupProposal mgmt, +SystemConfig, +seeder monitoring, +AI monitoring, +extended analytics)
@@ -978,15 +978,44 @@ KEY DECISIONS (Phase 8 — all locked 2026-05-29):
 - Phase 8e Admin scope expanded (2026-05-29): now 17 tasks (ADMIN-001→017). New: ADMIN-013 GroupProposal approve/reject, ADMIN-014 SystemConfig CRUD, ADMIN-015 Seeder monitoring (status/flush/logs), ADMIN-016 AI/ProfileEmbedding monitoring (queue depth, stale embeddings, recompute), ADMIN-017 Extended analytics (group trends, drop engagement, diamond early access, AI vs admin ratios).
 - Admin endpoints for new Phase 8 models: all in apps/admin-api (port 3001). GroupProposal → ADMIN-013, SystemConfig → ADMIN-014, seeder flush → ADMIN-015, ProfileEmbedding recompute → ADMIN-016, drop approval → ADMIN-011, AI proposals dashboard → ADMIN-012.
 
+Key files from Phase 8a (Seeder — SEED-001→009):
+- apps/seeder/src/server.ts — entry point, production guard (NODE_ENV=production → process.exit(1))
+- apps/seeder/src/app.ts — Express app: /health (no auth), /seed (requireSeederKey), 404, error handler
+- apps/seeder/src/lib/seeder-env.ts — getSeederEnv() (seeder-only vars, no Zod gateway schema dep)
+- apps/seeder/src/lib/seeder-logger.ts — createChildLogger({ module: 'seeder' })
+- apps/seeder/src/lib/seeder-state.ts — in-memory state: running/dripPaused/lastRunAt/lastDripAt/totalProfilesCreated
+- apps/seeder/src/lib/seeder-token.ts — buildSeederToken(secret, payload) — mirrors gateway format
+- apps/seeder/src/lib/gateway-client.ts — getGatewayClient() axios singleton + asUser(userId, role, deviceId)
+- apps/seeder/src/data/names.data.ts — 12 cultural background name banks; randomName(background, gender)
+- apps/seeder/src/data/real-life-answers.data.ts — all 12 question keys × 5 persona types; getRandomAnswer()
+- apps/seeder/src/data/story-prompts.data.ts — 3 prompt keys × 5 variants; getRandomStoryAnswer()
+- apps/seeder/src/factories/profile.factory.ts — createSeededProfile(): direct Prisma user create + gateway API calls for profile/answers/prompts/groups
+- apps/seeder/src/services/photo.service.ts — warmPhotoCache() + pickPhotoUrl(gender); S3 ListObjects, CloudFront preferred
+- apps/seeder/src/services/group-join.service.ts — autoJoinGroups(profile): Prisma transaction, GroupMembership + memberCount++
+- apps/seeder/src/services/activity.simulator.ts — runActivitySimulation(): 6 action types, 70% intro accept rate
+- apps/seeder/src/services/flush.service.ts — flushAllSeededData(): 17 deleteMany in Prisma $transaction (dependency order)
+- apps/seeder/src/services/status.service.ts — getSeederStatus(): isSeeded counts + in-memory state
+- apps/seeder/src/jobs/drip.job.ts — BullMQ seeder:drip; scheduleDripJob/triggerImmediateDrip/startDripWorker/closeDripWorker
+- apps/seeder/src/jobs/activity.job.ts — BullMQ seeder:activity repeatable every 2h
+- apps/seeder/src/jobs/match-recompute.job.ts — BullMQ seeder:match-recompute after each drip
+- apps/seeder/src/middleware/seeder-key.middleware.ts — requireSeederKey: X-Seeder-Key header check
+- apps/seeder/src/controllers/seed.controller.ts — seedController: getStatus/triggerRun/flush/pause/resume
+- apps/seeder/src/routes/seed.routes.ts — all seeder control routes behind requireSeederKey
+- apps/seeder/src/__tests__/seed.controller.test.ts — 13 supertest integration tests
+- apps/seeder/package.json + tsconfig.json + jest.config.ts — NX app scaffold
+- apps/gateway/src/middleware/seeder-auth.middleware.ts — SEED-004/ADR-014: seederAuthMiddleware + buildSeederToken; 11 tests
+- apps/gateway/src/app.ts — seederAuthMiddleware mounted after express.json(), before routes
+- libs/config/src/env.ts — SEEDER_SECRET (optional), OPENAI_API_KEY (optional), AI_MODEL, EMBEDDING_MODEL added
+
 NEW ENV VARS (Phase 8 — add to libs/config/src/env.ts + .env.example):
-- SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it)
-- GATEWAY_URL: seeder's target for HTTP calls (default http://localhost:3000)
-- SEEDER_PORT: seeder app port (default 3100)
-- SEEDER_PHOTO_S3_PREFIX: S3 prefix for seeder photos (default seeder/profile-photos)
-- SEEDER_INITIAL_COUNT: total profiles to seed on first run (default 500)
-- OPENAI_API_KEY: OpenAI API key (optional — AI no-ops if absent)
-- AI_MODEL: OpenAI completions model (default gpt-4o-mini)
-- EMBEDDING_MODEL: OpenAI embedding model (default text-embedding-3-small)
+- SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it) ✅ added
+- GATEWAY_URL: seeder's target for HTTP calls (default http://localhost:3000) ✅ added to seeder-env.ts
+- SEEDER_PORT: seeder app port (default 3100) ✅ added to seeder-env.ts
+- SEEDER_PHOTO_S3_PREFIX: S3 prefix for seeder photos (default seeder/profile-photos) ✅ added to seeder-env.ts
+- SEEDER_INITIAL_COUNT: total profiles to seed on first run (default 500) ✅ added to seeder-env.ts
+- OPENAI_API_KEY: OpenAI API key (optional — AI no-ops if absent) ✅ added to libs/config/src/env.ts
+- AI_MODEL: OpenAI completions model (default gpt-4o-mini) ✅ added to libs/config/src/env.ts
+- EMBEDDING_MODEL: OpenAI embedding model (default text-embedding-3-small) ✅ added to libs/config/src/env.ts
 
 SonarCloud: SONAR_TOKEN in GitHub Secrets. Repo is public.
 
