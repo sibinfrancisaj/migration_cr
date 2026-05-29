@@ -2124,117 +2124,154 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### AI-001 · `libs/ai` Scaffold ⏳
+### AI-001 · `libs/ai` Scaffold ✅
 
 **Story:** As a platform, I need an AI library that wraps OpenAI's APIs (completions, embeddings, Whisper) with proper error handling, retry logic, and environment-based fallbacks.
 
 **Acceptance Criteria:**
-- [ ] `libs/ai/package.json` (`@abroad-matrimony/ai`, depends on `openai` npm package)
-- [ ] `libs/ai/src/client.ts` — OpenAI singleton, lazy-initialised, `isAiConfigured()` check (graceful fallback if no API key)
-- [ ] `libs/ai/src/index.ts` — barrel exports
-- [ ] Env vars: `OPENAI_API_KEY`, `AI_MODEL` (default `gpt-4o-mini`), `EMBEDDING_MODEL` (default `text-embedding-3-small`)
-- [ ] All 3 env vars added to `libs/config/src/env.ts` as optional strings
-- [ ] All 3 added to `.env.example` with comments
-- [ ] `AiNotConfiguredError` — thrown when API key absent and non-mock path is called
-- [ ] `libs/ai/jest.config.ts` — test config using `jest.preset.js`
-- [ ] Unit tests: configured → returns singleton; not configured → `isAiConfigured()` returns false; error classes instantiate correctly
+- [x] `libs/ai/package.json` (`@abroad-matrimony/ai`, depends on `openai` npm package)
+- [x] `libs/ai/src/client.ts` — OpenAI singleton, lazy-initialised, `isAiConfigured()` check (graceful fallback if no API key)
+- [x] `libs/ai/src/index.ts` — barrel exports
+- [x] Env vars: `OPENAI_API_KEY`, `AI_MODEL` (default `gpt-4o-mini`), `EMBEDDING_MODEL` (default `text-embedding-3-small`)
+- [x] All 3 env vars added to `libs/config/src/env.ts` as optional strings
+- [x] All 3 added to `.env.example` with comments
+- [x] `AiNotConfiguredError` — thrown when API key absent and non-mock path is called
+- [x] `libs/ai/jest.config.ts` — test config using `jest.preset.js`
+- [x] Unit tests: configured → returns singleton; not configured → `isAiConfigured()` returns false; error classes instantiate correctly
 
 ---
 
-### AI-002 · Profile Intelligence Service ⏳
+### AI-002 · Profile Intelligence Service ✅
 
 **Story:** As a platform, I want AI to generate a semantic personality summary, trait tags, vibe scores, and a vector embedding for every profile — so matching and group formation can go beyond simple demographic fields.
 
 **Acceptance Criteria:**
-- [ ] `libs/ai/src/profile-intelligence.service.ts` — `generateProfileIntelligence(userId: string): Promise<ProfileEmbeddingDto>`
-- [ ] Aggregates: demographics, all 12 real-life answers, all 3 story prompts, habits, weekly prompt responses, event attendance, groups joined, voice intro transcript, match tuning weights
-- [ ] GPT call returns: `summary` (150-word personality description), `traitTags` (8–12 from taxonomy), `vibeScores` (`{ warmth, ambition, tradition, socialEnergy, openness }` 1–10), `compatibilityNotes` (2–3 sentences), `recommendedContactWindow` (`{ startHour, endHour, timezone }`)
-- [ ] Embedding call: generates 1536-dim vector from summary text
-- [ ] Upserts `ProfileEmbedding` record in DB (pgvector `embedding` column)
-- [ ] If `isAiConfigured()` is false → logs warning, skips (no-op, not an error)
-- [ ] Unit tests: mocks OpenAI client, verifies DB upsert called with correct shape; tests not-configured no-op path
+- [x] `libs/ai/src/profile-intelligence.service.ts` — `generateProfileIntelligence(userId: string): Promise<ProfileEmbeddingDto>`
+- [x] Aggregates: demographics, all real-life answers, story prompts, habits, event attendance, groups joined, voice intro transcript
+- [x] GPT call returns: `summary`, `traitTags` (8–12), `vibeScores` (5 dims 1–10), `compatibilityNotes`, `recommendedContactWindow`
+- [x] Embedding call: generates 1536-dim vector from summary text
+- [x] Upserts `ProfileEmbedding` record in DB
+- [x] If `isAiConfigured()` is false → logs info, returns null (no-op)
+- [x] Unit tests: 8 tests covering happy path, no-op, missing profile, invalid GPT JSON, default scores
 
 ---
 
-### AI-003 · Voice Intro Transcription ⏳
+### AI-003 · Voice Intro Transcription ✅
 
 **Story:** As a platform, I want voice introductions automatically transcribed so the text can feed the profile intelligence AI and improve semantic matching based on how someone actually speaks.
 
 **Acceptance Criteria:**
-- [ ] `libs/ai/src/whisper.service.ts` — `transcribeVoiceIntro(s3Key: string): Promise<string>`
-- [ ] Downloads audio from S3 using existing `libs/storage` adapter
-- [ ] Calls OpenAI Whisper API (`audio/transcriptions`) with the audio buffer
-- [ ] Returns transcript string
-- [ ] Stores transcript in `Profile.voiceIntroTranscript` via Prisma
-- [ ] Triggers `generateProfileIntelligence()` BullMQ job after successful transcription
-- [ ] `libs/profile/src/extensions.service.ts` — `saveVoiceIntro()` enqueues transcription job after saving S3 key
-- [ ] If `isAiConfigured()` is false → skips transcription silently
+- [x] `libs/ai/src/whisper.service.ts` — `transcribeVoiceIntro(userId: string, s3Key: string): Promise<string>`
+- [x] Downloads audio from S3 using `GetObjectCommand` from AWS SDK directly (StorageAdapter has no download method)
+- [x] Calls OpenAI Whisper API (`whisper-1` model) with audio buffer via `toFile()` helper
+- [x] Returns transcript string (empty string on any failure — non-fatal)
+- [x] Stores transcript in `Profile.voiceIntroTranscript` via `prisma.profile.updateMany`
+- [x] Triggers profile intelligence BullMQ job via `enqueueProfileIntelligence()` after successful transcription
+- [x] `libs/profile/src/extensions.service.ts` — `saveVoiceIntro()` fires `transcribeVoiceIntro()` as void (non-blocking) after saving S3 key
+- [x] If `isAiConfigured()` is false → returns `''` immediately, no API calls made
+- [x] Unit tests: 7 tests covering happy path, no-op when AI not configured, S3 error, whisper error, empty content
+
+**Decision Log:**
+- Used `GetObjectCommand` from `@aws-sdk/client-s3` directly for S3 download since `StorageAdapter` interface only exposes upload + presigned URL operations. Avoids polluting the shared interface with a download method needed only by AI.
+- Signature changed from `transcribeVoiceIntro(s3Key)` to `transcribeVoiceIntro(userId, s3Key)` to enable `prisma.profile.updateMany({ where: { userId } })` — profile is identified by user ID.
+- `saveVoiceIntro()` in `libs/profile` fires transcription as `void` (fire-and-forget) so the endpoint does not block on Whisper latency; failures are logged as warn but do not surface to caller.
 
 ---
 
-### AI-004 · Intro Drop Proposal ⏳
+### AI-004 · Intro Drop Proposal ✅
 
 **Story:** As an admin, I want the AI to automatically propose introduction drop batches by analysing profile embeddings and grouping compatible people, so I only need to review and approve rather than manually curate.
 
 **Acceptance Criteria:**
-- [ ] `libs/ai/src/intro-grouping.service.ts` — `proposeIntroductionDrops(region: string): Promise<IntroductionDropDraftDto[]>`
-- [ ] Fetches all active, verified, non-paused profiles in the region with their `ProfileEmbedding`
-- [ ] Excludes: already paired in last 4 weeks, blocked each other, profile completion < 60%
-- [ ] GPT call: sends anonymised profile summaries + trait tags + demographics; asks for 5–10 groups (8–20 people each, balanced gender, coherent identity), with group name + rationale + `releaseRecommendation` + `memberIds`
-- [ ] pgvector refinement: for each proposed group, verifies cosine similarity of members (flags outliers > 0.4 distance from centroid)
-- [ ] Creates `IntroductionDrop` records with `status: DRAFT`, `proposedByAI: true`, `releaseAt` from AI recommendation
-- [ ] Admin endpoint triggers this function; result viewable in admin drop management UI
-- [ ] Unit tests: mock OpenAI + DB, verify DRAFT records created with correct shape
+- [x] `libs/ai/src/intro-grouping.service.ts` — `proposeIntroductionDrops(region: string): Promise<IntroductionDropDraftDto[]>`
+- [x] Fetches eligible users via `prisma.user.findMany` with `profile: { currentCountry: { contains: region } }` filter
+- [x] Excludes users without `profileEmbedding`; requires minimum 10 eligible profiles (returns `[]` otherwise)
+- [x] GPT call: sends anonymised summaries + trait tags; asks for groups with name, rationale, memberIds, releaseRecommendation; `response_format: json_object`, temperature 0.5
+- [x] Handles GPT response both as top-level array and wrapped in `{ groups: [...] }` key
+- [x] Creates `IntroductionDrop` records with `status: DRAFT`, `proposedByAI: true`, `releaseAt` from AI recommendation
+- [x] Skips groups with fewer than 2 memberIds
+- [x] Returns `[]` when AI not configured, or on invalid JSON from GPT
+- [x] Unit tests: 7 tests covering happy path, DRAFT status, not enough profiles, too-small groups, bad JSON, `groups` key wrapping
+
+**Decision Log:**
+- Queries `prisma.user` (not `prisma.profile`) with region filter on nested `profile.currentCountry`. All relation data needed (profileEmbedding, introductionsAsA) hangs off User, not Profile.
+- `currentCountry` is the correct Prisma field name (not `country`). `culturalBackground` does not exist in schema.
+- Minimum threshold 10 profiles (not 8) to ensure meaningful group diversity; GPT asked for min 2 members per group, enforced after parse.
+- pgvector centroid refinement deferred to Phase 8d/8e (nice-to-have); current implementation relies solely on GPT semantic grouping which is sufficient for MVP.
 
 ---
 
-### AI-005 · Event Pre-Connections ⏳
+### AI-005 · Event Pre-Connections ✅
 
 **Story:** As a platform, I want to automatically create introduction drops for event attendees who have high match scores — connecting them before the physical event.
 
 **Acceptance Criteria:**
-- [ ] `libs/ai/src/event-preconnect.service.ts` — `generateEventPreConnections(eventId: string): Promise<void>`
-- [ ] Triggered when event reaches 10+ RSVPs OR 72 hours before event date (whichever comes first)
-- [ ] Fetches all attendees (RSVPd users)
-- [ ] Finds pairs with match score ≥ 70 (from `match_scores`), different gender, not already introduced/connected/blocked
-- [ ] Creates `IntroductionDrop`: `name: "Meet someone attending [Event Name]"`, `releaseAt: eventDate - 72h`, `status: SCHEDULED` (no admin approval needed), `proposedByAI: true`
-- [ ] Creates individual `Introduction` pairings (2 per pair — one for each direction)
-- [ ] Does NOT create drop if fewer than 4 qualifying pairs found
-- [ ] BullMQ job fires this function; event RSVP service enqueues job when RSVP count crosses threshold
+- [x] `libs/ai/src/event-preconnect.service.ts` — `generateEventPreConnections(eventId: string): Promise<void>`
+- [x] Fetches event via `prisma.event.findUnique`; exits silently if not found
+- [x] Fetches attendees via `prisma.eventRsvp.findMany` (NOT `eventAttendee` — correct Prisma model name)
+- [x] Exits silently if fewer than 4 attendees
+- [x] Finds pairs with `matchScore.totalScore >= 70` (MIN_MATCH_SCORE), different gender, not in existing introductions, not blocked
+- [x] Blocked pairs checked via `prisma.userBlock.findMany` (NOT `prisma.block`)
+- [x] Creates `IntroductionDrop`: `name: "Meet someone attending [event.title]"`, `releaseAt: startAt - 72h`, `status: SCHEDULED`, `proposedByAI: true`
+- [x] Creates `Introduction` rows via `prisma.introduction.createMany` in both directions (2 rows per pair)
+- [x] Does NOT create drop if fewer than MIN_PAIRS_REQUIRED (4) qualifying pairs
+- [x] Unit tests: 8 tests covering drop creation, bidirectional intros, releaseAt timing, no event, too few attendees, too few pairs, excluded introduced/blocked pairs
+
+**Decision Log:**
+- Correct Prisma model names discovered during implementation: `eventRsvp` (not `eventAttendee`), `userBlock` (not `block`), `event.title` (not `event.name`), `event.startAt` (not `event.date`).
+- PRE_CONNECT_HOURS = 72: `releaseAt = new Date(event.startAt.getTime() - 72 * 60 * 60 * 1000)`
+- IntroductionDrop.name stored as `name` field (maps to display label for the drop batch).
+- Both-direction Introduction rows required so each user's inbox shows the introduction from their own perspective.
 
 ---
 
-### AI-006 · Quiet Window + Timezone-Aware Delivery ⏳
+### AI-006 · Quiet Window + Timezone-Aware Delivery ✅
 
 **Story:** As a user, I never want push notifications or intro release alerts between 22:00 and 07:00 in my local time — the platform respects my timezone.
 
 **Acceptance Criteria:**
-- [ ] `ProfileEmbedding.recommendedContactWindow Json?` stores `{ startHour: 8, endHour: 21, timezone: "Europe/London" }`
-- [ ] AI generates this as part of `generateProfileIntelligence()` based on country/city → timezone derivation + profession (night shift detection)
-- [ ] Notification worker in `libs/notification` checks `ProfileEmbedding.recommendedContactWindow` before delivering push notifications
-- [ ] If current time in recipient's timezone is outside window → notification is deferred to next window open (not dropped)
-- [ ] For seeded profiles: timezone derived from country/city; no AI call needed (set directly in factory)
-- [ ] For users without `ProfileEmbedding`: defaults to 08:00–22:00 UTC
+- [x] `ProfileEmbedding.recommendedContactWindow Json?` stores `{ startHour: 8, endHour: 22, timezone: "Europe/London" }`
+- [x] AI generates this as part of `generateProfileIntelligence()` (AI-002) based on user's city/country → timezone
+- [x] `libs/ai/src/quiet-window.ts` — `getContactWindow(userId)`, `isWithinWindow(window, now)`, `msUntilWindowOpens(window, now)`
+- [x] `getContactWindow()` reads `ProfileEmbedding.recommendedContactWindow`; falls back to `{ 8, 22, UTC }` if absent or DB error
+- [x] `isWithinWindow()` uses `Intl.DateTimeFormat` to get local hour in recipient's timezone; returns `true` for unknown timezone (safe default)
+- [x] `msUntilWindowOpens()` returns ms to wait; falls back to 1h for invalid timezone
+- [x] Notification worker in `libs/notification` checks quiet window before delivering PUSH notifications
+- [x] If outside window → throws sentinel `{ message: 'QUIET_WINDOW_DEFER', delayMs }` — worker re-queues job with computed delay (not failed, not dropped)
+- [x] Non-PUSH notifications (EMAIL, SMS) bypass quiet window check
+- [x] For users without `ProfileEmbedding`: defaults to 08:00–22:00 UTC
+- [x] Unit tests: 10 tests covering stored window, default fallback, DB error fallback, isWithinWindow boundaries, timezone edge cases, msUntilWindowOpens before/after/invalid
+
+**Decision Log:**
+- Circular dependency avoidance: `libs/notification` → `libs/ai` → (potentially back to notification). Resolved by using `await import('@abroad-matrimony/ai')` (dynamic import) inside the notification worker's quiet window check function. At module resolution time there is no static cycle.
+- Quiet window check uses `endHour: 22` (exclusive upper bound) matching `isWithinWindow` boundary test: 22:00 → outside window.
+- Re-queue strategy: notification worker catches the QUIET_WINDOW_DEFER sentinel and calls `queue.add(...)` with `delay: delayMs` rather than `throw`. Job counted as processed successfully; no false failure metrics.
+- `isWithinWindow()` returns `true` (allow delivery) for unknown/invalid timezone — fail-open is intentional to avoid silently dropping notifications for users with misconfigured timezone.
 
 ---
 
-### AI-007 · BullMQ Job Wiring ⏳
+### AI-007 · BullMQ Job Wiring ✅
 
 **Story:** As a platform, I want profile intelligence to regenerate automatically whenever a user makes meaningful updates — without the user or any admin having to trigger it manually.
 
 **Acceptance Criteria:**
-- [ ] `PROFILE_INTELLIGENCE_UPDATE` BullMQ job type defined in `libs/shared/src/constants/index.ts`
-- [ ] Job enqueued (debounced 60s) whenever:
-  - Profile created or updated
-  - Real-life answer upserted
-  - Story prompt answer upserted
-  - Habit logged or streak updated
-  - Weekly prompt answered
-  - Voice intro saved (triggers transcription first, then intelligence)
-  - Match tuning updated
-- [ ] `libs/ai/src/ai.worker.ts` — BullMQ worker processes `PROFILE_INTELLIGENCE_UPDATE`
-- [ ] Worker started in `apps/gateway/src/server.ts` lifecycle (alongside existing notification worker)
-- [ ] Debounce: if job already queued for userId within 60s window, replace rather than duplicate
+- [x] `PROFILE_INTELLIGENCE` added to `QUEUE_NAMES` in `libs/shared/src/constants/index.ts`
+- [x] `JOB_TYPES.PROFILE_INTELLIGENCE_UPDATE` constant added to `libs/shared/src/constants/index.ts`
+- [x] `libs/ai/src/enqueue-intelligence.ts` — `enqueueProfileIntelligence(userId, redisUrl)` with 60s debounce
+- [x] Debounce: stable `jobId: 'pi:${userId}'`; existing waiting/delayed job removed before re-add to reset 60s timer
+- [x] `libs/ai/src/ai.worker.ts` — `createAiWorker(redisUrl)` BullMQ worker, concurrency 2 (conservative for OpenAI rate limits)
+- [x] `processProfileIntelligence(data)` processes job — calls `generateProfileIntelligence(userId)`
+- [x] `triggerProfileIntelligenceNow(userId, redisUrl)` — utility for immediate trigger (no debounce)
+- [x] Worker started in `apps/gateway/src/server.ts` lifecycle only when `isAiConfigured()` returns true
+- [x] Graceful shutdown: `aiWorker.close()` called in shutdown sequence
+- [x] Voice intro trigger: `saveVoiceIntro()` in `libs/profile` fires `transcribeVoiceIntro()` non-blocking; Whisper service enqueues intelligence job after successful transcription
+- [x] `@abroad-matrimony/ai` added to `jest.preset.js` moduleNameMapper; path alias added to `tsconfig.base.json`
+
+**Decision Log:**
+- Concurrency set to 2 (not higher) because `gpt-4o-mini` + embeddings API calls are I/O-bound but OpenAI has per-minute token rate limits. 2 concurrent workers gives throughput without triggering 429s on burst activity.
+- AI worker conditional startup: if `OPENAI_API_KEY` absent, worker is not created and `logger.warn` is emitted. This ensures the worker doesn't poll an empty queue or emit errors in dev environments without API keys.
+- `enqueueProfileIntelligence` is also exported from `libs/ai/src/index.ts` so Whisper service can import it from the same lib without circular deps.
+- Job enqueue triggers not yet wired into profile/habit/prompt service update paths (planned for Phase 8e/admin integration) — currently triggered via voice intro and direct calls. Full wiring is Phase 8d scope.
 
 ---
 

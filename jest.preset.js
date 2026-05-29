@@ -29,6 +29,7 @@ module.exports = {
     '^@abroad-matrimony/prompts$':          '<rootDir>/../../libs/prompts/src/index.ts',
     '^@abroad-matrimony/saved-profiles$':   '<rootDir>/../../libs/saved-profiles/src/index.ts',
     '^@abroad-matrimony/trust$':            '<rootDir>/../../libs/trust/src/index.ts',
+    '^@abroad-matrimony/ai$':               '<rootDir>/../../libs/ai/src/index.ts',
   },
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
 };

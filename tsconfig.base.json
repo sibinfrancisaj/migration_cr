@@ -48,7 +48,8 @@
       "@abroad-matrimony/gatherings": ["libs/gatherings/src/index.ts"],
       "@abroad-matrimony/prompts": ["libs/prompts/src/index.ts"],
       "@abroad-matrimony/saved-profiles": ["libs/saved-profiles/src/index.ts"],
-      "@abroad-matrimony/trust": ["libs/trust/src/index.ts"]
+      "@abroad-matrimony/trust": ["libs/trust/src/index.ts"],
+      "@abroad-matrimony/ai": ["libs/ai/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

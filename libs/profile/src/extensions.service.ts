@@ -1,8 +1,10 @@
 import { prisma } from '@abroad-matrimony/db';
+import { getEnv } from '@abroad-matrimony/config';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { getStorageAdapter } from '@abroad-matrimony/storage';
 import { MediaType } from '@abroad-matrimony/shared';
 import { ProfileNotFoundError } from './real-life-answer.service.js';
+import { transcribeVoiceIntro } from '@abroad-matrimony/ai';
 
 const log = createChildLogger({ module: 'profile:extensions' });
 
@@ -104,6 +106,11 @@ export async function saveVoiceIntro(
   });
 
   log.info('saveVoiceIntro — voice intro saved', { userId, s3Key });
+
+  // AI-003/AI-007: Trigger Whisper transcription + profile intelligence update (non-fatal)
+  void transcribeVoiceIntro(userId, s3Key).catch((err) => {
+    log.warn('saveVoiceIntro — transcription enqueue failed (non-fatal)', { userId, err });
+  });
 
   return { url };
 }

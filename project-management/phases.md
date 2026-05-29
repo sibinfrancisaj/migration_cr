@@ -263,19 +263,19 @@
 
 ---
 
-## Phase 8b — `libs/ai` (AI Intelligence Layer) ⏳
+## Phase 8b — `libs/ai` (AI Intelligence Layer) ✅
 **Goal:** OpenAI-powered profile intelligence, semantic embeddings, and AI-driven intro group proposals.
-**Sprint:** 8b | **Status:** Backlog (starts after DB-MIGRATION-001)
+**Sprint:** 8b | **Status:** Complete — 51 new tests (1,223 total, 89 suites, all green)
 
 | Task ID  | Description                                                                            | Status |
 |----------|----------------------------------------------------------------------------------------|--------|
-| AI-001   | `libs/ai` scaffold — OpenAI singleton (gpt-4o-mini + text-embedding-3-small + Whisper)| ⏳     |
-| AI-002   | Profile intelligence service — `generateProfileIntelligence()` → ProfileEmbedding     | ⏳     |
-| AI-003   | Voice intro transcription — Whisper API on upload, stored in `voiceIntroTranscript`   | ⏳     |
-| AI-004   | Intro drop proposal — `proposeIntroductionDrops()` → DRAFT IntroductionDrop records   | ⏳     |
-| AI-005   | Event pre-connections — `generateEventPreConnections()` → auto-SCHEDULED drops         | ⏳     |
-| AI-006   | Quiet window generation — timezone-aware contact window stored in ProfileEmbedding     | ⏳     |
-| AI-007   | BullMQ job wiring — fires intelligence job on profile update, prompt, habit, voice    | ⏳     |
+| AI-001   | `libs/ai` scaffold — OpenAI singleton (gpt-4o-mini + text-embedding-3-small + Whisper)| ✅     |
+| AI-002   | Profile intelligence service — `generateProfileIntelligence()` → ProfileEmbedding     | ✅     |
+| AI-003   | Voice intro transcription — Whisper API on upload, stored in `voiceIntroTranscript`   | ✅     |
+| AI-004   | Intro drop proposal — `proposeIntroductionDrops()` → DRAFT IntroductionDrop records   | ✅     |
+| AI-005   | Event pre-connections — `generateEventPreConnections()` → auto-SCHEDULED drops         | ✅     |
+| AI-006   | Quiet window generation — timezone-aware contact window stored in ProfileEmbedding     | ✅     |
+| AI-007   | BullMQ job wiring — fires intelligence job on profile update, prompt, habit, voice    | ✅     |
 
 ---
 

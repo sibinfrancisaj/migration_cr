@@ -470,7 +470,7 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 |-------|------|----------------|
 | **DB-MIGRATION-001** | Schema migration — all new models | Must run first |
 | **Phase 8a** | `apps/seeder` — automated data seeding ✅ 2026-05-29 | DB-MIGRATION-001 |
-| **Phase 8b** | `libs/ai` — OpenAI intelligence layer | DB-MIGRATION-001 |
+| **Phase 8b** | `libs/ai` — OpenAI intelligence layer ✅ 2026-05-29 | DB-MIGRATION-001 |
 | **Phase 8c** | Groups revamp — 4-type taxonomy + social feed | DB-MIGRATION-001 |
 | **Phase 8d** | IntroductionDrop — multi-drop, AI-curated | Phase 8b + 8c |
 | **Phase 8e** | Admin API + Analytics (17 tasks, expanded 2026-05-29) | Phase 8a data exists |
@@ -879,6 +879,21 @@ Phase 7b gateway test + code review work (2026-05-29):
   - 5 new constants files + 22 STANDARDS.md files created across all new route/controller dirs
   - Code review violations fixed: magic strings eliminated, HTTP_STATUS import added, dead constant removed
 
+Phase 8a ✅ Seeder ALL DONE (1,091 tests after seeder, 77 suites).
+apps/seeder port 3100: SEED-001→009 complete. autonomous drip seeder, 500 profiles, 6 activity types, flush + status control API.
+See "Key files from Phase 8a (Seeder)" section below.
+
+Phase 8b ✅ AI Intelligence Layer ALL DONE (1,223 tests, 89 suites).
+libs/ai: AI-001→007 all complete. OpenAI gpt-4o-mini + text-embedding-3-small + Whisper-1. BullMQ 60s debounce worker.
+AI-001 ✅ libs/ai scaffold — isAiConfigured() guard, getAiClient() singleton, AiNotConfiguredError
+AI-002 ✅ generateProfileIntelligence(userId) — queries User model (not Profile), GPT + embeddings, upserts ProfileEmbedding
+AI-003 ✅ transcribeVoiceIntro(userId, s3Key) — GetObjectCommand download, whisper-1, voiceIntroTranscript update
+AI-004 ✅ proposeIntroductionDrops(region) — user.currentCountry filter, min 10 profiles, DRAFT IntroductionDrops
+AI-005 ✅ generateEventPreConnections(eventId) — eventRsvp + userBlock models, event.title/startAt, SCHEDULED drops 72h before
+AI-006 ✅ quiet-window.ts — isWithinWindow(), msUntilWindowOpens(), getContactWindow(); notification worker re-queues on defer
+AI-007 ✅ ai.worker.ts + enqueue-intelligence.ts — BullMQ concurrency 2, jobId 'pi:${userId}' debounce, conditional startup
+See "Key files from Phase 8b (AI)" section below.
+
 ── PHASE 8 SERIES — NEXT IMPLEMENTATION BLOCK ──────────────────────────────
 All Phase 8 design decisions locked (2026-05-29). Full specs in epics-stories.md.
 Read project-management/phases.md section "NEW SCOPE: Phase 8 Series" for task list.
@@ -889,8 +904,8 @@ before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot re
 Phase 8 work order:
   1. DB-MIGRATION-001 — ✅ DONE — schema migration (pgvector, new models)
   2. Phase 8a (SEED-001→009) — ✅ DONE (2026-05-29) — 1,091 tests, 77 suites — apps/seeder autonomous data seeder, port 3100
-  3. Phase 8b (AI-001→007) — libs/ai: OpenAI completions + embeddings + Whisper  ← NEXT
-  4. Phase 8c (GRP-R-001→007) — Groups revamp: 4-type taxonomy + social feed
+  3. Phase 8b (AI-001→007) — ✅ DONE (2026-05-29) — 1,223 tests, 89 suites — libs/ai: OpenAI completions + embeddings + Whisper + BullMQ wiring
+  4. Phase 8c (GRP-R-001→007) — Groups revamp: 4-type taxonomy + social feed  ← NEXT
   5. Phase 8d (IDROP-001→006) — IntroductionDrop: multi-drop, AI-curated pairings
   6. Phase 8e (ADMIN-001→017) — Admin API + Analytics (expanded 2026-05-29: +GroupProposal mgmt, +SystemConfig, +seeder monitoring, +AI monitoring, +extended analytics)
 
@@ -1006,6 +1021,34 @@ Key files from Phase 8a (Seeder — SEED-001→009):
 - apps/gateway/src/middleware/seeder-auth.middleware.ts — SEED-004/ADR-014: seederAuthMiddleware + buildSeederToken; 11 tests
 - apps/gateway/src/app.ts — seederAuthMiddleware mounted after express.json(), before routes
 - libs/config/src/env.ts — SEEDER_SECRET (optional), OPENAI_API_KEY (optional), AI_MODEL, EMBEDDING_MODEL added
+
+Key files from Phase 8b (AI — AI-001→007):
+- libs/ai/package.json — @abroad-matrimony/ai lib scaffold; deps: openai ^6.39.1, @aws-sdk/client-s3, bullmq, @abroad-matrimony/config/db/logger/shared
+- libs/ai/src/types/ai.types.ts — VibeScores, ContactWindow, ProfileEmbeddingDto, IntroductionDropDraftDto, ProfileIntelligenceJobData
+- libs/ai/src/client.ts — isAiConfigured(), getAiClient() OpenAI singleton, _resetAiClient(), AiNotConfiguredError
+- libs/ai/src/profile-intelligence.service.ts — generateProfileIntelligence(userId): queries prisma.user (not Profile), response_format json_object, upserts ProfileEmbedding with JSON cast for vibeScores/contactWindow
+- libs/ai/src/whisper.service.ts — transcribeVoiceIntro(userId, s3Key): downloads via GetObjectCommand (not StorageAdapter), calls whisper-1, updates voiceIntroTranscript, enqueues intelligence job; returns '' on any error
+- libs/ai/src/intro-grouping.service.ts — proposeIntroductionDrops(region): queries prisma.user with currentCountry filter; min 10 profiles; handles GPT response as array or { groups: [...] }; creates DRAFT IntroductionDrops
+- libs/ai/src/event-preconnect.service.ts — generateEventPreConnections(eventId): uses prisma.eventRsvp (not eventAttendee) + prisma.userBlock (not block); event.title + event.startAt; MIN_PAIRS=4, PRE_CONNECT_HOURS=72
+- libs/ai/src/quiet-window.ts — getContactWindow(userId), isWithinWindow(window, now), msUntilWindowOpens(window, now); Intl.DateTimeFormat for local hour; fail-open for unknown timezone
+- libs/ai/src/enqueue-intelligence.ts — enqueueProfileIntelligence(userId, redisUrl): stable jobId 'pi:${userId}', 60s delay, removes existing job first to reset debounce
+- libs/ai/src/ai.worker.ts — createAiWorker(redisUrl): BullMQ Worker, concurrency 2; processProfileIntelligence(); triggerProfileIntelligenceNow()
+- libs/ai/src/index.ts — barrel exports for all services, client, quiet-window, worker, types
+- libs/ai/jest.config.ts — displayName: 'ai', preset: ../../jest.preset.js
+- libs/ai/src/__tests__/client.test.ts — 11 tests
+- libs/ai/src/__tests__/profile-intelligence.service.test.ts — 8 tests
+- libs/ai/src/__tests__/whisper.service.test.ts — 7 tests
+- libs/ai/src/__tests__/intro-grouping.service.test.ts — 7 tests
+- libs/ai/src/__tests__/event-preconnect.service.test.ts — 8 tests
+- libs/ai/src/__tests__/quiet-window.test.ts — 10 tests
+- libs/notification/src/notification.worker.ts — quiet window check for PUSH: dynamic import('@abroad-matrimony/ai'); re-queues with delay on QUIET_WINDOW_DEFER (not failed)
+- libs/notification/src/types/notification.types.ts — PushPayload.userId?: string added for quiet window lookup
+- libs/profile/src/extensions.service.ts — saveVoiceIntro() fires transcribeVoiceIntro() as void (fire-and-forget) after saving S3 key
+- libs/profile/package.json — @abroad-matrimony/ai + @abroad-matrimony/config + @abroad-matrimony/storage added to deps
+- apps/gateway/src/server.ts — AI worker started conditionally (isAiConfigured() guard); aiWorker.close() in shutdown
+- libs/shared/src/constants/index.ts — QUEUE_NAMES.PROFILE_INTELLIGENCE + JOB_TYPES.PROFILE_INTELLIGENCE_UPDATE added
+- jest.preset.js — @abroad-matrimony/ai moduleNameMapper entry added
+- tsconfig.base.json — @abroad-matrimony/ai path alias added
 
 NEW ENV VARS (Phase 8 — add to libs/config/src/env.ts + .env.example):
 - SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it) ✅ added

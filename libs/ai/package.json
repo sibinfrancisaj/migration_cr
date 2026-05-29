@@ -1,14 +1,16 @@
 {
-  "name": "@abroad-matrimony/profile",
-  "version": "0.0.1",
+  "name": "@abroad-matrimony/ai",
+  "version": "0.0.0",
   "private": true,
   "main": "src/index.ts",
+  "types": "src/index.ts",
   "dependencies": {
-    "@abroad-matrimony/ai": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/shared": "*",
-    "@abroad-matrimony/storage": "*"
+    "@aws-sdk/client-s3": "^3.1054.0",
+    "bullmq": "^5.4.0",
+    "openai": "^6.39.1"
   }
 }

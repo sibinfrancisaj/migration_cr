@@ -4,6 +4,11 @@ export const QUEUE_NAMES = {
   NOTIFICATION: 'notification',
   PAYMENT: 'payment',
   CLEANUP: 'cleanup',
+  PROFILE_INTELLIGENCE: 'profile-intelligence',
+} as const;
+
+export const JOB_TYPES = {
+  PROFILE_INTELLIGENCE_UPDATE: 'profile-intelligence',
 } as const;
 
 export const CACHE_KEYS = {

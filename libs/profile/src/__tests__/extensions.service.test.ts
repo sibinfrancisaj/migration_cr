@@ -12,6 +12,11 @@ const mockProfileUpdate      = jest.fn();
 const mockMediaDeleteMany    = jest.fn();
 const mockMediaCreate        = jest.fn();
 const mockGetStorageAdapter  = jest.fn();
+const mockTranscribeVoiceIntro = jest.fn().mockResolvedValue('');
+
+jest.mock('@abroad-matrimony/config', () => ({
+  getEnv: () => ({ REDIS_URL: 'redis://localhost:6379' }),
+}));
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -28,6 +33,10 @@ jest.mock('@abroad-matrimony/db', () => ({
 
 jest.mock('@abroad-matrimony/storage', () => ({
   getStorageAdapter: (...a: unknown[]) => mockGetStorageAdapter(...a),
+}));
+
+jest.mock('@abroad-matrimony/ai', () => ({
+  transcribeVoiceIntro: (...a: unknown[]) => mockTranscribeVoiceIntro(...a),
 }));
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────

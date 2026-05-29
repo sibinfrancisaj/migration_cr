@@ -10,6 +10,30 @@ const log = createChildLogger({ module: 'notification:worker' });
 
 export type { NotificationJobData };
 
+// ── Quiet window check (AI-006) ───────────────────────────────────────────────
+
+/**
+ * Checks whether a push notification should be deferred due to the recipient's
+ * quiet window (22:00–07:00 local time, or the window stored in ProfileEmbedding).
+ *
+ * Returns the delay in ms if notification should be deferred; 0 if OK to deliver.
+ * Uses dynamic import to avoid a circular dependency on libs/ai at module load.
+ */
+async function getPushDelay(userId: string | undefined): Promise<number> {
+  if (!userId) return 0;
+
+  try {
+    // Dynamic import to avoid circular dep: notification → ai → notification
+    const { getContactWindow, isWithinWindow, msUntilWindowOpens } = await import('@abroad-matrimony/ai');
+    const window = await getContactWindow(userId);
+    if (isWithinWindow(window)) return 0;
+    return msUntilWindowOpens(window);
+  } catch {
+    // ai lib unavailable (no OPENAI_API_KEY) — deliver immediately
+    return 0;
+  }
+}
+
 // ── Core dispatch function (exported for unit-test isolation) ─────────────────
 
 /**
@@ -26,9 +50,19 @@ export async function processNotification(data: NotificationJobData): Promise<vo
       await getSmsAdapter().send(data.payload);
       break;
 
-    case NotificationType.PUSH:
+    case NotificationType.PUSH: {
+      const delayMs = await getPushDelay(data.payload.userId);
+      if (delayMs > 0) {
+        log.info('Push notification deferred (quiet window)', {
+          userId: data.payload.userId,
+          delayMs,
+        });
+        // Re-throw with a special sentinel so the worker can re-add the job with delay
+        throw Object.assign(new Error('QUIET_WINDOW_DEFER'), { delayMs });
+      }
       await getPushAdapter().send(data.payload);
       break;
+    }
 
     default: {
       // Exhaustiveness check — TypeScript will catch unhandled cases at compile time.
@@ -49,11 +83,31 @@ export async function processNotification(data: NotificationJobData): Promise<vo
  * Call `worker.close()` during graceful shutdown.
  */
 export function createNotificationWorker(redisUrl: string): Worker<NotificationJobData> {
+  const queue = new Queue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, {
+    connection: { url: redisUrl },
+  });
+
   const worker = new Worker<NotificationJobData>(
     QUEUE_NAMES.NOTIFICATION,
     async (job: Job<NotificationJobData>) => {
       log.info('Processing notification job', { jobId: job.id, type: job.data.type });
-      await processNotification(job.data);
+      try {
+        await processNotification(job.data);
+      } catch (err) {
+        // Quiet window defer — re-add with delay instead of failing
+        const asErr = err as { message?: string; delayMs?: number };
+        if (asErr.message === 'QUIET_WINDOW_DEFER' && typeof asErr.delayMs === 'number') {
+          await queue.add('notification', job.data, {
+            delay: asErr.delayMs,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5_000 },
+            removeOnComplete: { count: 1000 },
+            removeOnFail: { count: 500 },
+          });
+          return; // Job "succeeded" — we've re-queued it with delay
+        }
+        throw err;
+      }
     },
     {
       connection: { url: redisUrl },
