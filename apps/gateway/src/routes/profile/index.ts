@@ -12,6 +12,8 @@ import {
   upsertStoryPromptSchema,
 } from '../../schemas/profile/upsert-story-prompt.schema.js';
 import { profileController } from '../../controllers/profile/profile.controller.js';
+import { profileExtensionsController } from '../../controllers/profile/profile-extensions.controller.js';
+import { voiceIntroUploadSchema, saveVoiceIntroSchema } from '../../schemas/profile/voice-intro.schema.js';
 
 export const profileRouter = Router();
 
@@ -54,4 +56,27 @@ profileRouter.post(
   requireAuth,
   uploadSinglePhoto,
   profileController.uploadPhoto,
+);
+
+// PUT /api/v1/profile/pause — toggle profile visibility
+profileRouter.put(
+  '/pause',
+  requireAuth,
+  profileExtensionsController.togglePause,
+);
+
+// POST /api/v1/profile/voice-intro/upload-url — get presigned S3 URL for voice intro
+profileRouter.post(
+  '/voice-intro/upload-url',
+  requireAuth,
+  validateBody(voiceIntroUploadSchema),
+  profileExtensionsController.getVoiceUploadUrl,
+);
+
+// POST /api/v1/profile/voice-intro — register uploaded voice intro
+profileRouter.post(
+  '/voice-intro',
+  requireAuth,
+  validateBody(saveVoiceIntroSchema),
+  profileExtensionsController.saveVoiceIntro,
 );

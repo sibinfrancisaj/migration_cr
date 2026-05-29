@@ -61,6 +61,10 @@ export class S3StorageAdapter implements StorageAdapter {
     log.info('File deleted from S3', { key, bucket: this.bucket });
   }
 
+  getPublicUrl(key: string): string {
+    return `${this.baseUrl}/${key}`;
+  }
+
   async getPresignedUploadUrl(
     key: string,
     mimeType: string,

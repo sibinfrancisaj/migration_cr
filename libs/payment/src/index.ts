@@ -9,7 +9,6 @@ export type {
   WebhookEvent,
   WebhookEventType,
   MembershipDto,
-  DiamondBalanceDto,
   DiamondPackage,
   CreditDiamondsParams,
   ActivateMembershipParams,
@@ -58,6 +57,8 @@ export {
   creditDiamonds,
   spendDiamonds,
   refundDiamonds,
+  getCreditTransactions,
   DIAMOND_PACKAGES,
   InsufficientDiamondsError,
 } from './diamond.service.js';
+export type { CreditTransactionDto } from './diamond.service.js';

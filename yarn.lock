@@ -77,11 +77,35 @@
     express-rate-limit "^7.4.0"
     helmet "^8.0.0"
 
+"@abroad-matrimony/gatherings@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\gatherings":
+  version "1.0.0"
+  resolved "file:libs/gatherings"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
 "@abroad-matrimony/groups@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\groups":
   version "1.0.0"
   resolved "file:libs/groups"
   dependencies:
     "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/habits@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\habits":
+  version "1.0.0"
+  resolved "file:libs/habits"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/introductions@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\introductions":
+  version "1.0.0"
+  resolved "file:libs/introductions"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
 
 "@abroad-matrimony/logger@*", "@abroad-matrimony/logger@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\logger":
@@ -114,6 +138,7 @@
     "@abroad-matrimony/firebase" "*"
     "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
+    "@abroad-matrimony/storage" "*"
     firebase-admin "*"
 
 "@abroad-matrimony/notification@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\notification":
@@ -148,6 +173,22 @@
     "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
 
+"@abroad-matrimony/prompts@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\prompts":
+  version "1.0.0"
+  resolved "file:libs/prompts"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/saved-profiles@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\saved-profiles":
+  version "1.0.0"
+  resolved "file:libs/saved-profiles"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
 "@abroad-matrimony/shared@*", "@abroad-matrimony/shared@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\shared":
   version "0.0.1"
   resolved "file:libs/shared"
@@ -159,6 +200,24 @@
     "@abroad-matrimony/config" "*"
     "@abroad-matrimony/logger" "*"
     "@aws-sdk/client-s3" "*"
+    "@aws-sdk/s3-request-presigner" "*"
+
+"@abroad-matrimony/trust@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\trust":
+  version "1.0.0"
+  resolved "file:libs/trust"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/verification@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\verification":
+  version "1.0.0"
+  resolved "file:libs/verification"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+    "@abroad-matrimony/storage" "*"
 
 "@aws-crypto/crc32@5.2.0":
   version "5.2.0"

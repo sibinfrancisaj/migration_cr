@@ -43,8 +43,11 @@ export interface PaginationParams {
 
 export interface PaginationMeta {
   cursor?: string;
-  hasMore: boolean;
+  hasMore?: boolean;
   total?: number;
+  page?: number;
+  limit?: number;
+  message?: string;
 }
 
 export interface JwtPayload {

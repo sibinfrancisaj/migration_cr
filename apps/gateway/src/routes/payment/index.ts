@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '@abroad-matrimony/auth';
-import { validateBody, validateQuery } from '../../middleware/validate.middleware.js';
+import { validateBody } from '../../middleware/validate.middleware.js';
 import { stripeController } from '../../controllers/payment/stripe.controller.js';
 import { razorpayController } from '../../controllers/payment/razorpay.controller.js';
 import { membershipController } from '../../controllers/payment/membership.controller.js';
@@ -90,6 +90,12 @@ paymentRouter.post(
   validateBody(diamondSpendBodySchema),
   diamondController.spend,
 );
+
+/**
+ * GET /api/v1/payment/credits/transactions
+ * List the authenticated user's diamond ledger history.
+ */
+paymentRouter.get('/credits/transactions', requireAuth, diamondController.getTransactions);
 
 /**
  * POST /api/v1/payment/diamonds/purchase

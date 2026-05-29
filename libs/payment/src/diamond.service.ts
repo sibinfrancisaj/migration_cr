@@ -123,6 +123,48 @@ export async function spendDiamonds(
   return newBalance;
 }
 
+// ── Transaction history ───────────────────────────────────────────────────────
+
+export interface CreditTransactionDto {
+  id: string;
+  delta: number;
+  reason: string;
+  balanceAfter: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+/**
+ * List the user's diamond ledger transactions (newest first, paginated).
+ */
+export async function getCreditTransactions(
+  userId: string,
+  page: number,
+  limit: number,
+): Promise<{ transactions: CreditTransactionDto[]; total: number }> {
+  const [rows, total] = await prisma.$transaction([
+    prisma.diamondLedger.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.diamondLedger.count({ where: { userId } }),
+  ]);
+
+  return {
+    transactions: rows.map((row) => ({
+      id: row.id,
+      delta: row.delta,
+      reason: row.reason,
+      balanceAfter: row.balanceAfter,
+      metadata: row.metadata as Record<string, unknown> | null,
+      createdAt: row.createdAt.toISOString(),
+    })),
+    total,
+  };
+}
+
 /**
  * Insert a REFUND ledger entry (positive delta).
  * Used when a diamond purchase payment is refunded.

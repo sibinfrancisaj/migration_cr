@@ -31,3 +31,11 @@ export type { UploadProfilePhotoInput } from './media.service.js';
 
 // Completion score helper
 export { recalculateCompletionScore } from './score.service.js';
+
+// Profile extensions (pause, voice intro)
+export {
+  toggleProfilePause,
+  getVoiceIntroUploadUrl,
+  saveVoiceIntro,
+  VoiceIntroLimitError,
+} from './extensions.service.js';

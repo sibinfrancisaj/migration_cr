@@ -15,20 +15,10 @@ const mockGetDiamondBalance             = jest.fn();
 const mockSpendDiamonds                 = jest.fn();
 const mockMarkPaymentRefunded           = jest.fn();
 const mockRefundDiamonds                = jest.fn();
+const mockGetCreditTransactions         = jest.fn();
 
-class PaymentSignatureError extends Error {
-  constructor() { super('Payment signature verification failed'); this.name = 'PaymentSignatureError'; }
-}
-class PaymentNotFoundError extends Error {
-  constructor() { super('PAYMENT_NOT_FOUND'); this.name = 'PaymentNotFoundError'; }
-}
-class InvalidDiamondPackageError extends Error {
-  constructor() { super('INVALID_DIAMOND_PACKAGE'); this.name = 'InvalidDiamondPackageError'; }
-}
-class InsufficientDiamondsError extends Error {
-  constructor() { super('INSUFFICIENT_DIAMONDS'); this.name = 'InsufficientDiamondsError'; }
-}
-
+// Error classes are defined INSIDE the factory to avoid TDZ issues with jest.mock hoisting.
+// They are re-imported from the mock below for use in test assertions.
 jest.mock('@abroad-matrimony/payment', () => ({
   createMembershipCheckout:      (...a: unknown[]) => mockCreateMembershipCheckout(...a),
   createDiamondCheckout:         (...a: unknown[]) => mockCreateDiamondCheckout(...a),
@@ -41,17 +31,26 @@ jest.mock('@abroad-matrimony/payment', () => ({
   spendDiamonds:                 (...a: unknown[]) => mockSpendDiamonds(...a),
   markPaymentRefunded:           (...a: unknown[]) => mockMarkPaymentRefunded(...a),
   refundDiamonds:                (...a: unknown[]) => mockRefundDiamonds(...a),
+  getCreditTransactions:         (...a: unknown[]) => mockGetCreditTransactions(...a),
   DIAMOND_PACKAGES: {
     DIAMONDS_50:  { packageKey: 'DIAMONDS_50',  diamonds: 50,  amountPaise: 49900  },
     DIAMONDS_100: { packageKey: 'DIAMONDS_100', diamonds: 100, amountPaise: 89900  },
     DIAMONDS_200: { packageKey: 'DIAMONDS_200', diamonds: 200, amountPaise: 149900 },
   },
-  PaymentSignatureError,
-  PaymentNotFoundError,
-  InvalidDiamondPackageError,
-  InsufficientDiamondsError,
+  PaymentSignatureError:      class extends Error { constructor() { super('Payment signature verification failed'); this.name = 'PaymentSignatureError'; } },
+  PaymentNotFoundError:       class extends Error { constructor() { super('PAYMENT_NOT_FOUND'); this.name = 'PaymentNotFoundError'; } },
+  InvalidDiamondPackageError: class extends Error { constructor() { super('INVALID_DIAMOND_PACKAGE'); this.name = 'InvalidDiamondPackageError'; } },
+  InsufficientDiamondsError:  class extends Error { constructor() { super('INSUFFICIENT_DIAMONDS'); this.name = 'InsufficientDiamondsError'; } },
   MembershipAlreadyActiveError: class extends Error { constructor() { super('MEMBERSHIP_ALREADY_ACTIVE'); this.name = 'MembershipAlreadyActiveError'; } },
 }));
+
+// Re-import error classes from the mock so instanceof checks work in tests
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const paymentMock = jest.requireMock('@abroad-matrimony/payment') as any;
+const PaymentSignatureError      = paymentMock.PaymentSignatureError as typeof Error;
+const PaymentNotFoundError       = paymentMock.PaymentNotFoundError as typeof Error;
+const InvalidDiamondPackageError = paymentMock.InvalidDiamondPackageError as typeof Error;
+const InsufficientDiamondsError  = paymentMock.InsufficientDiamondsError as typeof Error;
 
 jest.mock('@abroad-matrimony/auth', () => ({
   requireAuth: (req: any, _res: any, next: any) => {

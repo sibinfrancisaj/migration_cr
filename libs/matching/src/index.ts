@@ -15,3 +15,7 @@ export { getMatchScore, setMatchScoreCache, deleteMatchScoreCache } from './scor
 // Discovery feed
 export { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge } from './discover.service.js';
 export type { DiscoverOptions } from './discover.service.js';
+
+// Match tuning
+export { getMatchTuning, setMatchTuning } from './match-tuning.service.js';
+export type { MatchTuningDto, MatchWeights } from './match-tuning.service.js';

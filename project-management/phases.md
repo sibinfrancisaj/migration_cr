@@ -108,6 +108,7 @@
 ## Phase 5 — Groups + Connections + Messaging 🔄
 **Goal:** Regional groups, weekly intro drops, connection requests, real-time messaging.
 **Sprint:** 5 | **Status:** Messaging complete — 664 tests, 47 suites all green
+> **Service layers + lib tests added 2026-05-29**: connections, groups libs + jest configs — unit tests written and passing.
 
 | Task ID   | Description                                      | Status |
 |-----------|--------------------------------------------------|--------|
@@ -154,7 +155,7 @@
 
 ## Phase 7 — Payments ✅
 **Goal:** Stripe + Razorpay, membership activation, diamond ledger.
-**Sprint:** 7 | **Status:** Complete — 786 tests, 58 suites all green
+**Sprint:** 7 | **Status:** Complete — 786 tests, 58 suites all green (950 tests, 70 suites after lib tests added 2026-05-29)
 
 | Task ID  | Description                                       | Status |
 |----------|---------------------------------------------------|--------|
@@ -169,9 +170,43 @@
 
 ---
 
-## Phase 5b — Connections + Groups + Verification ⏳
-**Goal:** Complete Phase 5 backlog. Connection requests, group model with expiry/credits, identity verification.
+## Phase 7b — New Feature Libs + Gateway Tests ✅
+**Goal:** Service layers for all new domain libs + complete gateway controller test coverage.
+**Sprint:** 7b | **Status:** Complete — 950 tests, 70 suites all green (2026-05-29)
+
+| Task ID     | Description                                                    | Status |
+|-------------|----------------------------------------------------------------|--------|
+| LIB-CONN    | `libs/connections` — service + 21 unit tests                  | ✅     |
+| LIB-GRP     | `libs/groups` — service + 24 unit tests                       | ✅     |
+| LIB-GATH    | `libs/gatherings` — events RSVP service + 18 unit tests       | ✅     |
+| LIB-VER     | `libs/verification` — ID doc verification + 13 unit tests     | ✅     |
+| LIB-HAB     | `libs/habits` — habit logging + streak + 18 unit tests        | ✅     |
+| LIB-INTRO   | `libs/introductions` — weekly drops + 18 unit tests           | ✅     |
+| LIB-PROMPT  | `libs/prompts` — weekly prompts + resonate + 18 unit tests    | ✅     |
+| LIB-SAVE    | `libs/saved-profiles` — shortlist + 14 unit tests             | ✅     |
+| LIB-TRUST   | `libs/trust` — block/unblock/report/signals + 15 unit tests   | ✅     |
+| LIB-TUNE    | `libs/matching` — match tuning + weight clamping + 7 tests    | ✅     |
+| LIB-MAGIC   | `libs/auth` — email magic link send/verify + 9 tests          | ✅     |
+| LIB-EXT     | `libs/profile` — pause, voice intro upload/save + 10 tests    | ✅     |
+| GW-TEST-001 | Gateway controller tests — connections (10 tests)             | ✅     |
+| GW-TEST-002 | Gateway controller tests — habits (12 tests)                  | ✅     |
+| GW-TEST-003 | Gateway controller tests — match tuning (7 tests)             | ✅     |
+| GW-TEST-004 | Gateway controller tests — signals (3 tests)                  | ✅     |
+| GW-TEST-005 | Gateway controller tests — profile extensions (11 tests)      | ✅     |
+| GW-TEST-006 | Gateway controller tests — introductions (11 tests)           | ✅     |
+| GW-TEST-007 | Gateway controller tests — trust (13 tests)                   | ✅     |
+| GW-TEST-008 | Gateway controller tests — events (13 tests)                  | ✅     |
+| GW-TEST-009 | Gateway controller tests — saved profiles (11 tests)          | ✅     |
+| GW-TEST-010 | Gateway controller tests — prompts (15 tests)                 | ✅     |
+| GW-TEST-011 | Gateway controller tests — email magic link (9 tests)         | ✅     |
+| CR-FIX-001  | Code review fixes — constants files (5 new), STANDARDS.md (22 files), magic string elimination | ✅ |
+
+---
+
+## Phase 5b — Connections + Verification ⏳
+**Goal:** Gateway endpoints for connection requests and identity verification.
 **Sprint:** 5b | **Status:** Backlog
+> ⚠️ **Group endpoints superseded by Phase 8c (Groups Revamp)** — the original simple group model is being replaced by the full REGIONAL/CULTURAL/PROFESSIONAL/INTEREST taxonomy with social feed, suggested groups, and group posts. Do NOT implement old GROUP-001–005.
 
 | Task ID   | Description                                                       | Status |
 |-----------|-------------------------------------------------------------------|--------|
@@ -179,33 +214,128 @@
 | CONN-002  | `POST /api/v1/connections/:id/reply` — accept with first message | ⏳     |
 | CONN-003  | `POST /api/v1/connections/:id/pass` — silent decline             | ⏳     |
 | CONN-004  | `GET /api/v1/connections?type=incoming\|outgoing\|accepted`      | ⏳     |
-| GROUP-001 | Admin: create/update/delete groups with expiry + credit cost     | ⏳     |
-| GROUP-002 | `GET /api/v1/groups` — available groups pool (up to 10)          | ⏳     |
-| GROUP-003 | `GET /api/v1/groups/mine` — user's 2 active groups               | ⏳     |
-| GROUP-004 | `POST /api/v1/groups/:id/join-early` — spend credits to join     | ⏳     |
-| GROUP-005 | `GET /api/v1/groups/:id/expiry` — countdown data                 | ⏳     |
 | VER-001   | `POST /api/v1/verification` — submit ID doc + selfie to S3       | ⏳     |
 | VER-002   | Admin: `GET /admin/verification/queue` — pending reviews          | ⏳     |
 | VER-003   | Admin: `PUT /admin/verification/:id` — approve/reject + notify   | ⏳     |
 
 ---
 
-## Phase 8 — Admin API + Analytics ⏳
-**Goal:** Admin panel API, user management, feature flag UI, audit logs, KPI dashboard.
-**Sprint:** 8 | **Status:** Backlog
+## ── NEW SCOPE: Phase 8 Series ──────────────────────────────────────────
 
-| Task ID    | Description                                          | Status |
-|------------|------------------------------------------------------|--------|
-| ADMIN-001  | Admin login (bcrypt + TOTP) — AUTH-006               | ⏳     |
-| ADMIN-002  | User management endpoints (list, suspend, ban, etc.) | ⏳     |
-| ADMIN-003  | Feature flag toggle API                              | ⏳     |
-| ADMIN-004  | Verification review queue API — VER-002/003          | ⏳     |
-| ADMIN-005  | Audit log viewer                                     | ⏳     |
-| ADMIN-006  | Flag/moderation queue                                | ⏳     |
-| ADMIN-007  | KPI dashboard endpoints (DAU, conversions, etc.)     | ⏳     |
-| ADMIN-008  | Event management (create/update/cancel events)       | ⏳     |
-| ADMIN-009  | Weekly prompt management (create/schedule)           | ⏳     |
-| ADMIN-010  | Group management (create/close/tag groups)           | ⏳     |
+> **Scoped:** 2026-05-29 · **Decision register:** `epics-stories.md` Phase 8 section
+> All Phase 8 work depends on **DB-MIGRATION-001** completing first.
+
+---
+
+## DB-MIGRATION-001 — Foundation Schema Migration ✅
+**Goal:** Single Prisma migration that adds all new models required by Phases 8a–8d.
+**Status:** Complete — 2026-05-29. 1,146 tests all green.
+**Note:** Run `npx prisma db push` locally (cloud runner cannot reach Supabase).
+
+| Task ID          | Description                                                          | Status |
+|------------------|----------------------------------------------------------------------|--------|
+| DB-MIG-001       | `User.isSeeded`, `Profile.isSeeded`, `Profile.voiceIntroTranscript` | ✅     |
+| DB-MIG-002       | `GroupType` + `GroupScope` enums; revamp `Group` model              | ✅     |
+| DB-MIG-003       | `JoinedVia` enum; update `GroupMembership` model                    | ✅     |
+| DB-MIG-004       | `GroupPost`, `GroupPostComment`, `GroupPostLike` models             | ✅     |
+| DB-MIG-005       | `GroupProposal` model (member-propose INTEREST groups)              | ✅     |
+| DB-MIG-006       | `IntroductionDrop` model + `Introduction` FK + early access fields  | ✅     |
+| DB-MIG-007       | `ProfileEmbedding` model with pgvector `embedding vector(1536)`     | ✅     |
+| DB-MIG-008       | `SystemConfig` key-value table (admin-configurable settings)        | ✅     |
+
+---
+
+## Phase 8a — `apps/seeder` (Automated Data Seeding) ⏳
+**Goal:** Standalone seeder service that continuously seeds realistic profile data for testing.
+**Sprint:** 8a | **Status:** Backlog (starts after DB-MIGRATION-001)
+
+| Task ID   | Description                                                                        | Status |
+|-----------|------------------------------------------------------------------------------------|--------|
+| SEED-001  | Seeder app scaffold — NX project, TS, BullMQ, Express control API, env guards     | ⏳     |
+| SEED-002  | Profile factory — 500 profiles across UK/Germany/Australia/Canada/India           | ⏳     |
+| SEED-003  | S3 photo assignment — reads `seeder/profile-photos/` prefix, assigns randomly     | ⏳     |
+| SEED-004  | SEEDER_SECRET gateway middleware — bypasses OTP, constructs req.user from token   | ⏳     |
+| SEED-005  | Group auto-join — seeder profiles join REGIONAL (auto) + suggested groups         | ⏳     |
+| SEED-006  | Activity simulator — connections, intro responses, RSVPs, prompts, habits, posts  | ⏳     |
+| SEED-007  | Drip scheduler — 3–5 new profiles at random offset within each 3–4 hour window   | ⏳     |
+| SEED-008  | Seeder control API — `POST /seed/run`, `POST /seed/flush`, `GET /seed/status`    | ⏳     |
+| SEED-009  | Matching re-run trigger — fires batch compute after each drip                     | ⏳     |
+
+---
+
+## Phase 8b — `libs/ai` (AI Intelligence Layer) ⏳
+**Goal:** OpenAI-powered profile intelligence, semantic embeddings, and AI-driven intro group proposals.
+**Sprint:** 8b | **Status:** Backlog (starts after DB-MIGRATION-001)
+
+| Task ID  | Description                                                                            | Status |
+|----------|----------------------------------------------------------------------------------------|--------|
+| AI-001   | `libs/ai` scaffold — OpenAI singleton (gpt-4o-mini + text-embedding-3-small + Whisper)| ⏳     |
+| AI-002   | Profile intelligence service — `generateProfileIntelligence()` → ProfileEmbedding     | ⏳     |
+| AI-003   | Voice intro transcription — Whisper API on upload, stored in `voiceIntroTranscript`   | ⏳     |
+| AI-004   | Intro drop proposal — `proposeIntroductionDrops()` → DRAFT IntroductionDrop records   | ⏳     |
+| AI-005   | Event pre-connections — `generateEventPreConnections()` → auto-SCHEDULED drops         | ⏳     |
+| AI-006   | Quiet window generation — timezone-aware contact window stored in ProfileEmbedding     | ⏳     |
+| AI-007   | BullMQ job wiring — fires intelligence job on profile update, prompt, habit, voice    | ⏳     |
+
+---
+
+## Phase 8c — Groups Revamp ⏳
+**Goal:** Full group taxonomy (REGIONAL/CULTURAL/PROFESSIONAL/INTEREST), social feed, suggested groups system.
+**Sprint:** 8c | **Status:** Backlog (starts after DB-MIGRATION-001)
+> Supersedes old GROUP-001–005 from Phase 5b. Completely replaces the simple group stub.
+
+| Task ID    | Description                                                                          | Status |
+|------------|--------------------------------------------------------------------------------------|--------|
+| GRP-R-001  | `libs/groups` refactor — type-based behaviour, auto-join REGIONAL country on register| ⏳     |
+| GRP-R-002  | Group suggestion engine — `listSuggestedGroups(userId, limit)` with profile matching | ⏳     |
+| GRP-R-003  | Group social feed service — posts, flat comments, likes, admin pin                   | ⏳     |
+| GRP-R-004  | Interest group proposal flow — propose → admin approves → group created              | ⏳     |
+| GRP-R-005  | Gateway endpoints — suggested, join/leave, members, posts CRUD                       | ⏳     |
+| GRP-R-006  | Admin endpoints — approve group proposals, pin posts, manage groups                  | ⏳     |
+| GRP-R-007  | Seeder group data — system groups for 5 countries + cities + professional umbrellas  | ⏳     |
+
+---
+
+## Phase 8d — IntroductionDrop Feature ⏳
+**Goal:** Multi-drop intro system — AI-curated themed batches, personalised per-user pairings, early access via diamonds.
+**Sprint:** 8d | **Status:** Backlog (starts after Phase 8b + 8c)
+> Supersedes old weekly-cap intro logic. No limit on intros per week. IntroductionDrop replaces weekKey gating.
+
+| Task ID      | Description                                                                          | Status |
+|--------------|--------------------------------------------------------------------------------------|--------|
+| IDROP-001    | `libs/introductions` refactor — `listDropsForUser()`, remove weekKey cap             | ⏳     |
+| IDROP-002    | Drop pairing generation — AI picks 3–5 from pool per recipient on admin approval    | ⏳     |
+| IDROP-003    | Gateway endpoints — list drops, early-access, unlock, existing accept/decline        | ⏳     |
+| IDROP-004    | Admin endpoints — list/approve/adjust-members/manual-propose drops                   | ⏳     |
+| IDROP-005    | Diamond integration — `INTRO_EARLY_VIEW` + `INTRO_EARLY_UNLOCK` ledger reasons      | ⏳     |
+| IDROP-006    | Seeder exercises drops — activity simulator accepts/declines, spends diamonds        | ⏳     |
+
+---
+
+## Phase 8e — Admin API + Analytics ⏳
+**Goal:** Admin panel API, user management, feature flag UI, audit logs, KPI dashboard — expanded to cover all Phase 8 models.
+**Sprint:** 8e | **Status:** Backlog (starts after Phase 8a data exists — meaningful dashboards need data)
+**Scoped update:** 2026-05-29 — expanded to cover GroupProposal, IntroductionDrop, SystemConfig, seeder monitoring, AI monitoring, and new analytics from Phase 8.
+
+| Task ID    | Description                                                                    | Status |
+|------------|--------------------------------------------------------------------------------|--------|
+| ADMIN-001  | Admin login (bcrypt + TOTP) — AUTH-006 already done; wire admin-api app        | ⏳     |
+| ADMIN-002  | User management — list, suspend, ban, wipe seeded data                          | ⏳     |
+| ADMIN-003  | Feature flag toggle API                                                          | ⏳     |
+| ADMIN-004  | Verification review queue — approve/reject ID verification                       | ⏳     |
+| ADMIN-005  | Audit log viewer                                                                 | ⏳     |
+| ADMIN-006  | Flag/moderation queue + resolve + message hide/unhide                           | ⏳     |
+| ADMIN-007  | Core KPI dashboard (DAU, conversions, match rates, connection funnel)           | ⏳     |
+| ADMIN-008  | Event management (create/update/cancel gatherings)                               | ⏳     |
+| ADMIN-009  | Weekly prompt management (create/schedule/close)                                 | ⏳     |
+| ADMIN-010  | Group management — provision REGIONAL/CULTURAL/PROFESSIONAL, pin posts, archive | ⏳     |
+| ADMIN-011  | IntroductionDrop management — approve/reject AI drops, schedule, monitor live    | ⏳     |
+| ADMIN-012  | AI proposal dashboard — review DRAFT drops proposed by AI before approval        | ⏳     |
+| ADMIN-013  | GroupProposal management — list/approve/reject INTEREST group proposals          | ⏳     |
+| ADMIN-014  | SystemConfig management — CRUD for all admin-configurable key-value settings     | ⏳     |
+| ADMIN-015  | Seeder monitoring — view status, trigger flush, seeded record counts per entity  | ⏳     |
+| ADMIN-016  | AI/ProfileEmbedding monitoring — embedding status, trigger re-runs, queue depth  | ⏳     |
+| ADMIN-017  | Extended analytics — group trends, drop engagement, diamond early access spend, AI vs admin approval ratios | ⏳ |
 
 ---
 

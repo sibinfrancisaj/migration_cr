@@ -10,6 +10,8 @@ import { tokenController } from '../../controllers/auth/token.controller.js';
 import { logoutController } from '../../controllers/auth/logout.controller.js';
 import { firebaseTokenController } from '../../controllers/auth/firebase-token.controller.js';
 import { trustedDeviceController } from '../../controllers/auth/trusted-device.controller.js';
+import { emailLinkController } from '../../controllers/auth/email-link.controller.js';
+import { sendEmailLinkSchema, verifyEmailLinkSchema } from '../../schemas/auth/email-link.schema.js';
 
 export const authRouter = Router();
 
@@ -36,3 +38,16 @@ authRouter.post('/logout/all', requireAuth, logoutController.logoutAll);
  * Flutter exchanges this for a Firebase ID token via signInWithCustomToken().
  */
 authRouter.get('/firebase-token', requireAuth, firebaseTokenController.getToken);
+
+/**
+ * POST /api/v1/auth/email/link
+ * Send a magic login link to a verified email address.
+ * Always returns 200 to prevent email enumeration.
+ */
+authRouter.post('/email/link', validateBody(sendEmailLinkSchema), emailLinkController.send);
+
+/**
+ * POST /api/v1/auth/email/verify
+ * Verify a magic link token and issue a JWT pair.
+ */
+authRouter.post('/email/verify', validateBody(verifyEmailLinkSchema), emailLinkController.verify);

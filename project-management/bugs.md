@@ -17,6 +17,7 @@
 | BUG-007 | Test       | P5    | MSG-003  | requireAdminRole missing from auth mocks after admin route added  | 🟢 Fixed | 2026-05-28 |
 | BUG-008 | Test       | P6b   | AUTH-TD  | otp-verify.service.test.ts missing @abroad-matrimony/config mock after TRUSTED_DEVICE_TTL_DAYS added | 🟢 Fixed | 2026-05-28 |
 | BUG-009 | Tech Debt  | API   | API-SPEC | openapi.yaml uses `nullable: true` (OAS 3.0 syntax) throughout; OAS 3.1 requires `type: [T, "null"]` | ⚪ Won't Fix | 2026-05-29 |
+| BUG-010 | Test       | P7b   | DB-MIG-001 | Non-hex UUID fixtures in controller tests cause Zod `z.string().uuid()` to reject valid-seeming IDs | 🟢 Fixed | 2026-05-29 |
 
 ---
 
@@ -179,6 +180,31 @@ Won't fix in the current sprint — it would require touching 95+ field definiti
 
 **Future fix:**  
 When upgrading the spec, do a bulk find-replace to change all `{ type: X, nullable: true }` to `{ type: [X, "null"] }`. This can be done with a script.
+
+---
+
+### BUG-010 — Non-hex UUID fixtures fail `z.string().uuid()` in controller tests
+**Type:** Test  
+**Phase:** P7b gateway tests / DB-MIGRATION-001 verification  
+**Task:** DB-MIG-001  
+**Reported:** 2026-05-29  
+**Status:** 🟢 Fixed
+
+**Problem:**  
+`z.string().uuid()` in Zod validates against the regex `[0-9a-f]{8}-[0-9a-f]{4}-...`. UUID fixture constants that used repeated non-hex letters (`p`, `r`, `g`) in test files caused `validateParams` to return 400 even for valid-looking test requests, making all non-validation test cases fail.
+
+Affected test files and IDs:
+- `prompts.controller.test.ts`: `PROMPT_ID = 'pppppppp-...'` (p not hex), `RESPONSE_ID = 'rrrrrrrr-...'` (r not hex)
+- `groups.controller.test.ts`: `GROUP_ID = 'gggggggg-...'` (g not hex)
+- Also: `type: 'IMAGE'` in prompts respond test — IMAGE is not a valid `PromptResponseType` (only TEXT/AUDIO)
+
+**Fix:**  
+- `PROMPT_ID` → `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`
+- `RESPONSE_ID` → `bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb`
+- `GROUP_ID` → `cccccccc-cccc-cccc-cccc-cccccccccccc`
+- `type: 'IMAGE'` → `type: 'AUDIO'` with matching DTO and URL
+
+**Lesson:** UUID test fixtures must use only hex characters (0-9, a-f). Valid hex options: `aaaa`, `bbbb`, `cccc`, `dddd`, `eeee`, `ffff`, `0000`, `1111`, etc. Characters like `g`, `h`, `i`, `j`, `k`, `n`, `o`, `p`, `q`, `r`, `s`, `t`, `u`, `v`, `w`, `x`, `y`, `z` are NOT hex.
 
 ---
 

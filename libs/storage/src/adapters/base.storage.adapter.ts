@@ -39,4 +39,10 @@ export interface StorageAdapter {
     mimeType: string,
     expiresInSeconds: number,
   ): Promise<{ uploadUrl: string; fileUrl: string }>;
+
+  /**
+   * Derive the public (CDN / S3) URL for an already-uploaded key.
+   * Used when the file was uploaded by the client directly via a presigned URL.
+   */
+  getPublicUrl(key: string): string;
 }

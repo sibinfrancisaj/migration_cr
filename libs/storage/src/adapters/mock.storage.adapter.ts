@@ -24,6 +24,10 @@ export class MockStorageAdapter implements StorageAdapter {
     log.info('[MOCK STORAGE] File "deleted"', { key });
   }
 
+  getPublicUrl(key: string): string {
+    return `${MOCK_CDN_BASE}/${key}`;
+  }
+
   async getPresignedUploadUrl(
     key: string,
     mimeType: string,

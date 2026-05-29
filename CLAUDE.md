@@ -418,6 +418,110 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 
 ---
 
+## 6g. Complete — Phase 7b: New Feature Libs + Tests ✅
+
+> Service layers were pre-implemented; this phase added jest configs + unit tests.
+
+| Task ID | Lib / Feature | Tests |
+|---------|--------------|-------|
+| **LIB-CONN** | `libs/connections` — connection requests service | ✅ 21 tests |
+| **LIB-GRP** | `libs/groups` — groups + events service | ✅ 24 tests |
+| **LIB-GATH** | `libs/gatherings` — events RSVP service | ✅ 18 tests |
+| **LIB-VER** | `libs/verification` — ID doc verification + trust score | ✅ 13 tests |
+| **LIB-HAB** | `libs/habits` — habit logging + streak computation | ✅ 18 tests |
+| **LIB-INTRO** | `libs/introductions` — weekly intro drops + getWeekKey | ✅ 18 tests |
+| **LIB-PROMPT** | `libs/prompts` — weekly prompts + resonate | ✅ 18 tests |
+| **LIB-SAVE** | `libs/saved-profiles` — saved profile shortlist | ✅ 14 tests |
+| **LIB-TRUST** | `libs/trust` — block/unblock/report/signals | ✅ 15 tests |
+| **LIB-TUNE** | `libs/matching` — match-tuning.service + weight clamping | ✅ 7 tests |
+| **LIB-MAGIC** | `libs/auth` — email magic link send + verify | ✅ 9 tests |
+| **LIB-EXT** | `libs/profile` — profile pause, voice intro upload/save | ✅ 10 tests |
+
+**Total after Phase 7b lib work: 950 tests, 70 suites all green.**
+
+**TypeScript fixes applied:**
+- `PaginationMeta` interface: `hasMore` made optional, added `page?`, `limit?`, `message?`, `total?`
+- `StorageAdapter` interface: added `getPublicUrl(key: string): string` method (S3 + Mock implementations)
+- `libs/profile/src/extensions.service.ts`: fixed `getPresignedUploadUrl` destructuring
+- `libs/verification/src/index.ts`: removed `as string[]` Prisma enum casts, fixed upload URL destructuring
+- `libs/gatherings/src/index.ts`: removed Prisma enum casts + `.includes()` replaced with equality checks
+- `libs/groups/src/index.ts`: same Prisma enum cast fixes, renamed unused `userId` → `_userId`
+- `libs/saved-profiles/src/index.ts`: removed `label as string` cast from Prisma where clause
+- `libs/payment/src/membership.service.ts`: `toMembershipDto` helper accepts `string` types to avoid Prisma/shared enum mismatch
+- `libs/auth/src/email-magic-link.service.ts`: corrected `issueTokenPair(id, role, deviceId)` and `storeRefreshToken(tokenId, userId, deviceId, token, expiresAt)` call signatures
+
+**New jest.config.ts files added:** connections, groups, gatherings, verification, habits, introductions, prompts, saved-profiles, trust
+
+**Phase 7b gateway test + code review work (2026-05-29):**
+- 10 gateway controller test files written (connections, habits, tuning, signals, profile-extensions, introductions, trust, events, saved, prompts)
+- 5 new constants files created: `introductions.constants.ts`, `events.constants.ts`, `prompts.constants.ts`, `saved.constants.ts`, `trust.constants.ts`
+- 22 STANDARDS.md files created: all 11 new route dirs + 11 controller dirs
+- Code review violations fixed: magic strings eliminated from 5 controllers; `HTTP_STATUS` import added to signals controller; dead `CONNECTION_ERRORS.SELF_CONNECT` constant removed
+
+---
+
+## 6h. Scoped — Phase 8 New Features (Next Implementation Block)
+
+**Scoped:** 2026-05-29 | **Status:** Ready to implement — all design decisions locked
+
+### Scope Summary
+
+| Phase | What | Key dependency |
+|-------|------|----------------|
+| **DB-MIGRATION-001** | Schema migration — all new models | Must run first |
+| **Phase 8a** | `apps/seeder` — automated data seeding | DB-MIGRATION-001 |
+| **Phase 8b** | `libs/ai` — OpenAI intelligence layer | DB-MIGRATION-001 |
+| **Phase 8c** | Groups revamp — 4-type taxonomy + social feed | DB-MIGRATION-001 |
+| **Phase 8d** | IntroductionDrop — multi-drop, AI-curated | Phase 8b + 8c |
+| **Phase 8e** | Admin API + Analytics (17 tasks, expanded 2026-05-29) | Phase 8a data exists |
+
+### Key Design Decisions (all locked — see epics-stories.md Phase 8 Design Decisions Log)
+
+**Seeder:**
+- `apps/seeder` — independent NX app, port 3100, never runs in production (hard env guard)
+- `SEEDER_SECRET` — gateway middleware bypass; `isSeeded` flag on User/Profile/Group/GroupPost
+- 500 profiles: UK 35%, Germany 20%, Australia 20%, Canada 15%, India 10%
+- Drip: 3–5 new profiles at random offset within 3–4 hour window (organic feel)
+- S3 photos from `seeder/profile-photos/male|female/` prefix (operator uploads once)
+- Control API: `POST /seed/run`, `POST /seed/flush`, `GET /seed/status`
+
+**Groups:**
+- Single `Group` model with `type: GroupType` enum: `REGIONAL | CULTURAL | PROFESSIONAL | INTEREST`
+- `scope: GroupScope` enum: `COUNTRY | GLOBAL` (global DB-provisioned, country-specific for now)
+- REGIONAL country-level: auto-join on registration. Everything else: suggested → manual join
+- Suggested at onboarding (max 20, configurable via `SystemConfig`), also shown in home feed
+- All members visible in all group types; initiating conversation from group costs diamonds
+- Social feed: posts + flat comments + likes. No video, no nested threads
+- INTEREST group creation: member proposes → admin approves (hybrid)
+- Hierarchy: flat with `parentGroupId` (city → country)
+
+**IntroductionDrop:**
+- `IntroductionDrop` (themed category/pool) + `Introduction` (curated 1:1 per recipient from pool)
+- No weekly cap — multiple drops live simultaneously across different themes
+- AI picks 3–5 best matches from pool per recipient (personalized, not same for everyone)
+- Early access: spend `earlyAccessCost` diamonds to VIEW (locked); spend `unlockCost` to UNLOCK
+- Flow: AI proposes DRAFT → admin approves → pairing generation → SCHEDULED → LIVE at `releaseAt`
+- Event pre-connections: auto-SCHEDULED, 72h before event, no admin approval
+
+**AI (`libs/ai`):**
+- `gpt-4o-mini` + `text-embedding-3-small` + `Whisper` via OpenAI
+- `ProfileEmbedding`: summary (150w), traitTags (8–12), vibeScores (5 dimensions 1–10), pgvector embedding
+- Supabase pgvector (native support) — no extra infrastructure
+- All AI paths are no-ops when `OPENAI_API_KEY` absent (`isAiConfigured()` guard)
+- BullMQ job fired (60s debounce) on any profile signal update
+
+**New env vars required:**
+- `SEEDER_SECRET` (gateway + seeder)
+- `GATEWAY_URL` (seeder)
+- `SEEDER_PORT` (seeder, default 3100)
+- `SEEDER_PHOTO_S3_PREFIX` (seeder)
+- `SEEDER_INITIAL_COUNT` (seeder, default 500)
+- `OPENAI_API_KEY` (libs/ai)
+- `AI_MODEL` (libs/ai, default `gpt-4o-mini`)
+- `EMBEDDING_MODEL` (libs/ai, default `text-embedding-3-small`)
+
+---
+
 ## 7. Architecture Decisions (ADRs)
 
 > Full context and diagrams → `project-management/architecture.md`
@@ -502,6 +606,26 @@ app.use(express.json());
 **Decision:** `getStripeAdapter()` and `getRazorpayAdapter()` in `libs/payment/src/adapters/index.ts` use `require()` inside the factory function body (not top-level `import`) to instantiate Stripe/Razorpay SDK objects.
 
 **Rationale:** Top-level `import Stripe from 'stripe'` causes Jest to load the Stripe module during test module resolution, even when `stripe` is not installed (CI without credentials). Dynamic `require()` defers loading to call time, by which point the module is either mocked or not needed. Combined with `MockPaymentAdapter` used in all tests, the real SDKs never load during test runs.
+
+### ADR-013: Automated Data Seeding Service (`apps/seeder`)
+**Decision:** `apps/seeder` — standalone NX app, independent Express server (port 3100), BullMQ scheduler, hard `NODE_ENV === production` exit guard. Uses `SEEDER_SECRET` token to call gateway endpoints as synthetic users. `isSeeded` flag on seeded DB records enables clean flush.
+**Rationale:** Complex matching, AI grouping, and weekly intro drops all require 500+ realistic, continuously-updated profiles. One-time seed scripts don't capture ongoing activity signals. An independent service keeps seeding concerns out of gateway code entirely.
+
+### ADR-014: SEEDER_SECRET Gateway Auth Bypass
+**Decision:** New gateway middleware checks `Authorization: Bearer <token>` before `requireAuth`. If token === `SEEDER_SECRET` env var AND `NODE_ENV !== production`, decodes `{ userId, role }` payload and sets `req.user` directly, bypassing JWT. In production: no-op.
+**Rationale:** Avoids fake phone numbers / real OTP flows for 500+ synthetic users. Production safety is enforced at the middleware level, not by configuration discipline alone.
+
+### ADR-015: Four-Type Group Taxonomy (REGIONAL | CULTURAL | PROFESSIONAL | INTEREST)
+**Decision:** Single `Group` model with `type` + `scope` enums. REGIONAL country-level auto-joins on register. All others suggested at onboarding and in home feed. All member lists visible; conversation initiation costs diamonds. Social feed (posts + flat comments + likes) on all types. INTEREST groups require member proposal + admin approval. Hierarchy via `parentGroupId`.
+**Rationale:** Four genuinely different use cases with different join rules, visibility, and capabilities. One model + type enum is simpler than four separate models while making behaviour explicit and testable.
+
+### ADR-016: IntroductionDrop Model — Replacing WeekKey Cap
+**Decision:** `IntroductionDrop` (themed category with member pool + release schedule) sits above `Introduction` (curated 1:1 pairing per recipient). No weekly cap. AI picks 3–5 best matches per recipient from the pool. Early access via tiered diamond spend. Event-based drops auto-approved.
+**Rationale:** Single-weekly-intro cap prevented multi-themed, multi-frequency drops. Separating the "drop concept" from the "individual pairing" enables personalised curation at scale and creates natural monetisation touchpoints.
+
+### ADR-017: AI Integration — OpenAI + pgvector for Profile Intelligence
+**Decision:** `libs/ai` wraps gpt-4o-mini (completions), text-embedding-3-small (embeddings), and Whisper (voice transcription). ProfileEmbedding model stores summary, trait tags, vibe scores, and 1536-dim vector in Supabase pgvector. All AI paths are optional no-ops when API key absent.
+**Rationale:** Demographic matching alone is insufficient for Indian diaspora matrimony. Voice intro vibes, prompt answer depth, habit consistency, and event attendance are personality signals that only semantic AI analysis can extract. pgvector is native to Supabase — zero extra infrastructure. gpt-4o-mini is 15× cheaper than gpt-4o with sufficient quality for profile analysis.
 
 ---
 
@@ -734,9 +858,41 @@ PAY-006 ✅ POST /api/v1/payment/diamonds/purchase — Stripe diamond checkout +
 PAY-007 ✅ GET /api/v1/payment/diamonds/balance + POST /diamonds/spend
 PAY-008 ✅ POST /admin/payment/refund (SUPERADMIN) — refund + ledger reversal
 
-Next task: Phase 5 backlog — GROUP-001/002/003 (regional groups), CONN-001/002/003 (connections), VER-001/002/003 (identity verification)
-OR Phase 8 — Admin API + Analytics (ADMIN-001 through ADMIN-007)
-Check with user which phase to tackle next.
+Phase 7b ✅ New Feature Libs + Tests ALL DONE (950 tests, 70 suites).
+Service layers (libs) + jest.config.ts + unit tests written and passing for:
+  - libs/connections — sendConnectionRequest, listConnections, acceptConnection, declineConnection, withdrawConnection (21 tests)
+  - libs/groups — listGroups, getGroup, joinGroup, leaveGroup, getGroupMembers, getGroupEvents (24 tests)
+  - libs/gatherings — listEvents, getEvent, rsvpToEvent, cancelRsvp, getEventAttendees (18 tests)
+  - libs/verification — submitVerification, getVerificationStatus, getTrustScore, getVerificationUploadUrl (13 tests)
+  - libs/habits — listHabits, logHabit, deleteHabitLog, getHabitStreak, addHabitReflection + computeStreaks (18 tests)
+  - libs/introductions — getWeekKey, listCurrentIntroductions, listIntroductionHistory, acceptIntroduction, declineIntroduction (18 tests)
+  - libs/prompts — getCurrentPrompt, respondToPrompt, getPromptResponses, resonateResponse, unresonateResponse (18 tests)
+  - libs/saved-profiles — listSavedProfiles, saveProfile, updateSavedProfile, unsaveProfile (14 tests)
+  - libs/trust — blockUser, unblockUser, listBlocks, reportUser, getSignals (15 tests)
+  - libs/matching — getMatchTuning, setMatchTuning + weight clamping (7 tests, added to existing suite)
+  - libs/auth — sendMagicLink, verifyMagicLink email magic link (9 tests, added to existing suite)
+  - libs/profile — toggleProfilePause, getVoiceIntroUploadUrl, saveVoiceIntro extensions (10 tests, added to existing suite)
+TypeScript fixes also applied: PaginationMeta extended, StorageAdapter.getPublicUrl added, membership enum casting fixed,
+  gatherings/groups/verification/saved-profiles Prisma enum cast issues resolved, email-magic-link function signatures corrected.
+Phase 7b gateway test + code review work (2026-05-29):
+  - 10 gateway controller test files written (connections, habits, tuning, signals, profile-extensions, introductions, trust, events, saved, prompts)
+  - 5 new constants files + 22 STANDARDS.md files created across all new route/controller dirs
+  - Code review violations fixed: magic strings eliminated, HTTP_STATUS import added, dead constant removed
+
+── PHASE 8 SERIES — NEXT IMPLEMENTATION BLOCK ──────────────────────────────
+All Phase 8 design decisions locked (2026-05-29). Full specs in epics-stories.md.
+Read project-management/phases.md section "NEW SCOPE: Phase 8 Series" for task list.
+
+⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
+before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot reach Supabase).
+
+Phase 8 work order:
+  1. DB-MIGRATION-001 — schema migration (pgvector, new models) — PREREQUISITE for all below
+  2. Phase 8a (SEED-001→009) — apps/seeder: autonomous data seeder, port 3100
+  3. Phase 8b (AI-001→007) — libs/ai: OpenAI completions + embeddings + Whisper
+  4. Phase 8c (GRP-R-001→007) — Groups revamp: 4-type taxonomy + social feed
+  5. Phase 8d (IDROP-001→006) — IntroductionDrop: multi-drop, AI-curated pairings
+  6. Phase 8e (ADMIN-001→017) — Admin API + Analytics (expanded 2026-05-29: +GroupProposal mgmt, +SystemConfig, +seeder monitoring, +AI monitoring, +extended analytics)
 
 ⚠️ IMPORTANT: Run `npm install --legacy-peer-deps` if you haven't — `stripe` and `razorpay` were added to root package.json in Phase 7.
 
@@ -788,12 +944,49 @@ Prisma changes (applied): IMAGE in MessageType, mediaUrl/flagCount/isHidden on M
 
 BUG-007: requireAdminRole missing from auth mocks — when adding new admin routes, add requireAdminRole stub to ALL jest.mock('@abroad-matrimony/auth') blocks in gateway tests.
 
-KEY DECISIONS:
+KEY DECISIONS (Phases 1–7b):
 - USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
 - Diamond ledger is append-only (ADR-006). No UPDATEs.
 - All money in integer paise/cents (ADR-007). Never floats.
 - Stripe/Razorpay adapters use dynamic require() inside factory — never top-level import (ADR-012).
 - express.raw() before express.json() for webhook paths (ADR-011).
+
+KEY DECISIONS (Phase 8 — all locked 2026-05-29):
+- DB-MIGRATION-001 MUST complete before any Phase 8 implementation. Run prisma db push locally.
+- apps/seeder: independent NX app port 3100, NEVER runs in production (hard NODE_ENV guard).
+- SEEDER_SECRET: gateway middleware bypass sets req.user from token payload; no-op in production (ADR-014).
+- isSeeded flag: Boolean @default(false) on User/Profile/Group/GroupPost — enables clean flush.
+- 500 profiles: UK 35%, Germany 20%, Australia 20%, Canada 15%, India 10%.
+- Drip cadence: 3–5 new profiles at random offset within 3–4 hour window (organic feel).
+- Groups: single Group model with type enum REGIONAL|CULTURAL|PROFESSIONAL|INTEREST (ADR-015).
+- REGIONAL country-level groups: auto-join on registration. All others: suggested → manual join.
+- Suggested groups at onboarding, max 20 (configurable via SystemConfig table).
+- All member lists visible in all group types; initiating conversation from group costs diamonds.
+- Social feed: posts + flat comments + likes. No video, no nested threads.
+- INTEREST groups: member proposes → admin approves (hybrid). Group hierarchy via parentGroupId.
+- IntroductionDrop (themed pool) → Introduction (curated 1:1 per recipient). No weekly cap (ADR-016).
+- AI picks 3–5 best matches from pool per recipient. Flow: AI DRAFT → admin approve → SCHEDULED → LIVE.
+- Early access: VIEW costs earlyAccessCost diamonds (blurred); UNLOCK costs unlockCost (full profile).
+- New ledger reasons: INTRO_EARLY_VIEW, INTRO_EARLY_UNLOCK, GROUP_CONVERSATION_INITIATION.
+- Event pre-connections: auto-SCHEDULED IntroductionDrop, 72h before event, no admin approval needed.
+- libs/ai: gpt-4o-mini (completions), text-embedding-3-small (1536-dim), Whisper (voice) (ADR-017).
+- ProfileEmbedding: summary (150w), traitTags (8–12), vibeScores (5 dims 1–10), pgvector embedding.
+- All AI paths are no-ops when OPENAI_API_KEY absent (isAiConfigured() guard in libs/ai).
+- BullMQ profile intelligence job fires 60s debounce after any profile signal update.
+- Quiet window: 22:00–07:00 in recipient's local timezone; notifications deferred not dropped.
+- SystemConfig table: key-value store for admin-configurable settings (e.g. SUGGESTED_GROUPS_MAX=20).
+- Phase 8e Admin scope expanded (2026-05-29): now 17 tasks (ADMIN-001→017). New: ADMIN-013 GroupProposal approve/reject, ADMIN-014 SystemConfig CRUD, ADMIN-015 Seeder monitoring (status/flush/logs), ADMIN-016 AI/ProfileEmbedding monitoring (queue depth, stale embeddings, recompute), ADMIN-017 Extended analytics (group trends, drop engagement, diamond early access, AI vs admin ratios).
+- Admin endpoints for new Phase 8 models: all in apps/admin-api (port 3001). GroupProposal → ADMIN-013, SystemConfig → ADMIN-014, seeder flush → ADMIN-015, ProfileEmbedding recompute → ADMIN-016, drop approval → ADMIN-011, AI proposals dashboard → ADMIN-012.
+
+NEW ENV VARS (Phase 8 — add to libs/config/src/env.ts + .env.example):
+- SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it)
+- GATEWAY_URL: seeder's target for HTTP calls (default http://localhost:3000)
+- SEEDER_PORT: seeder app port (default 3100)
+- SEEDER_PHOTO_S3_PREFIX: S3 prefix for seeder photos (default seeder/profile-photos)
+- SEEDER_INITIAL_COUNT: total profiles to seed on first run (default 500)
+- OPENAI_API_KEY: OpenAI API key (optional — AI no-ops if absent)
+- AI_MODEL: OpenAI completions model (default gpt-4o-mini)
+- EMBEDDING_MODEL: OpenAI embedding model (default text-embedding-3-small)
 
 SonarCloud: SONAR_TOKEN in GitHub Secrets. Repo is public.
 

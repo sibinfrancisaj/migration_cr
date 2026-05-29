@@ -64,6 +64,15 @@ export {
 } from './admin-auth.service.js';
 export type { AdminLoginInput, AdminLoginResult } from './admin-auth.service.js';
 
+// Email magic link
+export {
+  sendMagicLink,
+  verifyMagicLink,
+  MagicLinkUserNotFoundError,
+  MagicLinkInvalidError,
+} from './email-magic-link.service.js';
+export type { SendMagicLinkResult } from './email-magic-link.service.js';
+
 // Trusted device bypass
 export {
   trustedDeviceLoginService,
