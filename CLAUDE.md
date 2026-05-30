@@ -471,7 +471,7 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 | **DB-MIGRATION-001** | Schema migration — all new models | Must run first |
 | **Phase 8a** | `apps/seeder` — automated data seeding ✅ 2026-05-29 | DB-MIGRATION-001 |
 | **Phase 8b** | `libs/ai` — OpenAI intelligence layer ✅ 2026-05-29 | DB-MIGRATION-001 |
-| **Phase 8c** | Groups revamp — 4-type taxonomy + social feed | DB-MIGRATION-001 |
+| **Phase 8c** | Groups revamp — 4-type taxonomy + social feed ✅ 2026-05-30 | DB-MIGRATION-001 |
 | **Phase 8d** | IntroductionDrop — multi-drop, AI-curated | Phase 8b + 8c |
 | **Phase 8e** | Admin API + Analytics (17 tasks, expanded 2026-05-29) | Phase 8a data exists |
 
@@ -894,6 +894,17 @@ AI-006 ✅ quiet-window.ts — isWithinWindow(), msUntilWindowOpens(), getContac
 AI-007 ✅ ai.worker.ts + enqueue-intelligence.ts — BullMQ concurrency 2, jobId 'pi:${userId}' debounce, conditional startup
 See "Key files from Phase 8b (AI)" section below.
 
+Phase 8c ✅ Groups Revamp ALL DONE (1,312 tests, 93 suites).
+libs/groups + apps/gateway/src/controllers/groups + apps/gateway/src/routes/groups: GRP-R-001→007 complete.
+GRP-R-001 ✅ libs/groups refactor — REGIONAL/CULTURAL/PROFESSIONAL/INTEREST types; joinGroup(userId, groupId, joinedVia), leaveGroup, autoJoinRegionalCountryGroup; listSuggestedGroups; getSuggestedGroupsForOnboarding; paginated getGroupMembers
+GRP-R-002 ✅ Group suggestion engine — listSuggestedGroups(userId, limit) ranked by country match + memberCount; SystemConfig.SUGGESTED_GROUPS_MAX
+GRP-R-003 ✅ Group social feed service — feed.service.ts: createPost, listPosts (isPinned DESC), deletePost (author/admin), likePost/unlikePost idempotent, addComment, listComments, pinPost/unpinPost
+GRP-R-004 ✅ Interest group proposal flow — proposal.service.ts: proposeGroup, getGroupProposals, approveGroupProposal ($transaction: Group create + auto-join), rejectGroupProposal; ProposalNotPendingError guard
+GRP-R-005 ✅ Gateway endpoints — 16 routes: list, get, suggested, onboarding-suggestions, join, leave, members, events, feed, posts CRUD, like/unlike, comments, proposals; static routes before /:groupId
+GRP-R-006 ✅ Admin endpoints — groups-admin.controller.ts: GET/POST/POST proposals, POST/DELETE pin; 17 tests
+GRP-R-007 ✅ Seeder group data — 21 system groups (5 REGIONAL + 6 CULTURAL + 5 PROFESSIONAL + 5 INTEREST); seedSystemGroups() idempotent; POST /seed/groups endpoint; called in triggerRun before drip
+See "Key files from Phase 8c (Groups Revamp)" section below.
+
 ── PHASE 8 SERIES — NEXT IMPLEMENTATION BLOCK ──────────────────────────────
 All Phase 8 design decisions locked (2026-05-29). Full specs in epics-stories.md.
 Read project-management/phases.md section "NEW SCOPE: Phase 8 Series" for task list.
@@ -905,8 +916,8 @@ Phase 8 work order:
   1. DB-MIGRATION-001 — ✅ DONE — schema migration (pgvector, new models)
   2. Phase 8a (SEED-001→009) — ✅ DONE (2026-05-29) — 1,091 tests, 77 suites — apps/seeder autonomous data seeder, port 3100
   3. Phase 8b (AI-001→007) — ✅ DONE (2026-05-29) — 1,223 tests, 89 suites — libs/ai: OpenAI completions + embeddings + Whisper + BullMQ wiring
-  4. Phase 8c (GRP-R-001→007) — Groups revamp: 4-type taxonomy + social feed  ← NEXT
-  5. Phase 8d (IDROP-001→006) — IntroductionDrop: multi-drop, AI-curated pairings
+  4. Phase 8c (GRP-R-001→007) — ✅ DONE (2026-05-30) — 1,312 tests, 93 suites — Groups revamp: 4-type taxonomy + social feed + proposals + admin + seeder groups
+  5. Phase 8d (IDROP-001→006) — IntroductionDrop: multi-drop, AI-curated pairings  ← NEXT
   6. Phase 8e (ADMIN-001→017) — Admin API + Analytics (expanded 2026-05-29: +GroupProposal mgmt, +SystemConfig, +seeder monitoring, +AI monitoring, +extended analytics)
 
 ⚠️ IMPORTANT: Run `npm install --legacy-peer-deps` if you haven't — `stripe` and `razorpay` were added to root package.json in Phase 7.
@@ -1049,6 +1060,28 @@ Key files from Phase 8b (AI — AI-001→007):
 - libs/shared/src/constants/index.ts — QUEUE_NAMES.PROFILE_INTELLIGENCE + JOB_TYPES.PROFILE_INTELLIGENCE_UPDATE added
 - jest.preset.js — @abroad-matrimony/ai moduleNameMapper entry added
 - tsconfig.base.json — @abroad-matrimony/ai path alias added
+
+Key files from Phase 8c (Groups Revamp — GRP-R-001→007):
+- libs/groups/src/index.ts — FULLY REWRITTEN: joinGroup(userId, groupId, joinedVia?), leaveGroup(userId, groupId), autoJoinRegionalCountryGroup(userId, country), listSuggestedGroups(userId, limit), getSuggestedGroupsForOnboarding(userId), getGroupMembers(groupId, page, limit) → PaginatedGroupMembersResult; AlreadyInGroupError, NotInGroupError (new); AlreadyGroupMemberError, NotGroupMemberError kept as @deprecated aliases
+- libs/groups/src/feed.service.ts — CREATED: createPost(), listPosts(), deletePost(userId, postId, isAdmin?), likePost(), unlikePost() idempotent, addComment(), listComments(), pinPost(), unpinPost(); PostNotFoundError, PostForbiddenError
+- libs/groups/src/proposal.service.ts — CREATED: proposeGroup(), getGroupProposals(status?), approveGroupProposal() — creates Group + auto-joins proposer in $transaction, rejectGroupProposal(); GroupProposalNotFoundError, AlreadyProposedError, ProposalNotPendingError
+- libs/groups/src/__tests__/groups.service.test.ts — REWRITTEN (new tests for autoJoinRegionalCountryGroup, listSuggestedGroups, getSuggestedGroupsForOnboarding)
+- libs/groups/src/__tests__/feed.service.test.ts — CREATED (pinPost, unpinPost, likePost idempotency, member validation)
+- libs/groups/src/__tests__/proposal.service.test.ts — CREATED (proposal create, approve creates group, ProposalNotPendingError guard)
+- apps/gateway/src/controllers/groups/groups.controller.ts — REWRITTEN: mapGroupError handles 11 error classes; new handlers: suggested, onboardingSuggestions, getFeed, createPost, deletePost, likePost, unlikePost, addComment, listComments, proposeGroup, approveProposal, rejectProposal
+- apps/gateway/src/routes/groups/index.ts — REWRITTEN: static routes (/suggested, /onboarding-suggestions, /proposals) BEFORE /:groupId; 16 total routes
+- apps/gateway/src/schemas/groups/groups.schema.ts — REWRITTEN: added groupAndPostParamSchema, paginationQuerySchema, createPostSchema, addCommentSchema, proposeGroupSchema, suggestedGroupsQuerySchema
+- apps/gateway/src/constants/groups.constants.ts — UPDATED: POST_NOT_FOUND, POST_FORBIDDEN, PROPOSAL_NOT_FOUND, ALREADY_PROPOSED, PROPOSAL_NOT_PENDING errors; POST_CREATED, POST_DELETED, LIKED, UNLIKED, COMMENT_ADDED, PINNED, UNPINNED, PROPOSAL_CREATED, PROPOSAL_APPROVED, PROPOSAL_REJECTED messages
+- apps/gateway/src/controllers/groups/__tests__/groups.controller.test.ts — REWRITTEN: all 11 error classes in mock; getGroupMembers returns PaginatedGroupMembersResult; test suites for all new endpoints
+- apps/gateway/src/controllers/admin/groups-admin.controller.ts — CREATED (GRP-R-006): listProposals, approveProposal, rejectProposal, pinPost, unpinPost; MODERATOR+ required
+- apps/gateway/src/routes/admin/index.ts — UPDATED: 5 new admin group routes; inline schemas for proposalId/groupAndPost/rejectBody/status
+- apps/gateway/src/controllers/admin/__tests__/groups-admin.controller.test.ts — CREATED (17 tests)
+- apps/seeder/src/data/groups.data.ts — CREATED (GRP-R-007): 21 system groups (5 REGIONAL, 6 CULTURAL, 5 PROFESSIONAL, 5 INTEREST)
+- apps/seeder/src/services/group-seed.service.ts — CREATED: seedSystemGroups() idempotent (findFirst by name), isSeeded:false, returns {created, existing, total}
+- apps/seeder/src/controllers/seed.controller.ts — UPDATED: triggerRun calls seedSystemGroups() first; new seedGroups handler
+- apps/seeder/src/routes/seed.routes.ts — UPDATED: POST /seed/groups route added
+- apps/seeder/src/__tests__/seed.controller.test.ts — UPDATED: mockSeedGroups added; /seed/run tests updated; /seed/groups tests added
+- apps/seeder/src/__tests__/group-seed.service.test.ts — CREATED (6 tests: create-all, idempotent, mixed, partial-failure, type-coverage, isSeeded:false)
 
 NEW ENV VARS (Phase 8 — add to libs/config/src/env.ts + .env.example):
 - SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it) ✅ added

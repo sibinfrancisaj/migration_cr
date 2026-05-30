@@ -9,8 +9,8 @@
   "scripts": {
     "build": "nx run-many -t build",
     "test": "nx run-many -t test",
-    "test:unit": "jest --projects libs/auth apps/gateway apps/seeder --no-coverage",
-    "test:coverage": "jest --projects libs/auth apps/gateway apps/seeder --coverage",
+    "test:unit": "jest --projects libs/auth libs/matching libs/messaging libs/notification libs/payment libs/connections libs/groups libs/gatherings libs/verification libs/habits libs/introductions libs/prompts libs/saved-profiles libs/trust libs/profile libs/ai apps/gateway apps/seeder --no-coverage",
+    "test:coverage": "jest --projects libs/auth libs/matching libs/messaging libs/notification libs/payment libs/connections libs/groups libs/gatherings libs/verification libs/habits libs/introductions libs/prompts libs/saved-profiles libs/trust libs/profile libs/ai apps/gateway apps/seeder --coverage",
     "lint": "nx run-many -t lint",
     "typecheck": "nx run-many -t typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\" --ignore-path .prettierignore",

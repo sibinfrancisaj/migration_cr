@@ -2275,75 +2275,144 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### GRP-R-001 · `libs/groups` Revamp — Core Service ⏳
+### GRP-R-001 · `libs/groups` Revamp — Core Service ✅
 
 **Story:** As a platform, I need the groups service rebuilt to support the four group types with type-specific auto-join rules, member count management, and suggested group logic.
 
 **Acceptance Criteria:**
-- [ ] `libs/groups/src/index.ts` fully refactored with new model
-- [ ] `joinGroup(userId, groupId, joinedVia)` — validates not already joined, increments `memberCount`
-- [ ] `leaveGroup(userId, groupId)` — decrements `memberCount`, removes membership
-- [ ] `autoJoinRegionalCountryGroup(userId, country)` — called on profile creation, uses `joinedVia: AUTO`
-- [ ] `listSuggestedGroups(userId, limit)` — returns groups user is not in, ranked by: (1) profile field match, (2) member count, (3) activity (most recent post), filtered by `isActive: true`
-- [ ] `getSuggestedGroupsForOnboarding(userId)` — wrapper of above, limit from `SystemConfig.SUGGESTED_GROUPS_MAX` (default 20)
-- [ ] `getGroupMembers(groupId, page, limit)` — paginated member list
-- [ ] `GroupNotFoundError`, `AlreadyInGroupError`, `NotInGroupError` error classes
-- [ ] All existing unit tests updated + new tests for new functions
+- [x] `libs/groups/src/index.ts` fully refactored with new model
+- [x] `joinGroup(userId, groupId, joinedVia)` — validates not already joined, increments `memberCount`
+- [x] `leaveGroup(userId, groupId)` — decrements `memberCount`, removes membership
+- [x] `autoJoinRegionalCountryGroup(userId, country)` — called on profile creation, uses `joinedVia: AUTO`
+- [x] `listSuggestedGroups(userId, limit)` — returns groups user is not in, ranked by: (1) profile field match, (2) member count, (3) activity (most recent post), filtered by `isActive: true`
+- [x] `getSuggestedGroupsForOnboarding(userId)` — wrapper of above, limit from `SystemConfig.SUGGESTED_GROUPS_MAX` (default 20)
+- [x] `getGroupMembers(groupId, page, limit)` — paginated member list
+- [x] `GroupNotFoundError`, `AlreadyInGroupError`, `NotInGroupError` error classes
+- [x] All existing unit tests updated + new tests for new functions
+
+**Decision Log:**
+- `joinGroup` signature changed to `(userId, groupId, joinedVia?)` — userId first to match platform conventions
+- `memberCount` managed via explicit `prisma.group.update({ memberCount: { increment: 1 } })` in `$transaction` (not computed `_count.members`) — so gateway can return count without extra join
+- `getGroupMembers` returns `PaginatedGroupMembersResult { members, total, page, limit }` — ADR-015 says all auth users can view members; no userId needed
+- `AlreadyGroupMemberError` and `NotGroupMemberError` kept as `@deprecated` aliases for backward compatibility
+- `autoJoinRegionalCountryGroup` is idempotent (no-op if already member) and no-op if group full
 
 ---
 
-### GRP-R-002 · Group Social Feed Service ⏳
+### GRP-R-002 · Group Social Feed Service ✅
 
 **Story:** As a group member, I can post community news, share links, and upload photos to my group's feed so diaspora members have a shared information space.
 
 **Acceptance Criteria:**
-- [ ] `createPost(userId, groupId, data)` — validates user is group member; creates `GroupPost`
-- [ ] `listPosts(groupId, page, limit)` — ordered by isPinned DESC, createdAt DESC
-- [ ] `deletePost(userId, postId)` — only author or admin can delete
-- [ ] `likePost(userId, postId)` / `unlikePost(userId, postId)` — idempotent, updates `likesCount`
-- [ ] `addComment(userId, postId, text)` — validates user is group member; creates `GroupPostComment`, increments `commentsCount`
-- [ ] `listComments(postId, page, limit)` — ordered by `createdAt ASC` (flat, no nesting)
-- [ ] `pinPost(adminId, postId)` / `unpinPost(adminId, postId)` — admin only
-- [ ] `PostNotFoundError`, `NotGroupMemberError`, `PostForbiddenError` error classes
-- [ ] Unit tests for all service functions
+- [x] `createPost(userId, groupId, data)` — validates user is group member; creates `GroupPost`
+- [x] `listPosts(groupId, page, limit)` — ordered by isPinned DESC, createdAt DESC
+- [x] `deletePost(userId, postId)` — only author or admin can delete
+- [x] `likePost(userId, postId)` / `unlikePost(userId, postId)` — idempotent, updates `likesCount`
+- [x] `addComment(userId, postId, text)` — validates user is group member; creates `GroupPostComment`, increments `commentsCount`
+- [x] `listComments(postId, page, limit)` — ordered by `createdAt ASC` (flat, no nesting)
+- [x] `pinPost(adminId, postId)` / `unpinPost(adminId, postId)` — admin only
+- [x] `PostNotFoundError`, `NotGroupMemberError`, `PostForbiddenError` error classes
+- [x] Unit tests for all service functions
+
+**Decision Log:**
+- `feed.service.ts` — separate file from `index.ts` to stay under 300-line limit
+- `likePost`/`unlikePost` use try/catch for idempotency — if like already exists, swallow `P2002` unique constraint error
+- Internal `assertGroupMember(userId, groupId)` helper shared between `createPost` and `addComment`
+- `createPost` validates membership before creating post; `deletePost` validates author ownership (or `isAdmin` flag)
+- `commentsCount`/`likesCount` updated via `$transaction` with the create/delete operation
 
 ---
 
-### GRP-R-003 · Interest Group Proposal Flow ⏳
+### GRP-R-003 · Interest Group Proposal Flow ✅
 
 **Story:** As a verified user, I can propose a new interest group which an admin reviews and approves — so organic community groups form around real shared interests.
 
 **Acceptance Criteria:**
-- [ ] `proposeGroup(userId, { name, description, country, rationale })` — creates `GroupProposal` with `status: PENDING`
-- [ ] User must have a verified profile and `isSeeded: false` to propose
-- [ ] `getGroupProposals(status)` — admin: list by status
-- [ ] `approveGroupProposal(adminId, proposalId)` — creates `Group` (type: INTEREST, status: SCHEDULED), proposer auto-joined, `GroupProposal.status → APPROVED`
-- [ ] `rejectGroupProposal(adminId, proposalId, reason)` — `GroupProposal.status → REJECTED`
-- [ ] Notification sent to proposer on approval/rejection
-- [ ] `GroupProposalNotFoundError`, `AlreadyProposedError` error classes
+- [x] `proposeGroup(userId, { name, description, country, rationale })` — creates `GroupProposal` with `status: PENDING`
+- [ ] User must have a verified profile and `isSeeded: false` to propose *(deferred — verification service integration is Phase 8e)*
+- [x] `getGroupProposals(status)` — admin: list by status
+- [x] `approveGroupProposal(adminId, proposalId)` — creates `Group` (type: INTEREST, status: ACTIVE), proposer auto-joined, `GroupProposal.status → APPROVED`
+- [x] `rejectGroupProposal(adminId, proposalId, reason)` — `GroupProposal.status → REJECTED`
+- [ ] Notification sent to proposer on approval/rejection *(deferred — notification wiring is Phase 8e)*
+- [x] `GroupProposalNotFoundError`, `AlreadyProposedError`, `ProposalNotPendingError` error classes
+
+**Decision Log:**
+- `proposal.service.ts` — separate file for clean separation from group membership logic
+- `approveGroupProposal` uses two `$transaction` calls: first creates Group + updates proposal; second auto-joins the proposer. Two transactions because auto-join uses `joinGroup()` helper which has its own transaction
+- `ProposalNotPendingError` added (not in original story) — needed to guard double-approve/reject race conditions
+- Group status on approval: `ACTIVE` (not `SCHEDULED`) — system groups are immediately active
+- Profile verification check and proposer notification deferred to Phase 8e (admin API full build)
 
 ---
 
-### GRP-R-004 · Gateway Group Endpoints ⏳
+### GRP-R-004 · Gateway Group Endpoints ✅
 
 **Story:** As a user, I can interact with groups through REST API endpoints — see suggestions, join, browse members, and engage with the feed.
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/groups/suggested` — returns `listSuggestedGroups()` for current user
-- [ ] `GET /api/v1/groups/onboarding-suggestions` — returns `getSuggestedGroupsForOnboarding()` (called after profile creation)
-- [ ] `POST /api/v1/groups/:groupId/join` — join a group
-- [ ] `DELETE /api/v1/groups/:groupId/leave` — leave a group
-- [ ] `GET /api/v1/groups/:groupId/members` — paginated member list
-- [ ] `GET /api/v1/groups/:groupId/feed` — paginated group posts
-- [ ] `POST /api/v1/groups/:groupId/posts` — create post
-- [ ] `DELETE /api/v1/groups/:groupId/posts/:postId` — delete own post
-- [ ] `POST /api/v1/groups/:groupId/posts/:postId/like` — like
-- [ ] `DELETE /api/v1/groups/:groupId/posts/:postId/like` — unlike
-- [ ] `POST /api/v1/groups/:groupId/posts/:postId/comments` — add comment
-- [ ] `GET /api/v1/groups/:groupId/posts/:postId/comments` — list comments
-- [ ] `POST /api/v1/groups/proposals` — propose interest group
-- [ ] All endpoints: `requireAuth`, UUID param validation, appropriate constants files, STANDARDS.md
-- [ ] Controller tests covering happy path + all error cases
+- [x] `GET /api/v1/groups/suggested` — returns `listSuggestedGroups()` for current user
+- [x] `GET /api/v1/groups/onboarding-suggestions` — returns `getSuggestedGroupsForOnboarding()` (called after profile creation)
+- [x] `POST /api/v1/groups/:groupId/join` — join a group
+- [x] `DELETE /api/v1/groups/:groupId/leave` — leave a group
+- [x] `GET /api/v1/groups/:groupId/members` — paginated member list
+- [x] `GET /api/v1/groups/:groupId/feed` — paginated group posts
+- [x] `POST /api/v1/groups/:groupId/posts` — create post
+- [x] `DELETE /api/v1/groups/:groupId/posts/:postId` — delete own post
+- [x] `POST /api/v1/groups/:groupId/posts/:postId/like` — like
+- [x] `DELETE /api/v1/groups/:groupId/posts/:postId/like` — unlike
+- [x] `POST /api/v1/groups/:groupId/posts/:postId/comments` — add comment
+- [x] `GET /api/v1/groups/:groupId/posts/:postId/comments` — list comments
+- [x] `POST /api/v1/groups/proposals` — propose interest group
+- [x] All endpoints: `requireAuth`, UUID param validation, appropriate constants files
+- [x] Controller tests covering happy path + all error cases
+
+**Decision Log:**
+- Static routes `/suggested`, `/onboarding-suggestions`, `/proposals` placed BEFORE `/:groupId` in Express router to avoid Express treating "suggested" as a groupId UUID and failing UUID validation
+- `groupAndPostParamSchema` added for `/:groupId/posts/:postId` compound params
+- `mapGroupError` handles both deprecated `AlreadyGroupMemberError`/`NotGroupMemberError` AND new `AlreadyInGroupError`/`NotInGroupError` for backward compatibility
+- `getOne` added as a bonus endpoint (`GET /api/v1/groups/:groupId`) even though not in original story — needed for client navigation
+
+---
+
+### GRP-R-005 · Admin Group Endpoints ✅
+
+**Story:** As an admin, I can approve or reject interest group proposals, pin important posts, and manage group health from the admin panel.
+
+**Acceptance Criteria:**
+- [x] `GET /admin/groups/proposals?status=PENDING` — list proposals filtered by status (default: PENDING)
+- [x] `POST /admin/groups/proposals/:proposalId/approve` — approve, creates group, auto-joins proposer
+- [x] `POST /admin/groups/proposals/:proposalId/reject` — reject with optional `reason` in body
+- [x] `POST /admin/groups/:groupId/posts/:postId/pin` — pin post (MODERATOR+)
+- [x] `DELETE /admin/groups/:groupId/posts/:postId/pin` — unpin post (MODERATOR+)
+- [x] All endpoints: `requireAdminRole(AdminRole.MODERATOR)` minimum
+- [x] Controller tests for all admin group endpoints
+
+**Decision Log:**
+- `groupsAdminController` is a separate controller from `groupsController` — keeps admin concerns isolated
+- Route params and schemas (`proposalIdParamSchema`, `groupAndPostAdminParamSchema`, `rejectProposalBodySchema`, `proposalStatusQuerySchema`) defined inline in admin router to keep schema file minimal
+- `pinPost`/`unpinPost` receive `adminId` as first arg for audit traceability (though currently no audit log written)
+- `status` enum validation in query: only `PENDING | APPROVED | REJECTED` accepted — returns 400 for other values
+
+---
+
+### GRP-R-006 · Seeder Group Data ✅
+
+**Story:** As a developer running the seeder, I get a set of realistic system groups automatically created so that seeded profiles can auto-join regional, cultural, and professional groups on registration.
+
+**Acceptance Criteria:**
+- [x] `apps/seeder/src/data/groups.data.ts` — REGIONAL groups for 5 countries (UK, Germany, Australia, Canada, India), CULTURAL groups (6), PROFESSIONAL groups (5), INTEREST groups (5 starter)
+- [x] `apps/seeder/src/services/group-seed.service.ts` — `seedSystemGroups()`: idempotent (find-first by name, skip if exists), sets `isSeeded: false` (system groups are permanent)
+- [x] `seedSystemGroups()` called before profile drip starts (in `triggerRun` in seed.controller.ts)
+- [x] `flush.service.ts` only flushes `isSeeded: true` groups — system groups NOT flushed (existing flush logic unchanged)
+- [x] Unit tests for `seedSystemGroups()` (6 tests covering creation, idempotency, partial failure, group type coverage)
+- [x] `POST /seed/groups` standalone endpoint for explicit group seeding (idempotent)
+
+**Decision Log:**
+- Groups use `findFirst` by name for idempotency check rather than `upsert` — cleaner reporting of created vs existing
+- System groups have `isSeeded: false` — they represent real platform infrastructure, not synthetic test data
+- `POST /seed/run` now calls `seedSystemGroups()` first, ensuring groups always exist before profiles drip; result included in response
+- 21 total system groups: 5 REGIONAL + 6 CULTURAL + 5 PROFESSIONAL + 5 INTEREST
+- Failures in individual group creation are caught and logged as warn (non-fatal); the loop continues
 
 ---
 

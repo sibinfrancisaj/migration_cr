@@ -279,20 +279,19 @@
 
 ---
 
-## Phase 8c — Groups Revamp ⏳
+## Phase 8c — Groups Revamp ✅
 **Goal:** Full group taxonomy (REGIONAL/CULTURAL/PROFESSIONAL/INTEREST), social feed, suggested groups system.
-**Sprint:** 8c | **Status:** Backlog (starts after DB-MIGRATION-001)
-> Supersedes old GROUP-001–005 from Phase 5b. Completely replaces the simple group stub.
+**Sprint:** 8c | **Status:** Complete — 1,312 tests, 93 suites (all green)
 
 | Task ID    | Description                                                                          | Status |
 |------------|--------------------------------------------------------------------------------------|--------|
-| GRP-R-001  | `libs/groups` refactor — type-based behaviour, auto-join REGIONAL country on register| ⏳     |
-| GRP-R-002  | Group suggestion engine — `listSuggestedGroups(userId, limit)` with profile matching | ⏳     |
-| GRP-R-003  | Group social feed service — posts, flat comments, likes, admin pin                   | ⏳     |
-| GRP-R-004  | Interest group proposal flow — propose → admin approves → group created              | ⏳     |
-| GRP-R-005  | Gateway endpoints — suggested, join/leave, members, posts CRUD                       | ⏳     |
-| GRP-R-006  | Admin endpoints — approve group proposals, pin posts, manage groups                  | ⏳     |
-| GRP-R-007  | Seeder group data — system groups for 5 countries + cities + professional umbrellas  | ⏳     |
+| GRP-R-001  | `libs/groups` refactor — type-based behaviour, auto-join REGIONAL country on register| ✅     |
+| GRP-R-002  | Group suggestion engine — `listSuggestedGroups(userId, limit)` with profile matching | ✅     |
+| GRP-R-003  | Group social feed service — posts, flat comments, likes, admin pin                   | ✅     |
+| GRP-R-004  | Interest group proposal flow — propose → admin approves → group created              | ✅     |
+| GRP-R-005  | Gateway endpoints — suggested, join/leave, members, posts CRUD                       | ✅     |
+| GRP-R-006  | Admin endpoints — approve group proposals, pin posts, manage groups                  | ✅     |
+| GRP-R-007  | Seeder group data — system groups for 5 countries + cities + professional umbrellas  | ✅     |
 
 ---
 

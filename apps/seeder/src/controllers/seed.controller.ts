@@ -6,6 +6,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { getSeederStatus } from '../services/status.service.js';
 import { flushAllSeededData } from '../services/flush.service.js';
+import { seedSystemGroups } from '../services/group-seed.service.js';
 import { triggerImmediateDrip } from '../jobs/drip.job.js';
 import { pauseDrip, resumeDrip, getState } from '../lib/seeder-state.js';
 import { seederLog } from '../lib/seeder-logger.js';
@@ -21,16 +22,31 @@ export const seedController = {
     }
   },
 
-  /** POST /seed/run — trigger immediate drip */
+  /** POST /seed/run — ensure system groups exist then trigger immediate drip */
   async triggerRun(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       if (getState().running) {
         res.status(409).json({ success: false, error: 'A seeder job is already running' });
         return;
       }
+      // GRP-R-007: ensure system groups exist before profiles are created
+      const groupResult = await seedSystemGroups();
+      seederLog.info('System groups ensured before drip', groupResult);
+
       const jobId = await triggerImmediateDrip();
       seederLog.info('Manual drip triggered via control API', { jobId });
-      res.status(202).json({ success: true, data: { jobId, message: 'Drip job queued' } });
+      res.status(202).json({ success: true, data: { jobId, message: 'Drip job queued', groups: groupResult } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** POST /seed/groups — create/verify system groups (idempotent, standalone) */
+  async seedGroups(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      seederLog.info('Manual system group seed requested');
+      const result = await seedSystemGroups();
+      res.json({ success: true, data: result });
     } catch (err) {
       next(err);
     }

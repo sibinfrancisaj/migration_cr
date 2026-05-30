@@ -33,9 +33,10 @@ jest.mock('../lib/seeder-state.js', () => ({
 }));
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
-const mockGetStatus = jest.fn();
-const mockFlush = jest.fn();
-const mockTriggerDrip = jest.fn();
+const mockGetStatus     = jest.fn();
+const mockFlush         = jest.fn();
+const mockTriggerDrip   = jest.fn();
+const mockSeedGroups    = jest.fn();
 
 jest.mock('../services/status.service.js', () => ({
   getSeederStatus: (...a: unknown[]) => mockGetStatus(...a),
@@ -43,6 +44,10 @@ jest.mock('../services/status.service.js', () => ({
 
 jest.mock('../services/flush.service.js', () => ({
   flushAllSeededData: (...a: unknown[]) => mockFlush(...a),
+}));
+
+jest.mock('../services/group-seed.service.js', () => ({
+  seedSystemGroups: (...a: unknown[]) => mockSeedGroups(...a),
 }));
 
 jest.mock('../jobs/drip.job.js', () => ({
@@ -102,6 +107,10 @@ describe('GET /seed/status', () => {
 
 // ── POST /seed/run ─────────────────────────────────────────────────────────────
 describe('POST /seed/run', () => {
+  beforeEach(() => {
+    mockSeedGroups.mockResolvedValue({ created: 21, existing: 0, total: 21 });
+  });
+
   it('returns 401 without seeder key', async () => {
     const res = await request(app).post('/seed/run');
     expect(res.status).toBe(401);
@@ -116,6 +125,7 @@ describe('POST /seed/run', () => {
 
     expect(res.status).toBe(202);
     expect(res.body.data.jobId).toBe('job-123');
+    expect(mockSeedGroups).toHaveBeenCalledTimes(1);
   });
 
   it('returns 409 when seeder is already running', async () => {
@@ -126,7 +136,51 @@ describe('POST /seed/run', () => {
       .set('X-Seeder-Key', SEEDER_KEY);
 
     expect(res.status).toBe(409);
+    expect(mockSeedGroups).not.toHaveBeenCalled();
     mockState.running = false;
+  });
+});
+
+// ── POST /seed/groups ──────────────────────────────────────────────────────────
+describe('POST /seed/groups', () => {
+  it('returns 401 without seeder key', async () => {
+    const res = await request(app).post('/seed/groups');
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 200 with group seed result on success', async () => {
+    mockSeedGroups.mockResolvedValue({ created: 21, existing: 0, total: 21 });
+
+    const res = await request(app)
+      .post('/seed/groups')
+      .set('X-Seeder-Key', SEEDER_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.created).toBe(21);
+    expect(res.body.data.total).toBe(21);
+  });
+
+  it('returns 200 with existing count when groups already exist', async () => {
+    mockSeedGroups.mockResolvedValue({ created: 0, existing: 21, total: 21 });
+
+    const res = await request(app)
+      .post('/seed/groups')
+      .set('X-Seeder-Key', SEEDER_KEY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.existing).toBe(21);
+    expect(res.body.data.created).toBe(0);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockSeedGroups.mockRejectedValue(new Error('DB error'));
+
+    const res = await request(app)
+      .post('/seed/groups')
+      .set('X-Seeder-Key', SEEDER_KEY);
+
+    expect(res.status).toBe(500);
   });
 });
 
