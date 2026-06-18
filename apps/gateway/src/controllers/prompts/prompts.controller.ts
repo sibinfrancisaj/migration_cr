@@ -22,6 +22,8 @@ import type {
   ResponseIdParams,
   RespondToPromptBody,
   PromptResponsesQuery,
+  CurrentResponseBody,
+  CurrentResponsesQuery,
 } from '../../schemas/prompts/prompts.schema.js';
 
 // ─── Error mapper ─────────────────────────────────────────────────────────────
@@ -60,10 +62,71 @@ export const promptsController = {
       log.info('Get current prompt', { userId });
 
       const prompt = await getCurrentPrompt(userId);
+      if (!prompt) throw new PromptNotFoundError();
 
       const body: ApiResponse<typeof prompt> = {
         success: true,
         data: prompt,
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapPromptError(err, next);
+    }
+  },
+
+  /**
+   * POST /api/v1/prompts/current/response
+   * Submit a text or voice response to the current week's prompt.
+   * PROMPT-003
+   */
+  async respondToCurrent(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:prompts:respond-current', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { text, type, mediaUrl } = req.body as CurrentResponseBody;
+
+      log.info('Respond to current prompt', { userId });
+
+      const prompt = await getCurrentPrompt(userId);
+      if (!prompt) throw new PromptNotFoundError();
+
+      const dto = await respondToPrompt(userId, prompt.id, text, type as PromptResponseType, mediaUrl);
+
+      const body: ApiResponse<typeof dto> = {
+        success: true,
+        data: dto,
+        meta: { message: PROMPT_MESSAGES.RESPONSE_SUBMITTED },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.CREATED).json(body);
+    } catch (err) {
+      mapPromptError(err, next);
+    }
+  },
+
+  /**
+   * GET /api/v1/prompts/current/responses
+   * Browse paginated community responses to the current week's prompt.
+   * PROMPT-004
+   */
+  async getCurrentResponses(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:prompts:current-responses', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { page, limit } = req.query as unknown as CurrentResponsesQuery;
+
+      log.info('Get current prompt responses', { userId, page, limit });
+
+      const prompt = await getCurrentPrompt(userId);
+      if (!prompt) throw new PromptNotFoundError();
+
+      const result = await getPromptResponses(userId, prompt.id, page, limit);
+
+      const body: ApiResponse<typeof result.responses> = {
+        success: true,
+        data: result.responses,
+        meta: { total: result.total, page, limit },
         requestId: req.requestId,
       };
       res.status(HTTP_STATUS.OK).json(body);

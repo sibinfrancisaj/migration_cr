@@ -118,6 +118,11 @@ export enum DiamondReason {
   REFUND = 'REFUND',
   FEATURE_UNLOCK = 'FEATURE_UNLOCK',
   EXPIRY = 'EXPIRY',
+  // IDROP-005 — introduction drop early access spend reasons
+  INTRO_EARLY_VIEW = 'INTRO_EARLY_VIEW',
+  INTRO_EARLY_UNLOCK = 'INTRO_EARLY_UNLOCK',
+  // Phase 8c — group conversation initiation spend reason
+  GROUP_CONVERSATION_INITIATION = 'GROUP_CONVERSATION_INITIATION',
 }
 
 export enum EventStatus {

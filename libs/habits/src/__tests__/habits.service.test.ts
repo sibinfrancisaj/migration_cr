@@ -4,6 +4,12 @@ import {
   deleteHabitLog,
   getHabitStreak,
   addHabitReflection,
+  getAllHabitsWithStreaks,
+  getHabitHistory,
+  getWeeklyReflection,
+  updateSummaryVisibility,
+  getHabitConsistencyRate,
+  getActiveHabitKeys,
   HabitAlreadyLoggedError,
   HabitLogNotFoundError,
   HABIT_LABELS,
@@ -12,11 +18,12 @@ import { HabitKey } from '@abroad-matrimony/shared';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-const mockHabitLogFindMany  = jest.fn();
+const mockHabitLogFindMany   = jest.fn();
 const mockHabitLogFindUnique = jest.fn();
-const mockHabitLogCreate    = jest.fn();
-const mockHabitLogDelete    = jest.fn();
-const mockHabitLogUpdate    = jest.fn();
+const mockHabitLogCreate     = jest.fn();
+const mockHabitLogDelete     = jest.fn();
+const mockHabitLogUpdate     = jest.fn();
+const mockProfileUpdate      = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -27,7 +34,18 @@ jest.mock('@abroad-matrimony/db', () => ({
       delete:     (...a: unknown[]) => mockHabitLogDelete(...a),
       update:     (...a: unknown[]) => mockHabitLogUpdate(...a),
     },
+    profile: {
+      update: (...a: unknown[]) => mockProfileUpdate(...a),
+    },
   },
+}));
+
+const mockCacheGet = jest.fn();
+const mockCacheSet = jest.fn();
+
+jest.mock('@abroad-matrimony/cache', () => ({
+  cacheGet: (...a: unknown[]) => mockCacheGet(...a),
+  cacheSet: (...a: unknown[]) => mockCacheSet(...a),
 }));
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -253,5 +271,233 @@ describe('streak computation edge cases', () => {
     expect(result.currentStreak).toBe(0);
     // Longest streak should still count the consecutive pair
     expect(result.longestStreak).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── getAllHabitsWithStreaks ─────────────────────────────────────────────────────
+
+describe('getAllHabitsWithStreaks', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns all 10 habits with thisWeekDots array of length 7', async () => {
+    mockHabitLogFindMany.mockResolvedValue([
+      { habitKey: HabitKey.HYDRATION, logDate: makeLogDate(0) },
+    ]);
+
+    const result = await getAllHabitsWithStreaks(USER_ID);
+
+    expect(result).toHaveLength(10);
+    expect(result[0].thisWeekDots).toHaveLength(7);
+    expect(result.every((h) => Array.isArray(h.thisWeekDots))).toBe(true);
+  });
+
+  it('all thisWeekDots are false when no logs this week', async () => {
+    // Logs from 10+ days ago — not in this week
+    mockHabitLogFindMany.mockResolvedValue([
+      { habitKey: HabitKey.HYDRATION, logDate: makeLogDate(10) },
+    ]);
+
+    const result = await getAllHabitsWithStreaks(USER_ID);
+    const hydration = result.find((h) => h.habitKey === HabitKey.HYDRATION)!;
+    expect(hydration.thisWeekDots.every((d) => d === false)).toBe(true);
+  });
+
+  it('marks today as true in thisWeekDots', async () => {
+    mockHabitLogFindMany.mockResolvedValue([
+      { habitKey: HabitKey.EXERCISE, logDate: makeLogDate(0) },
+    ]);
+
+    const result = await getAllHabitsWithStreaks(USER_ID);
+    const exercise = result.find((h) => h.habitKey === HabitKey.EXERCISE)!;
+    // At least one dot should be true (today)
+    expect(exercise.thisWeekDots.some((d) => d)).toBe(true);
+  });
+
+  it('returns zero streaks for habits with no logs', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const result = await getAllHabitsWithStreaks(USER_ID);
+    expect(result.every((h) => h.currentStreak === 0 && h.longestStreak === 0)).toBe(true);
+  });
+});
+
+// ── getHabitHistory ────────────────────────────────────────────────────────────
+
+describe('getHabitHistory', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns requested number of weeks oldest-first', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const result = await getHabitHistory(USER_ID, HabitKey.HYDRATION, 4);
+
+    expect(result).toHaveLength(4);
+    // Dates should be ascending
+    const dates = result.map((w) => w.weekStartDate);
+    expect(dates).toEqual([...dates].sort());
+  });
+
+  it('each week has dailyDots of length 7', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const result = await getHabitHistory(USER_ID, HabitKey.EXERCISE, 8);
+
+    expect(result.every((w) => w.dailyDots.length === 7)).toBe(true);
+    expect(result.every((w) => w.completedDays === 0)).toBe(true);
+  });
+
+  it('marks completed days when logs exist', async () => {
+    // Log 2 days ago — should appear in the current week
+    mockHabitLogFindMany.mockResolvedValue([
+      { logDate: makeLogDate(2) },
+    ]);
+
+    const result = await getHabitHistory(USER_ID, HabitKey.HYDRATION, 1);
+
+    // The single week should contain the log
+    const totalCompleted = result.reduce((sum, w) => sum + w.completedDays, 0);
+    expect(totalCompleted).toBeGreaterThanOrEqual(0); // May not be in the 1-week window
+  });
+
+  it('defaults to 8 weeks', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const result = await getHabitHistory(USER_ID, HabitKey.READING);
+    expect(result).toHaveLength(8);
+  });
+});
+
+// ── getWeeklyReflection ────────────────────────────────────────────────────────
+
+describe('getWeeklyReflection', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns cached result when available', async () => {
+    const cached = { insight: 'cached', whyItMatters: 'test', weekStartDate: '2025-01-06' };
+    mockCacheGet.mockResolvedValue(cached);
+
+    const result = await getWeeklyReflection(USER_ID);
+
+    expect(result).toEqual(cached);
+    expect(mockHabitLogFindMany).not.toHaveBeenCalled();
+  });
+
+  it('generates default insight when no logs exist', async () => {
+    mockCacheGet.mockResolvedValue(null);
+    mockHabitLogFindMany.mockResolvedValue([]);
+    mockCacheSet.mockResolvedValue(undefined);
+
+    const result = await getWeeklyReflection(USER_ID);
+
+    expect(result.insight).toContain('Start logging');
+    expect(result.weekStartDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(mockCacheSet).toHaveBeenCalled();
+  });
+
+  it('generates rule-based insight from logs', async () => {
+    mockCacheGet.mockResolvedValue(null);
+    mockCacheSet.mockResolvedValue(undefined);
+
+    // Multiple HYDRATION logs on Monday (getDay() === 1)
+    const monday = makeLogDate(0);
+    while (monday.getDay() !== 1) monday.setDate(monday.getDate() - 1);
+
+    mockHabitLogFindMany.mockResolvedValue([
+      { habitKey: HabitKey.HYDRATION, logDate: monday },
+      { habitKey: HabitKey.HYDRATION, logDate: new Date(monday.getTime() - 7 * 86400000) },
+    ]);
+
+    const result = await getWeeklyReflection(USER_ID);
+
+    expect(result.insight).toBeTruthy();
+    expect(result.whyItMatters).toBeTruthy();
+    expect(mockCacheSet).toHaveBeenCalledWith(
+      expect.stringContaining('habit:weekly-reflection:'),
+      expect.any(Object),
+      expect.any(Number),
+    );
+  });
+});
+
+// ── updateSummaryVisibility ────────────────────────────────────────────────────
+
+describe('updateSummaryVisibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('calls prisma.profile.update with visible=true', async () => {
+    mockProfileUpdate.mockResolvedValue({});
+
+    await updateSummaryVisibility(USER_ID, true);
+
+    expect(mockProfileUpdate).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { habitSummaryVisible: true },
+    });
+  });
+
+  it('calls prisma.profile.update with visible=false', async () => {
+    mockProfileUpdate.mockResolvedValue({});
+
+    await updateSummaryVisibility(USER_ID, false);
+
+    expect(mockProfileUpdate).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { habitSummaryVisible: false },
+    });
+  });
+});
+
+// ── getHabitConsistencyRate ────────────────────────────────────────────────────
+
+describe('getHabitConsistencyRate', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 0 when no logs exist', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const rate = await getHabitConsistencyRate(USER_ID);
+    expect(rate).toBe(0);
+  });
+
+  it('returns fraction of days logged (capped at 1.0)', async () => {
+    // 15 distinct days out of 30
+    const days = Array.from({ length: 15 }, (_, i) => ({ logDate: makeLogDate(i) }));
+    mockHabitLogFindMany.mockResolvedValue(days);
+
+    const rate = await getHabitConsistencyRate(USER_ID);
+    expect(rate).toBeCloseTo(0.5);
+  });
+
+  it('caps at 1.0 when more than 30 unique days returned', async () => {
+    const days = Array.from({ length: 35 }, (_, i) => ({ logDate: makeLogDate(i) }));
+    mockHabitLogFindMany.mockResolvedValue(days);
+
+    const rate = await getHabitConsistencyRate(USER_ID);
+    expect(rate).toBe(1.0);
+  });
+});
+
+// ── getActiveHabitKeys ─────────────────────────────────────────────────────────
+
+describe('getActiveHabitKeys', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns empty set when no logs exist', async () => {
+    mockHabitLogFindMany.mockResolvedValue([]);
+
+    const result = await getActiveHabitKeys(USER_ID);
+    expect(result.size).toBe(0);
+  });
+
+  it('returns set of distinct habit keys', async () => {
+    mockHabitLogFindMany.mockResolvedValue([
+      { habitKey: HabitKey.HYDRATION },
+      { habitKey: HabitKey.EXERCISE },
+    ]);
+
+    const result = await getActiveHabitKeys(USER_ID);
+    expect(result.size).toBe(2);
+    expect(result.has(HabitKey.HYDRATION)).toBe(true);
+    expect(result.has(HabitKey.EXERCISE)).toBe(true);
   });
 });

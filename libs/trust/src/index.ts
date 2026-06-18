@@ -303,3 +303,248 @@ function _weekKeyToDate(weekKey: string): Date {
   else d.setUTCDate(d.getUTCDate() + 8 - dow);
   return d;
 }
+
+// ─── Trust Center (TRUST-001 / TRUST-002) ────────────────────────────────────
+
+export class TrustCenterNotFoundError extends Error {
+  constructor() {
+    super('TRUST_CENTER_NOT_FOUND');
+    this.name = 'TrustCenterNotFoundError';
+  }
+}
+
+export interface TrustLayer {
+  key: string;
+  label: string;
+  completed: boolean;
+  points: number;
+}
+
+export interface PrivacySettingsDto {
+  showPhotosBeforeMutual: boolean;
+  showBioBeforeMutual: boolean;
+  showAnswersBeforeMutual: boolean;
+}
+
+export interface TrustCenterDto {
+  trustScore: number;
+  maxScore: number;
+  layers: TrustLayer[];
+  isPaused: boolean;
+  privacySettings: PrivacySettingsDto;
+}
+
+const DEFAULT_PRIVACY: PrivacySettingsDto = {
+  showPhotosBeforeMutual: true,
+  showBioBeforeMutual: true,
+  showAnswersBeforeMutual: false,
+};
+
+const TRUST_LAYERS_CONFIG: Array<{ key: string; label: string; points: number }> = [
+  { key: 'PHONE_VERIFIED',   label: 'Phone verified',          points: 20 },
+  { key: 'PROFILE_COMPLETE', label: 'Profile complete (≥80%)', points: 20 },
+  { key: 'PHOTO_UPLOADED',   label: 'Photo uploaded',          points: 15 },
+  { key: 'ID_VERIFIED',      label: 'Identity verified',       points: 25 },
+  { key: 'EMAIL_VERIFIED',   label: 'Email verified',          points: 10 },
+  { key: 'VOICE_INTRO',      label: 'Voice intro recorded',    points: 10 },
+];
+
+/**
+ * Returns the trust center for a user: composite score, per-layer breakdown,
+ * pause state, and privacy settings.
+ *
+ * @throws {TrustCenterNotFoundError}
+ */
+export async function getTrustCenter(userId: string): Promise<TrustCenterDto> {
+  const [user, profile, mediaCount] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { isPhoneVerified: true, isEmailVerified: true },
+    }),
+    prisma.profile.findUnique({
+      where: { userId },
+      select: {
+        completionScore: true,
+        verificationStatus: true,
+        voiceIntroTranscript: true,
+        isPaused: true,
+        privacySettings: true,
+      },
+    }),
+    prisma.media.count({ where: { userId } }),
+  ]);
+
+  if (!user || !profile) throw new TrustCenterNotFoundError();
+
+  const completedMap: Record<string, boolean> = {
+    PHONE_VERIFIED:   user.isPhoneVerified,
+    PROFILE_COMPLETE: profile.completionScore >= 80,
+    PHOTO_UPLOADED:   mediaCount > 0,
+    ID_VERIFIED:      profile.verificationStatus === 'APPROVED',
+    EMAIL_VERIFIED:   user.isEmailVerified,
+    VOICE_INTRO:      profile.voiceIntroTranscript !== null,
+  };
+
+  const layers: TrustLayer[] = TRUST_LAYERS_CONFIG.map((cfg) => ({
+    key:       cfg.key,
+    label:     cfg.label,
+    completed: completedMap[cfg.key] ?? false,
+    points:    cfg.points,
+  }));
+
+  const trustScore = layers
+    .filter((l) => l.completed)
+    .reduce((sum, l) => sum + l.points, 0);
+
+  // Persist updated score
+  await prisma.profile.update({
+    where: { userId },
+    data: { trustScore },
+    select: { id: true },
+  });
+
+  const raw = profile.privacySettings as Partial<PrivacySettingsDto> | null;
+  const privacySettings: PrivacySettingsDto = {
+    showPhotosBeforeMutual:  raw?.showPhotosBeforeMutual  ?? DEFAULT_PRIVACY.showPhotosBeforeMutual,
+    showBioBeforeMutual:     raw?.showBioBeforeMutual     ?? DEFAULT_PRIVACY.showBioBeforeMutual,
+    showAnswersBeforeMutual: raw?.showAnswersBeforeMutual ?? DEFAULT_PRIVACY.showAnswersBeforeMutual,
+  };
+
+  log.info('getTrustCenter — computed', { userId, trustScore });
+
+  return {
+    trustScore,
+    maxScore: 100,
+    layers,
+    isPaused: profile.isPaused,
+    privacySettings,
+  };
+}
+
+// ─── Privacy Controls (TRUST-003) ─────────────────────────────────────────────
+
+export class PrivacyProfileNotFoundError extends Error {
+  constructor() {
+    super('PROFILE_NOT_FOUND');
+    this.name = 'PrivacyProfileNotFoundError';
+  }
+}
+
+/**
+ * Update the privacy settings for a user's profile.
+ *
+ * @throws {PrivacyProfileNotFoundError}
+ */
+export async function setPrivacyControls(
+  userId: string,
+  settings: Partial<PrivacySettingsDto>,
+): Promise<PrivacySettingsDto> {
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    select: { privacySettings: true },
+  });
+
+  if (!profile) throw new PrivacyProfileNotFoundError();
+
+  const current = profile.privacySettings as Partial<PrivacySettingsDto> | null;
+  const merged: PrivacySettingsDto = {
+    showPhotosBeforeMutual:  settings.showPhotosBeforeMutual  ?? current?.showPhotosBeforeMutual  ?? DEFAULT_PRIVACY.showPhotosBeforeMutual,
+    showBioBeforeMutual:     settings.showBioBeforeMutual     ?? current?.showBioBeforeMutual     ?? DEFAULT_PRIVACY.showBioBeforeMutual,
+    showAnswersBeforeMutual: settings.showAnswersBeforeMutual ?? current?.showAnswersBeforeMutual ?? DEFAULT_PRIVACY.showAnswersBeforeMutual,
+  };
+
+  await prisma.profile.update({
+    where: { userId },
+    data: { privacySettings: merged },
+    select: { id: true },
+  });
+
+  log.info('setPrivacyControls — updated', { userId });
+
+  return merged;
+}
+
+// ─── Pause Visibility (TRUST-004 / TRUST-005) ─────────────────────────────────
+
+export class PauseProfileNotFoundError extends Error {
+  constructor() {
+    super('PROFILE_NOT_FOUND');
+    this.name = 'PauseProfileNotFoundError';
+  }
+}
+
+/**
+ * Explicitly pause a profile (hide from discovery).
+ *
+ * @throws {PauseProfileNotFoundError}
+ */
+export async function pauseVisibility(userId: string): Promise<{ isPaused: boolean }> {
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!profile) throw new PauseProfileNotFoundError();
+
+  await prisma.profile.update({ where: { userId }, data: { isPaused: true } });
+
+  log.info('pauseVisibility — paused', { userId });
+
+  return { isPaused: true };
+}
+
+/**
+ * Explicitly resume a profile (reappear in discovery).
+ *
+ * @throws {PauseProfileNotFoundError}
+ */
+export async function resumeVisibility(userId: string): Promise<{ isPaused: boolean }> {
+  const profile = await prisma.profile.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+
+  if (!profile) throw new PauseProfileNotFoundError();
+
+  await prisma.profile.update({ where: { userId }, data: { isPaused: false } });
+
+  log.info('resumeVisibility — resumed', { userId });
+
+  return { isPaused: false };
+}
+
+// ─── Access Levels (TRUST-009) ─────────────────────────────────────────────────
+
+export interface AccessLevelDto {
+  key: string;
+  label: string;
+  description: string;
+  visibleFields: string[];
+}
+
+/**
+ * Returns the static definition of the three profile access levels.
+ * Pure function — no DB call.
+ */
+export function getAccessLevelDefinitions(): AccessLevelDto[] {
+  return [
+    {
+      key: 'PUBLIC',
+      label: 'Public',
+      description: 'Visible to everyone in the discover feed before any connection.',
+      visibleFields: ['name', 'age', 'currentCity', 'currentCountry', 'gender', 'verificationStatus', 'completionScore'],
+    },
+    {
+      key: 'TRUSTED',
+      label: 'Trusted',
+      description: 'Visible after a connection is accepted. Full profile detail.',
+      visibleFields: ['bio', 'allPhotos', 'realLifeAnswers', 'storyPrompts', 'voiceIntro', 'trustScore'],
+    },
+    {
+      key: 'FAMILY',
+      label: 'Family-aware',
+      description: 'Extended detail shared when both families are involved in the process.',
+      visibleFields: ['contactDetails', 'familyBackground', 'settlementIntent', 'careerDetails'],
+    },
+  ];
+}

@@ -5,6 +5,7 @@ export const QUEUE_NAMES = {
   PAYMENT: 'payment',
   CLEANUP: 'cleanup',
   PROFILE_INTELLIGENCE: 'profile-intelligence',
+  WEEKLY_INTROS: 'weekly-intros',
 } as const;
 
 export const JOB_TYPES = {
@@ -16,6 +17,13 @@ export const CACHE_KEYS = {
   USER_PROFILE: (userId: string) => `am:profile:${userId}`,
   MATCH_SCORES:     (userId: string)               => `am:scores:${userId}`,
   MATCH_SCORE_PAIR: (userAId: string, userBId: string) => `am:score:${userAId}:${userBId}`,
+  /** "Why this match?" LLM text, cached 24h per pair. Canonical order: smaller UUID first. */
+  WHY_MATCH: (userAId: string, userBId: string) => {
+    const [a, b] = userAId < userBId ? [userAId, userBId] : [userBId, userAId];
+    return `am:why:${a}:${b}`;
+  },
+  /** Match-context card for profile view, cached 1h. */
+  MATCH_CONTEXT: (viewerUserId: string, profileUserId: string) => `am:ctx:${viewerUserId}:${profileUserId}`,
   REFRESH_TOKEN: (tokenId: string) => `am:rt:${tokenId}`,
   OTP_ATTEMPTS: (phone: string) => `am:otp:attempts:${phone}`,
   ADMIN_LOGIN_ATTEMPTS: (email: string) => `am:admin:login:${email}`,
@@ -28,6 +36,8 @@ export const CACHE_TTL = {
   USER_PROFILE_SECONDS: 600,
   MATCH_SCORES_SECONDS: 86400,
   REFRESH_TOKEN_SECONDS: 30 * 24 * 60 * 60,
+  WHY_MATCH_SECONDS: 86400,      // 24 hours — LLM text doesn't change often
+  MATCH_CONTEXT_SECONDS: 3600,   // 1 hour — fresh enough for profile views
 } as const;
 
 export const CLOUD_EVENT_TYPES = {

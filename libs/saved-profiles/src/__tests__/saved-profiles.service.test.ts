@@ -3,9 +3,11 @@ import {
   saveProfile,
   updateSavedProfile,
   unsaveProfile,
+  compareSavedProfiles,
   SavedProfileNotFoundError,
   AlreadySavedError,
   SaveSelfError,
+  ProfileNotSavedError,
 } from '../index.js';
 import { SavedProfileLabel } from '@abroad-matrimony/shared';
 
@@ -214,5 +216,83 @@ describe('unsaveProfile', () => {
     await expect(unsaveProfile(USER_ID, SAVED_USER_ID)).rejects.toBeInstanceOf(
       SavedProfileNotFoundError,
     );
+  });
+});
+
+// ── compareSavedProfiles ───────────────────────────────────────────────────────
+
+const SAVED_USER_ID_2 = 'user-uuid-3';
+
+function makeCompareRow(savedUserId: string, idx: number) {
+  return {
+    id: `saved-${idx}`,
+    userId: USER_ID,
+    savedUserId,
+    label: SavedProfileLabel.INTERESTED,
+    notes: null,
+    savedUser: {
+      id: savedUserId,
+      profile: {
+        name: `Profile ${idx}`,
+        dateOfBirth: new Date('1995-01-01'),
+        gender: 'FEMALE',
+        currentCity: 'London',
+        currentCountry: 'UK',
+        settlementIntent: 'SETTLE_ABROAD',
+        bio: null,
+        completionScore: 80,
+        verificationStatus: 'APPROVED',
+        trustScore: 5,
+        realLifeAnswers: [{ questionKey: 'q1', answer: 'yes' }],
+      },
+    },
+  };
+}
+
+describe('compareSavedProfiles', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns enriched data for each saved profile ID', async () => {
+    mockSavedProfileFindMany.mockResolvedValue([
+      makeCompareRow(SAVED_USER_ID, 1),
+      makeCompareRow(SAVED_USER_ID_2, 2),
+    ]);
+
+    const result = await compareSavedProfiles(USER_ID, [SAVED_USER_ID, SAVED_USER_ID_2]);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].savedUserId).toBe(SAVED_USER_ID);
+    expect(result[0].realLifeAnswers).toEqual([{ questionKey: 'q1', answer: 'yes' }]);
+    expect(result[1].savedUserId).toBe(SAVED_USER_ID_2);
+  });
+
+  it('preserves the order of the requested profile IDs', async () => {
+    mockSavedProfileFindMany.mockResolvedValue([
+      makeCompareRow(SAVED_USER_ID, 1),
+      makeCompareRow(SAVED_USER_ID_2, 2),
+    ]);
+
+    const result = await compareSavedProfiles(USER_ID, [SAVED_USER_ID_2, SAVED_USER_ID]);
+
+    expect(result[0].savedUserId).toBe(SAVED_USER_ID_2);
+    expect(result[1].savedUserId).toBe(SAVED_USER_ID);
+  });
+
+  it('throws ProfileNotSavedError when a profile ID is not in the saved list', async () => {
+    mockSavedProfileFindMany.mockResolvedValue([makeCompareRow(SAVED_USER_ID, 1)]);
+
+    await expect(
+      compareSavedProfiles(USER_ID, [SAVED_USER_ID, SAVED_USER_ID_2]),
+    ).rejects.toBeInstanceOf(ProfileNotSavedError);
+  });
+
+  it('returns null profile fields when user has no profile row', async () => {
+    const row = makeCompareRow(SAVED_USER_ID, 1);
+    (row.savedUser as any).profile = null;
+    mockSavedProfileFindMany.mockResolvedValue([row, makeCompareRow(SAVED_USER_ID_2, 2)]);
+
+    const result = await compareSavedProfiles(USER_ID, [SAVED_USER_ID, SAVED_USER_ID_2]);
+    expect(result[0].profile).toBeNull();
+    expect(result[0].realLifeAnswers).toEqual([]);
   });
 });

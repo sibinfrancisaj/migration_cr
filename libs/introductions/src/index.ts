@@ -1,6 +1,7 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { IntroductionStatus } from '@abroad-matrimony/shared';
+import { IntroductionStatus, DiamondReason } from '@abroad-matrimony/shared';
+import { spendDiamonds, InsufficientDiamondsError } from '@abroad-matrimony/payment';
 
 const log = createChildLogger({ module: 'introductions' });
 
@@ -288,3 +289,125 @@ export async function declineIntroduction(
 
   return toIntroductionDto(updated, userId);
 }
+
+// ── INTRO-003: Introduction detail ───────────────────────────────────────────
+
+/** Cost in diamonds to view weekly introductions before Sunday's release. */
+export const EARLY_UNLOCK_DIAMOND_COST = 300;
+
+export class EarlyUnlockAlreadyDoneError extends Error {
+  constructor() {
+    super('EARLY_UNLOCK_ALREADY_DONE');
+    this.name = 'EarlyUnlockAlreadyDoneError';
+  }
+}
+
+export class EarlyUnlockInsufficientDiamondsError extends Error {
+  constructor() {
+    super('EARLY_UNLOCK_INSUFFICIENT_DIAMONDS');
+    this.name = 'EarlyUnlockInsufficientDiamondsError';
+  }
+}
+
+/**
+ * Get a single introduction by ID with full detail for the requesting user.
+ *
+ * @throws {IntroductionNotFoundError}
+ * @throws {IntroductionForbiddenError}
+ */
+export async function getIntroductionDetail(
+  introId: string,
+  userId: string,
+): Promise<IntroductionDto> {
+  const intro = await prisma.introduction.findUnique({
+    where: { id: introId },
+    include: {
+      userA: { select: { id: true, profile: { select: { name: true, currentCity: true, currentCountry: true, verificationStatus: true } } } },
+      userB: { select: { id: true, profile: { select: { name: true, currentCity: true, currentCountry: true, verificationStatus: true } } } },
+    },
+  });
+
+  if (!intro) throw new IntroductionNotFoundError();
+
+  const isUserA = intro.userAId === userId;
+  const isUserB = intro.userBId === userId;
+  if (!isUserA && !isUserB) throw new IntroductionForbiddenError();
+
+  return toIntroductionDto(intro, userId);
+}
+
+// ── INTRO-004: Early unlock for current week's introductions ─────────────────
+
+/**
+ * Spend EARLY_UNLOCK_DIAMOND_COST diamonds to mark all of this week's
+ * introductions as early-viewed. Idempotent — if the user has already unlocked,
+ * returns without spending again.
+ *
+ * @throws {EarlyUnlockInsufficientDiamondsError} if balance < EARLY_UNLOCK_DIAMOND_COST
+ */
+export async function earlyUnlockWeeklyIntros(userId: string): Promise<{
+  unlockedCount: number;
+  alreadyUnlocked: boolean;
+}> {
+  const weekKey = getWeekKey(new Date());
+
+  // Fetch current-week introductions for this user
+  const intros = await prisma.introduction.findMany({
+    where: {
+      weekKey,
+      OR: [{ userAId: userId }, { userBId: userId }],
+    },
+    select: { id: true, viewedEarlyAt: true },
+  });
+
+  // Idempotent check — if all are already unlocked, don't charge again
+  const alreadyAll = intros.length > 0 && intros.every(i => i.viewedEarlyAt !== null);
+  if (alreadyAll) {
+    log.info('earlyUnlockWeeklyIntros — already unlocked', { userId, weekKey });
+    return { unlockedCount: intros.length, alreadyUnlocked: true };
+  }
+
+  // Spend diamonds — may throw InsufficientDiamondsError
+  try {
+    await spendDiamonds({
+      userId,
+      amount:      EARLY_UNLOCK_DIAMOND_COST,
+      reason:      DiamondReason.INTRO_EARLY_VIEW,
+      referenceId: `weekly-unlock:${weekKey}`,
+    });
+  } catch (err) {
+    if (err instanceof InsufficientDiamondsError) {
+      throw new EarlyUnlockInsufficientDiamondsError();
+    }
+    throw err;
+  }
+
+  // Mark all current-week intros as viewed
+  const viewedEarlyAt = new Date();
+  const ids = intros.map(i => i.id);
+  await prisma.introduction.updateMany({
+    where: { id: { in: ids } },
+    data:  { viewedEarlyAt },
+  });
+
+  log.info('earlyUnlockWeeklyIntros — unlocked', { userId, weekKey, count: ids.length });
+  return { unlockedCount: ids.length, alreadyUnlocked: false };
+}
+
+// ─── Phase 8d: IntroductionDrop services ─────────────────────────────────────
+export * from './drop.service.js';
+export * from './pairing.service.js';
+export * from './drop-admin.service.js';
+
+// ─── Phase 10: Why-This-Match + Weekly Drop ───────────────────────────────────
+export {
+  DIMENSION_LABELS,
+  generateWhyThisMatch,
+  generateWhyThisMatchLLM,
+} from './why-this-match.service.js';
+export type { DimensionCard, WhyThisMatchDto } from './why-this-match.service.js';
+
+export { createWeeklyGroupDrops } from './weekly-drop.service.js';
+export type { WeeklyDropResult } from './weekly-drop.service.js';
+
+export { createWeeklyDropWorker, triggerWeeklyDropNow } from './weekly-drop.job.js';

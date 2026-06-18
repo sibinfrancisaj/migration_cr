@@ -6,6 +6,10 @@ import {
   deleteHabitLog,
   getHabitStreak,
   addHabitReflection,
+  getAllHabitsWithStreaks,
+  getHabitHistory,
+  getWeeklyReflection,
+  updateSummaryVisibility,
   HabitLogNotFoundError,
   HabitAlreadyLoggedError,
 } from '@abroad-matrimony/habits';
@@ -19,6 +23,8 @@ import type {
   LogHabitBody,
   DeleteHabitLogParams,
   HabitReflectionBody,
+  HabitHistoryQuery,
+  SummaryVisibilityBody,
 } from '../../schemas/habits/habits.schema.js';
 
 // ─── Error mapper ─────────────────────────────────────────────────────────────
@@ -164,6 +170,108 @@ export const habitsController = {
         success: true,
         data: dto,
         meta: { message: HABIT_MESSAGES.REFLECTION_SAVED },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapHabitError(err, next);
+    }
+  },
+
+  // ─── Phase 9 new handlers ────────────────────────────────────────────────────
+
+  /**
+   * GET /api/v1/habits/streaks
+   * HABIT-004: All 10 habits with currentStreak, longestStreak, thisWeekDots.
+   */
+  async getAllStreaks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:habits:all-streaks', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      log.info('Get all habits with streaks', { userId });
+
+      const habits = await getAllHabitsWithStreaks(userId);
+
+      const body: ApiResponse<typeof habits> = {
+        success: true,
+        data: habits,
+        meta: { total: habits.length },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapHabitError(err, next);
+    }
+  },
+
+  /**
+   * GET /api/v1/habits/:habitKey/history
+   * HABIT-007: Per-habit weekly history for chart rendering.
+   */
+  async getHistory(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:habits:history', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { habitKey } = req.params as unknown as HabitKeyParams;
+      const { weeks } = req.query as unknown as HabitHistoryQuery;
+
+      log.info('Get habit history', { userId, habitKey, weeks });
+
+      const history = await getHabitHistory(userId, habitKey as HabitKey, weeks ?? 8);
+
+      const body: ApiResponse<typeof history> = {
+        success: true,
+        data: history,
+        meta: { total: history.length },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapHabitError(err, next);
+    }
+  },
+
+  /**
+   * GET /api/v1/habits/weekly-reflection
+   * HABIT-005: Rule-based weekly insight, Redis-cached 7 days.
+   */
+  async getWeeklyReflection(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:habits:weekly-reflection', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      log.info('Get weekly reflection', { userId });
+
+      const dto = await getWeeklyReflection(userId);
+
+      const body: ApiResponse<typeof dto> = {
+        success: true,
+        data: dto,
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapHabitError(err, next);
+    }
+  },
+
+  /**
+   * PUT /api/v1/habits/summary-visibility
+   * HABIT-006: Toggle Profile.habitSummaryVisible.
+   */
+  async updateVisibility(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:habits:visibility', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { visible } = req.body as SummaryVisibilityBody;
+
+      log.info('Update habit summary visibility', { userId, visible });
+
+      await updateSummaryVisibility(userId, visible);
+
+      const body: ApiResponse<{ visible: boolean }> = {
+        success: true,
+        data: { visible },
+        meta: { message: HABIT_MESSAGES.VISIBILITY_UPDATED },
         requestId: req.requestId,
       };
       res.status(HTTP_STATUS.OK).json(body);

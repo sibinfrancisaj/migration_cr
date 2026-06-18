@@ -1,18 +1,27 @@
 import {
   getMatchTuning,
   setMatchTuning,
+  getTuningAsQuestions,
+  setTuningFromQuestions,
+  computeTuningImpact,
+  importanceToMultiplier,
+  multiplierToImportance,
 } from '../match-tuning.service.js';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
 const mockMatchTuningFindUnique = jest.fn();
 const mockMatchTuningUpsert     = jest.fn();
+const mockMatchScoreFindMany    = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
     matchTuning: {
-      findUnique: (...a: unknown[]) => mockMatchTuningFindUnique(...a),
-      upsert:     (...a: unknown[]) => mockMatchTuningUpsert(...a),
+      findUnique: (...a: any[]) => mockMatchTuningFindUnique(...a),
+      upsert:     (...a: any[]) => mockMatchTuningUpsert(...a),
+    },
+    matchScore: {
+      findMany: (...a: any[]) => mockMatchScoreFindMany(...a),
     },
   },
 }));
@@ -114,5 +123,176 @@ describe('setMatchTuning', () => {
     const result = await setMatchTuning(USER_ID, {});
 
     expect(result.weights).toEqual({});
+  });
+});
+
+// ── importanceToMultiplier ────────────────────────────────────────────────────
+
+describe('importanceToMultiplier', () => {
+  it('maps 1 → 0.5 (least important)', () => {
+    expect(importanceToMultiplier(1)).toBe(0.5);
+  });
+
+  it('maps 3 → 1.0 (neutral/default)', () => {
+    expect(importanceToMultiplier(3)).toBe(1.0);
+  });
+
+  it('maps 5 → 2.5 (most important)', () => {
+    expect(importanceToMultiplier(5)).toBe(2.5);
+  });
+
+  it('clamps values outside 1–5 to nearest bound', () => {
+    expect(importanceToMultiplier(0)).toBe(0.5);  // clamped to 1
+    expect(importanceToMultiplier(6)).toBe(2.5);  // clamped to 5
+  });
+});
+
+// ── multiplierToImportance ────────────────────────────────────────────────────
+
+describe('multiplierToImportance', () => {
+  it('maps 0.5 → 1', () => {
+    expect(multiplierToImportance(0.5)).toBe(1);
+  });
+
+  it('maps 1.0 → 3 (neutral)', () => {
+    expect(multiplierToImportance(1.0)).toBe(3);
+  });
+
+  it('maps 2.5 → 5', () => {
+    expect(multiplierToImportance(2.5)).toBe(5);
+  });
+
+  it('round-trips correctly for all 5 importance values', () => {
+    for (let i = 1; i <= 5; i++) {
+      expect(multiplierToImportance(importanceToMultiplier(i))).toBe(i);
+    }
+  });
+});
+
+// ── setTuningFromQuestions ────────────────────────────────────────────────────
+
+describe('setTuningFromQuestions', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('translates importance ratings to multipliers and calls setMatchTuning', async () => {
+    mockMatchTuningUpsert.mockImplementation(({ create }: any) =>
+      Promise.resolve({ userId: USER_ID, weights: create.weights, updatedAt: new Date() }),
+    );
+
+    const result = await setTuningFromQuestions(USER_ID, 4, 3);
+
+    // importance 4 → 1.75, importance 3 → 1.0
+    expect(mockMatchTuningUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          weights: expect.objectContaining({
+            settlementIntent:  1.75,
+            familyInvolvement: 1.0,
+          }),
+        }),
+      }),
+    );
+    expect(result.userId).toBe(USER_ID);
+    expect(result.settlementImportance).toBe(4);
+    expect(result.familyImportance).toBe(3);
+  });
+
+  it('maps importance 5 to multiplier 2.5', async () => {
+    mockMatchTuningUpsert.mockImplementation(({ create }: any) =>
+      Promise.resolve({ userId: USER_ID, weights: create.weights, updatedAt: new Date() }),
+    );
+
+    await setTuningFromQuestions(USER_ID, 5, 5);
+
+    expect(mockMatchTuningUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: expect.objectContaining({
+          weights: { settlementIntent: 2.5, familyInvolvement: 2.5 },
+        }),
+      }),
+    );
+  });
+});
+
+// ── getTuningAsQuestions ──────────────────────────────────────────────────────
+
+describe('getTuningAsQuestions', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('converts stored multipliers back to importance ratings', async () => {
+    mockMatchTuningFindUnique.mockResolvedValue({
+      userId: USER_ID,
+      weights: { settlementIntent: 1.75, familyInvolvement: 1.0 },
+      updatedAt: new Date('2026-06-01T10:00:00Z'),
+    });
+
+    const result = await getTuningAsQuestions(USER_ID);
+
+    expect(result.settlementImportance).toBe(4);
+    expect(result.familyImportance).toBe(3);
+    expect(result.userId).toBe(USER_ID);
+  });
+
+  it('returns importance 3 for both when no tuning is set', async () => {
+    mockMatchTuningFindUnique.mockResolvedValue(null);
+
+    const result = await getTuningAsQuestions(USER_ID);
+
+    expect(result.settlementImportance).toBe(3);
+    expect(result.familyImportance).toBe(3);
+  });
+});
+
+// ── computeTuningImpact ───────────────────────────────────────────────────────
+
+const SCORE_ROW = (otherId: string, score: number) => ({
+  userAId: USER_ID,
+  userBId: otherId,
+  totalScore: score,
+  breakdown: {
+    verification: 1, settlementIntent: 0.8, realLifeAnswers: 0.7,
+    profileCompleteness: 0.9, checkInRecency: 1, ageCompatibility: 0.8,
+    groupMembership: 1, languageMatch: 1, faithAlignment: 0.9,
+  },
+});
+
+describe('computeTuningImpact', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns correct counts when some profiles gain rank', async () => {
+    mockMatchScoreFindMany.mockResolvedValue([
+      SCORE_ROW('other-1', 0.5),
+      SCORE_ROW('other-2', 0.6),
+    ]);
+
+    // settlementImportance=5 → 2.5x weight on settlementIntent
+    const result = await computeTuningImpact(USER_ID, 5, 3);
+
+    expect(result.pairsAnalysed).toBe(2);
+    // All profiles that change significantly go into profilesUp or profilesDown
+    expect(result.profilesUp + result.profilesDown + result.profilesUnchanged).toBe(2);
+    expect(typeof result.profilesUp).toBe('number');
+  });
+
+  it('returns valid result structure when neutral weights are applied', async () => {
+    mockMatchScoreFindMany.mockResolvedValue([SCORE_ROW('other-1', 0.7)]);
+
+    const result = await computeTuningImpact(USER_ID, 3, 3); // importance 3 = 1.0x (neutral)
+
+    // Result should still be structurally valid
+    expect(result.pairsAnalysed).toBe(1);
+    expect(result.profilesUp + result.profilesDown + result.profilesUnchanged).toBe(1);
+    expect(Array.isArray(result.topGainers)).toBe(true);
+  });
+
+  it('returns empty result when no scored pairs exist', async () => {
+    mockMatchScoreFindMany.mockResolvedValue([]);
+
+    const result = await computeTuningImpact(USER_ID, 4, 4);
+
+    expect(result.pairsAnalysed).toBe(0);
+    expect(result.profilesUp).toBe(0);
+    expect(result.profilesDown).toBe(0);
+    expect(result.topGainers).toHaveLength(0);
   });
 });

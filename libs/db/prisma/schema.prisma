@@ -61,6 +61,8 @@ model User {
   groupPostComments    GroupPostComment[]
   groupPostLikes       GroupPostLike[]
   groupProposals       GroupProposal[]
+  profileViewsGiven    ProfileView[]         @relation("ProfileViewsGiven")
+  profileViewsReceived ProfileView[]         @relation("ProfileViewsReceived")
 
   @@index([phone])
   @@index([email])
@@ -149,6 +151,8 @@ model Profile {
   trustScore           Int                @default(0)
   isSeeded             Boolean            @default(false)
   voiceIntroTranscript String?
+  habitSummaryVisible  Boolean            @default(false)
+  privacySettings      Json?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
 
@@ -241,6 +245,20 @@ model UserBlock {
   @@index([blockerId])
   @@index([blockedId])
   @@map("user_blocks")
+}
+
+model ProfileView {
+  id        String   @id @default(uuid())
+  viewerId  String
+  viewedId  String
+  viewedAt  DateTime @default(now())
+
+  viewer    User     @relation("ProfileViewsGiven",    fields: [viewerId], references: [id], onDelete: Cascade)
+  viewed    User     @relation("ProfileViewsReceived", fields: [viewedId], references: [id], onDelete: Cascade)
+
+  @@index([viewedId, viewedAt])
+  @@index([viewerId, viewedAt])
+  @@map("profile_views")
 }
 
 // ─── Groups ───────────────────────────────────────────────────────────────────

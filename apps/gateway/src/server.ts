@@ -8,6 +8,7 @@ import { createScoreRecomputeWorker } from '@abroad-matrimony/matching';
 import { createNotificationWorker } from '@abroad-matrimony/notification';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
 import { isAiConfigured, createAiWorker } from '@abroad-matrimony/ai';
+import { createWeeklyDropWorker } from '@abroad-matrimony/introductions';
 import { createApp } from './app.js';
 
 async function start(): Promise<void> {
@@ -42,6 +43,10 @@ async function start(): Promise<void> {
     logger.warn('OPENAI_API_KEY not set — AI worker not started; profile intelligence disabled');
   }
 
+  // Start weekly introduction drop worker — fires Sunday 09:00 UTC via BullMQ cron
+  const weeklyDropWorker: Worker = await createWeeklyDropWorker(env.REDIS_URL);
+  logger.info('Weekly drop worker started (cron: 0 9 * * 0)');
+
   const app = createApp();
   const server = app.listen(env.PORT, () => {
     logger.info(`Gateway listening`, { port: env.PORT, env: env.NODE_ENV });
@@ -53,6 +58,7 @@ async function start(): Promise<void> {
       await scoreWorker.close();
       await notificationWorker.close();
       if (aiWorker) await aiWorker.close();
+      await weeklyDropWorker.close();
       await shutdownEventBus();
       await closeRedisClient();
       await disconnectDb();

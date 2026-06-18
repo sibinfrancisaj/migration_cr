@@ -2,6 +2,9 @@ import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import type { MatchScoreDto } from '@abroad-matrimony/shared';
 import { RealLifeQuestionKey } from '@abroad-matrimony/shared';
+
+/** EventRsvp.status is a plain String field (no Prisma enum). Constant to avoid magic strings. */
+const RSVP_STATUS_GOING = 'GOING';
 import { computeMatchScore } from './scoring.service.js';
 import type { UserScoringData } from './scoring.service.js';
 import { setMatchScoreCache } from './score-cache.service.js';
@@ -31,14 +34,18 @@ export class UserProfileMissingError extends Error {
  * @throws {UserProfileMissingError} if the user has no profile row
  */
 export async function getUserScoringData(userId: string): Promise<UserScoringData> {
-  const [profile, answers, latestCheckIn, groupMemberships] = await Promise.all([
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+
+  const [profile, answers, latestCheckIn, groupMemberships, habitLogs, promptResonates, eventRsvps, recentViewCount] = await Promise.all([
     prisma.profile.findUnique({
       where: { userId },
       select: {
-        dateOfBirth:        true,
-        settlementIntent:   true,
-        completionScore:    true,
-        verificationStatus: true,
+        dateOfBirth:          true,
+        settlementIntent:     true,
+        completionScore:      true,
+        verificationStatus:   true,
+        voiceIntroTranscript: true,
+        trustScore:           true,
       },
     }),
     prisma.realLifeAnswer.findMany({
@@ -53,6 +60,29 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     prisma.groupMember.findMany({
       where:  { userId, status: 'ACTIVE' },
       select: { groupId: true },
+    }),
+    // HABIT-008: fetch habit data for last 30 days
+    (async () => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return prisma.habitLog.findMany({
+        where: { userId, completed: true, logDate: { gte: thirtyDaysAgo } },
+        select: { habitKey: true, logDate: true },
+      });
+    })(),
+    // PROMPT-007: fetch all userIds whose prompt responses this user has resonated with
+    prisma.promptResonate.findMany({
+      where: { userId },
+      include: { response: { select: { userId: true } } },
+    }),
+    // ALG-006: fetch event IDs where user has a GOING RSVP
+    prisma.eventRsvp.findMany({
+      where: { userId, status: RSVP_STATUS_GOING },
+      select: { eventId: true },
+    }),
+    // ALG-008: count profile views received in last 7 days
+    prisma.profileView.count({
+      where: { viewedId: userId, viewedAt: { gte: sevenDaysAgo } },
     }),
   ]);
 
@@ -69,6 +99,16 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     );
   }
 
+  // HABIT-008: compute consistency rate + active keys from raw logs
+  const uniqueDays = new Set(habitLogs.map((l) => l.logDate.toISOString().split('T')[0]));
+  const habitConsistencyRate = Math.min(uniqueDays.size / 30, 1.0);
+  const activeHabitKeys = new Set(habitLogs.map((l) => l.habitKey as string));
+
+  // PROMPT-007: build set of authorIds whose responses this user resonated with
+  const promptResonatedUserIds = new Set(
+    promptResonates.map((r) => (r as { response: { userId: string } }).response.userId),
+  );
+
   return {
     userId,
     profile: {
@@ -78,8 +118,16 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
       verificationStatus: profile.verificationStatus,
     },
     realLifeAnswers,
-    latestCheckIn:  latestCheckIn?.submittedAt ?? null,
-    groupIds:       new Set(groupMemberships.map(m => m.groupId)),
+    latestCheckIn:          latestCheckIn?.submittedAt ?? null,
+    groupIds:               new Set(groupMemberships.map(m => m.groupId)),
+    habitConsistencyRate,
+    activeHabitKeys,
+    promptResonatedUserIds,
+    // v2 fields
+    eventAttendedIds:  new Set(eventRsvps.map(r => r.eventId)),
+    hasVoiceIntro:     profile.voiceIntroTranscript !== null,
+    recentViewCount,
+    profileTrustScore: profile.trustScore ?? 0,
   };
 }
 

@@ -141,7 +141,14 @@ describe('GET /api/v1/prompts', () => {
     expect(mockGetCurrentPrompt).toHaveBeenCalledWith(USER_ID);
   });
 
-  it('returns 404 when no active prompt exists', async () => {
+  it('returns 404 when no active prompt exists (null from service)', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(null);
+
+    const res = await request(app).get('/api/v1/prompts');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when service throws PromptNotFoundError', async () => {
     mockGetCurrentPrompt.mockRejectedValueOnce(new PromptNotFoundError());
 
     const res = await request(app).get('/api/v1/prompts');
@@ -152,6 +159,36 @@ describe('GET /api/v1/prompts', () => {
     mockGetCurrentPrompt.mockRejectedValueOnce(new Error('DB error'));
 
     const res = await request(app).get('/api/v1/prompts');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/prompts/current — PROMPT-002 ─────────────────────────────────
+
+describe('GET /api/v1/prompts/current', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with the current prompt', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+
+    const res = await request(app).get('/api/v1/prompts/current');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe(PROMPT_ID);
+  });
+
+  it('returns 404 when no active prompt (null from service)', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(null);
+
+    const res = await request(app).get('/api/v1/prompts/current');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when service throws unexpected error', async () => {
+    mockGetCurrentPrompt.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/prompts/current');
     expect(res.status).toBe(500);
   });
 });
@@ -394,6 +431,137 @@ describe('DELETE /api/v1/prompts/responses/:responseId/resonate', () => {
     mockUnresonateResponse.mockRejectedValueOnce(new Error('DB error'));
 
     const res = await request(app).delete(`/api/v1/prompts/responses/${RESPONSE_ID}/resonate`);
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── POST /api/v1/prompts/current/response — PROMPT-003 ────────────────────────
+
+describe('POST /api/v1/prompts/current/response', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 201 with response DTO on success', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockRespondToPrompt.mockResolvedValue(RESPONSE_DTO);
+
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'A safe place', type: 'TEXT' });
+
+    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.id).toBe(RESPONSE_ID);
+    expect(mockRespondToPrompt).toHaveBeenCalledWith(USER_ID, PROMPT_ID, 'A safe place', 'TEXT', undefined);
+  });
+
+  it('returns 404 when no current prompt exists', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(null);
+
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'My answer' });
+
+    expect(res.status).toBe(404);
+    expect(mockRespondToPrompt).not.toHaveBeenCalled();
+  });
+
+  it('returns 409 when user has already responded to this prompt', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockRespondToPrompt.mockRejectedValueOnce(new AlreadyRespondedError());
+
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'Duplicate answer' });
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 400 when text is missing', async () => {
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when text exceeds 2000 characters', async () => {
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'a'.repeat(2001) });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 201 with AUDIO type and mediaUrl', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    const audioDto = { ...RESPONSE_DTO, type: 'AUDIO', mediaUrl: 'https://cdn.example.com/voice.m4a' };
+    mockRespondToPrompt.mockResolvedValue(audioDto);
+
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'Voice note', type: 'AUDIO', mediaUrl: 'https://cdn.example.com/voice.m4a' });
+
+    expect(res.status).toBe(201);
+    expect(mockRespondToPrompt).toHaveBeenCalledWith(
+      USER_ID, PROMPT_ID, 'Voice note', 'AUDIO', 'https://cdn.example.com/voice.m4a',
+    );
+  });
+
+  it('returns 500 when service throws unexpected error', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockRespondToPrompt.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app)
+      .post('/api/v1/prompts/current/response')
+      .send({ text: 'My answer' });
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/prompts/current/responses — PROMPT-004 ────────────────────────
+
+describe('GET /api/v1/prompts/current/responses', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with paginated responses for the current prompt', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockGetPromptResponses.mockResolvedValue({ responses: [RESPONSE_DTO], total: 1 });
+
+    const res = await request(app).get('/api/v1/prompts/current/responses?page=1&limit=20');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.meta.total).toBe(1);
+    expect(mockGetPromptResponses).toHaveBeenCalledWith(USER_ID, PROMPT_ID, 1, 20);
+  });
+
+  it('returns 404 when no current prompt exists', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(null);
+
+    const res = await request(app).get('/api/v1/prompts/current/responses');
+
+    expect(res.status).toBe(404);
+    expect(mockGetPromptResponses).not.toHaveBeenCalled();
+  });
+
+  it('returns 200 with default pagination when no query params', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockGetPromptResponses.mockResolvedValue({ responses: [], total: 0 });
+
+    const res = await request(app).get('/api/v1/prompts/current/responses');
+
+    expect(res.status).toBe(200);
+    expect(mockGetPromptResponses).toHaveBeenCalledWith(USER_ID, PROMPT_ID, 1, 20);
+  });
+
+  it('returns 400 when limit exceeds maximum of 50', async () => {
+    const res = await request(app).get('/api/v1/prompts/current/responses?limit=51');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when service throws unexpected error', async () => {
+    mockGetCurrentPrompt.mockResolvedValue(PROMPT_DTO);
+    mockGetPromptResponses.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/prompts/current/responses');
     expect(res.status).toBe(500);
   });
 });

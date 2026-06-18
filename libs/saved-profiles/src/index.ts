@@ -216,3 +216,93 @@ export async function unsaveProfile(
 
   log.info('unsaveProfile — unsaved', { userId, savedUserId });
 }
+
+// ─── Compare ──────────────────────────────────────────────────────────────────
+
+export class ProfileNotSavedError extends Error {
+  constructor(public readonly profileId: string) {
+    super('PROFILE_NOT_SAVED');
+    this.name = 'ProfileNotSavedError';
+  }
+}
+
+export interface RealLifeAnswerSummary {
+  questionKey: string;
+  answer: string;
+}
+
+export interface CompareProfileDto {
+  savedProfileId: string;
+  savedUserId: string;
+  label: string;
+  notes: string | null;
+  profile: {
+    name: string;
+    dateOfBirth: string;
+    gender: string;
+    currentCity: string;
+    currentCountry: string;
+    settlementIntent: string;
+    bio: string | null;
+    completionScore: number;
+    verificationStatus: string;
+    trustScore: number;
+  } | null;
+  realLifeAnswers: RealLifeAnswerSummary[];
+}
+
+/**
+ * Return enriched comparison data for 2–3 saved profiles.
+ * All profileIds must be saved by the requesting user.
+ *
+ * @throws {ProfileNotSavedError} if any profileId is not saved by userId
+ */
+export async function compareSavedProfiles(
+  userId: string,
+  profileIds: string[],
+): Promise<CompareProfileDto[]> {
+  const rows = await prisma.savedProfile.findMany({
+    where: { userId, savedUserId: { in: profileIds } },
+    include: {
+      savedUser: {
+        include: {
+          profile: { include: { realLifeAnswers: true } },
+        },
+      },
+    },
+  });
+
+  const foundIds = new Set(rows.map((r) => r.savedUserId));
+  for (const pid of profileIds) {
+    if (!foundIds.has(pid)) throw new ProfileNotSavedError(pid);
+  }
+
+  return profileIds.map((pid) => {
+    const row = rows.find((r) => r.savedUserId === pid)!;
+    const profile = row.savedUser.profile;
+    return {
+      savedProfileId: row.id,
+      savedUserId: row.savedUserId,
+      label: row.label,
+      notes: row.notes,
+      profile: profile
+        ? {
+            name: profile.name,
+            dateOfBirth: profile.dateOfBirth.toISOString(),
+            gender: profile.gender,
+            currentCity: profile.currentCity,
+            currentCountry: profile.currentCountry,
+            settlementIntent: profile.settlementIntent,
+            bio: profile.bio,
+            completionScore: profile.completionScore,
+            verificationStatus: profile.verificationStatus,
+            trustScore: profile.trustScore,
+          }
+        : null,
+      realLifeAnswers: (profile?.realLifeAnswers ?? []).map((a) => ({
+        questionKey: a.questionKey,
+        answer: a.answer,
+      })),
+    };
+  });
+}

@@ -5,8 +5,11 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
+    "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/logger": "*",
-    "@abroad-matrimony/shared": "*"
+    "@abroad-matrimony/payment": "*",
+    "@abroad-matrimony/shared": "*",
+    "bullmq": "*"
   }
 }

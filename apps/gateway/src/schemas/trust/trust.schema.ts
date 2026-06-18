@@ -16,6 +16,16 @@ export const reportUserSchema = z.object({
   description: z.string().max(1000).optional(),
 });
 
+export const privacyControlsSchema = z.object({
+  showPhotosBeforeMutual:  z.boolean().optional(),
+  showBioBeforeMutual:     z.boolean().optional(),
+  showAnswersBeforeMutual: z.boolean().optional(),
+}).refine(
+  (d) => d.showPhotosBeforeMutual !== undefined || d.showBioBeforeMutual !== undefined || d.showAnswersBeforeMutual !== undefined,
+  { message: 'At least one privacy setting must be provided' },
+);
+
 export type BlockUserBody = z.infer<typeof blockUserSchema>;
 export type UserIdParams = z.infer<typeof userIdParamSchema>;
 export type ReportUserBody = z.infer<typeof reportUserSchema>;
+export type PrivacyControlsBody = z.infer<typeof privacyControlsSchema>;

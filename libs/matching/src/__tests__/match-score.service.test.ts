@@ -3,28 +3,44 @@ import { RealLifeQuestionKey, VerificationStatus } from '@abroad-matrimony/share
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 
-const mockProfileFindUnique     = jest.fn();
-const mockRLAnswerFindMany      = jest.fn();
-const mockCheckInFindFirst      = jest.fn();
-const mockGroupMemberFindMany   = jest.fn();
-const mockMatchScoreUpsert      = jest.fn();
+const mockProfileFindUnique        = jest.fn();
+const mockRLAnswerFindMany         = jest.fn();
+const mockCheckInFindFirst         = jest.fn();
+const mockGroupMemberFindMany      = jest.fn();
+const mockHabitLogFindMany         = jest.fn();
+const mockPromptResonateFindMany   = jest.fn();
+const mockEventRsvpFindMany        = jest.fn();
+const mockProfileViewCount         = jest.fn();
+const mockMatchScoreUpsert         = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
     profile: {
-      findUnique: (...args: unknown[]) => mockProfileFindUnique(...args),
+      findUnique: (...a: any[]) => mockProfileFindUnique(...a),
     },
     realLifeAnswer: {
-      findMany: (...args: unknown[]) => mockRLAnswerFindMany(...args),
+      findMany: (...a: any[]) => mockRLAnswerFindMany(...a),
     },
     checkIn: {
-      findFirst: (...args: unknown[]) => mockCheckInFindFirst(...args),
+      findFirst: (...a: any[]) => mockCheckInFindFirst(...a),
     },
     groupMember: {
-      findMany: (...args: unknown[]) => mockGroupMemberFindMany(...args),
+      findMany: (...a: any[]) => mockGroupMemberFindMany(...a),
+    },
+    habitLog: {
+      findMany: (...a: any[]) => mockHabitLogFindMany(...a),
+    },
+    promptResonate: {
+      findMany: (...a: any[]) => mockPromptResonateFindMany(...a),
+    },
+    eventRsvp: {
+      findMany: (...a: any[]) => mockEventRsvpFindMany(...a),
+    },
+    profileView: {
+      count: (...a: any[]) => mockProfileViewCount(...a),
     },
     matchScore: {
-      upsert: (...args: unknown[]) => mockMatchScoreUpsert(...args),
+      upsert: (...a: any[]) => mockMatchScoreUpsert(...a),
     },
   },
   PrismaClient: jest.fn(),
@@ -52,10 +68,12 @@ jest.mock('../score-cache.service.js', () => ({
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 const DB_PROFILE = {
-  dateOfBirth:        new Date('1992-06-15'),
-  settlementIntent:   'UK or Canada',
-  completionScore:    80,
-  verificationStatus: VerificationStatus.APPROVED,
+  dateOfBirth:          new Date('1992-06-15'),
+  settlementIntent:     'UK or Canada',
+  completionScore:      80,
+  verificationStatus:   VerificationStatus.APPROVED,
+  voiceIntroTranscript: null,
+  trustScore:           30,
 };
 
 const DB_ANSWERS = [
@@ -87,6 +105,14 @@ function setHappyPathMocks(): void {
   mockRLAnswerFindMany.mockResolvedValue(DB_ANSWERS);
   mockCheckInFindFirst.mockResolvedValue(DB_CHECK_IN);
   mockGroupMemberFindMany.mockResolvedValue(DB_GROUP_MEMBERSHIPS);
+  // HABIT-008: default empty habit logs — no habit dimensions computed
+  mockHabitLogFindMany.mockResolvedValue([]);
+  // PROMPT-007: default empty resonates — no prompt resonance dimension computed
+  mockPromptResonateFindMany.mockResolvedValue([]);
+  // ALG-006: default empty event RSVPs
+  mockEventRsvpFindMany.mockResolvedValue([]);
+  // ALG-008: default 0 profile views
+  mockProfileViewCount.mockResolvedValue(0);
   mockMatchScoreUpsert.mockResolvedValue(DB_MATCH_SCORE);
   mockSetMatchScoreCache.mockResolvedValue(undefined);
 }
@@ -154,6 +180,64 @@ describe('getUserScoringData()', () => {
     mockRLAnswerFindMany.mockRejectedValueOnce(new Error('DB timeout'));
 
     await expect(getUserScoringData('user-a')).rejects.toThrow('DB timeout');
+  });
+
+  // PROMPT-007
+  it('builds promptResonatedUserIds as a Set of user IDs from resonated responses', async () => {
+    mockPromptResonateFindMany.mockResolvedValueOnce([
+      { userId: 'user-a', responseId: 'resp-1', response: { userId: 'user-b' } },
+      { userId: 'user-a', responseId: 'resp-2', response: { userId: 'user-c' } },
+    ]);
+
+    const data = await getUserScoringData('user-a');
+
+    expect(data.promptResonatedUserIds).toEqual(new Set(['user-b', 'user-c']));
+  });
+
+  it('returns an empty promptResonatedUserIds Set when user has not resonated anything', async () => {
+    const data = await getUserScoringData('user-a');
+
+    expect(data.promptResonatedUserIds).toEqual(new Set());
+  });
+
+  // v2 fields
+  it('builds eventAttendedIds as a Set of GOING RSVP event IDs (ALG-006)', async () => {
+    mockEventRsvpFindMany.mockResolvedValueOnce([
+      { eventId: 'event-1' },
+      { eventId: 'event-2' },
+    ]);
+
+    const data = await getUserScoringData('user-a');
+
+    expect(data.eventAttendedIds).toEqual(new Set(['event-1', 'event-2']));
+  });
+
+  it('sets hasVoiceIntro to true when voiceIntroTranscript is present (ALG-007)', async () => {
+    mockProfileFindUnique.mockResolvedValueOnce({ ...DB_PROFILE, voiceIntroTranscript: 'Hello!' });
+
+    const data = await getUserScoringData('user-a');
+
+    expect(data.hasVoiceIntro).toBe(true);
+  });
+
+  it('sets hasVoiceIntro to false when voiceIntroTranscript is null (ALG-007)', async () => {
+    const data = await getUserScoringData('user-a');
+
+    expect(data.hasVoiceIntro).toBe(false);
+  });
+
+  it('sets recentViewCount from profileView.count (ALG-008)', async () => {
+    mockProfileViewCount.mockResolvedValueOnce(7);
+
+    const data = await getUserScoringData('user-a');
+
+    expect(data.recentViewCount).toBe(7);
+  });
+
+  it('sets profileTrustScore from profile.trustScore (ALG-009)', async () => {
+    const data = await getUserScoringData('user-a');
+
+    expect(data.profileTrustScore).toBe(30);
   });
 });
 

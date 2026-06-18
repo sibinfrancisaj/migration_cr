@@ -4,25 +4,37 @@ import {
   listBlocks,
   reportUser,
   getSignals,
+  getTrustCenter,
+  setPrivacyControls,
+  pauseVisibility,
+  resumeVisibility,
+  getAccessLevelDefinitions,
   AlreadyBlockedError,
   BlockNotFoundError,
   BlockSelfError,
   ReportSelfError,
+  TrustCenterNotFoundError,
+  PrivacyProfileNotFoundError,
+  PauseProfileNotFoundError,
 } from '../index.js';
 import { FlagReason } from '@abroad-matrimony/shared';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-const mockUserBlockFindUnique = jest.fn();
-const mockUserBlockFindMany   = jest.fn();
-const mockUserBlockCreate     = jest.fn();
-const mockUserBlockDelete     = jest.fn();
+const mockUserBlockFindUnique  = jest.fn();
+const mockUserBlockFindMany    = jest.fn();
+const mockUserBlockCreate      = jest.fn();
+const mockUserBlockDelete      = jest.fn();
 const mockConnectionUpdateMany = jest.fn();
-const mockFlagCreate          = jest.fn();
-const mockConnectionCount     = jest.fn();
-const mockIntroductionCount   = jest.fn();
-const mockCheckInFindMany     = jest.fn();
-const mockTransaction         = jest.fn();
+const mockFlagCreate           = jest.fn();
+const mockConnectionCount      = jest.fn();
+const mockIntroductionCount    = jest.fn();
+const mockCheckInFindMany      = jest.fn();
+const mockTransaction          = jest.fn();
+const mockUserFindUnique       = jest.fn();
+const mockProfileFindUnique    = jest.fn();
+const mockProfileUpdate        = jest.fn();
+const mockMediaCount           = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -44,6 +56,16 @@ jest.mock('@abroad-matrimony/db', () => ({
     },
     checkIn: {
       findMany: (...a: unknown[]) => mockCheckInFindMany(...a),
+    },
+    user: {
+      findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
+    },
+    profile: {
+      findUnique: (...a: unknown[]) => mockProfileFindUnique(...a),
+      update:     (...a: unknown[]) => mockProfileUpdate(...a),
+    },
+    media: {
+      count: (...a: unknown[]) => mockMediaCount(...a),
     },
     $transaction: (...a: unknown[]) => mockTransaction(...a),
   },
@@ -263,7 +285,190 @@ describe('getSignals', () => {
 
     const result = await getSignals(BLOCKER_ID);
 
+
     expect(result.matchRate).toBe(0);
     expect(result.checkInsStreak).toBe(0);
+  });
+});
+
+// ── getTrustCenter ─────────────────────────────────────────────────────────────
+
+const USER_ID = 'user-uuid-1';
+
+describe('getTrustCenter', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('computes correct trust score from completed layers', async () => {
+    mockUserFindUnique.mockResolvedValue({ isPhoneVerified: true, isEmailVerified: true });
+    mockProfileFindUnique.mockResolvedValue({
+      completionScore: 85,
+      verificationStatus: 'APPROVED',
+      voiceIntroTranscript: 'Hello',
+      isPaused: false,
+      privacySettings: null,
+    });
+    mockMediaCount.mockResolvedValue(2);
+    mockProfileUpdate.mockResolvedValue({ id: 'p-1' });
+
+    const result = await getTrustCenter(USER_ID);
+
+    // PHONE(20) + PROFILE(20) + PHOTO(15) + ID(25) + EMAIL(10) + VOICE(10) = 100
+    expect(result.trustScore).toBe(100);
+    expect(result.maxScore).toBe(100);
+    expect(result.layers).toHaveLength(6);
+    expect(result.layers.every((l) => l.completed)).toBe(true);
+    expect(result.privacySettings.showPhotosBeforeMutual).toBe(true); // default
+  });
+
+  it('computes partial score when some layers are incomplete', async () => {
+    mockUserFindUnique.mockResolvedValue({ isPhoneVerified: true, isEmailVerified: false });
+    mockProfileFindUnique.mockResolvedValue({
+      completionScore: 70, // < 80 → profile not complete
+      verificationStatus: 'PENDING',
+      voiceIntroTranscript: null,
+      isPaused: false,
+      privacySettings: null,
+    });
+    mockMediaCount.mockResolvedValue(0);
+    mockProfileUpdate.mockResolvedValue({ id: 'p-1' });
+
+    const result = await getTrustCenter(USER_ID);
+
+    // Only PHONE_VERIFIED (20)
+    expect(result.trustScore).toBe(20);
+    expect(result.layers.filter((l) => l.completed)).toHaveLength(1);
+  });
+
+  it('uses stored privacySettings when present', async () => {
+    mockUserFindUnique.mockResolvedValue({ isPhoneVerified: true, isEmailVerified: false });
+    mockProfileFindUnique.mockResolvedValue({
+      completionScore: 50,
+      verificationStatus: 'PENDING',
+      voiceIntroTranscript: null,
+      isPaused: true,
+      privacySettings: { showPhotosBeforeMutual: false, showBioBeforeMutual: true, showAnswersBeforeMutual: true },
+    });
+    mockMediaCount.mockResolvedValue(0);
+    mockProfileUpdate.mockResolvedValue({ id: 'p-1' });
+
+    const result = await getTrustCenter(USER_ID);
+
+    expect(result.isPaused).toBe(true);
+    expect(result.privacySettings.showPhotosBeforeMutual).toBe(false);
+    expect(result.privacySettings.showAnswersBeforeMutual).toBe(true);
+  });
+
+  it('throws TrustCenterNotFoundError when user/profile not found', async () => {
+    mockUserFindUnique.mockResolvedValue(null);
+    mockProfileFindUnique.mockResolvedValue(null);
+    mockMediaCount.mockResolvedValue(0);
+
+    await expect(getTrustCenter(USER_ID)).rejects.toBeInstanceOf(TrustCenterNotFoundError);
+  });
+});
+
+// ── setPrivacyControls ─────────────────────────────────────────────────────────
+
+describe('setPrivacyControls', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('merges new settings with existing defaults', async () => {
+    mockProfileFindUnique.mockResolvedValue({ privacySettings: null });
+    mockProfileUpdate.mockResolvedValue({ id: 'p-1' });
+
+    const result = await setPrivacyControls(USER_ID, { showBioBeforeMutual: false });
+
+    expect(result.showPhotosBeforeMutual).toBe(true);  // default
+    expect(result.showBioBeforeMutual).toBe(false);    // overridden
+    expect(result.showAnswersBeforeMutual).toBe(false); // default
+  });
+
+  it('merges with existing stored settings', async () => {
+    mockProfileFindUnique.mockResolvedValue({
+      privacySettings: { showPhotosBeforeMutual: false, showBioBeforeMutual: false, showAnswersBeforeMutual: true },
+    });
+    mockProfileUpdate.mockResolvedValue({ id: 'p-1' });
+
+    const result = await setPrivacyControls(USER_ID, { showPhotosBeforeMutual: true });
+
+    expect(result.showPhotosBeforeMutual).toBe(true);   // overridden
+    expect(result.showBioBeforeMutual).toBe(false);     // preserved
+    expect(result.showAnswersBeforeMutual).toBe(true);  // preserved
+  });
+
+  it('throws PrivacyProfileNotFoundError when profile not found', async () => {
+    mockProfileFindUnique.mockResolvedValue(null);
+
+    await expect(setPrivacyControls(USER_ID, { showBioBeforeMutual: false }))
+      .rejects.toBeInstanceOf(PrivacyProfileNotFoundError);
+  });
+});
+
+// ── pauseVisibility / resumeVisibility ─────────────────────────────────────────
+
+describe('pauseVisibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sets isPaused to true', async () => {
+    mockProfileFindUnique.mockResolvedValue({ id: 'p-1' });
+    mockProfileUpdate.mockResolvedValue({ isPaused: true });
+
+    const result = await pauseVisibility(USER_ID);
+
+    expect(result.isPaused).toBe(true);
+    expect(mockProfileUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { isPaused: true } }),
+    );
+  });
+
+  it('throws PauseProfileNotFoundError when profile not found', async () => {
+    mockProfileFindUnique.mockResolvedValue(null);
+
+    await expect(pauseVisibility(USER_ID)).rejects.toBeInstanceOf(PauseProfileNotFoundError);
+  });
+});
+
+describe('resumeVisibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('sets isPaused to false', async () => {
+    mockProfileFindUnique.mockResolvedValue({ id: 'p-1' });
+    mockProfileUpdate.mockResolvedValue({ isPaused: false });
+
+    const result = await resumeVisibility(USER_ID);
+
+    expect(result.isPaused).toBe(false);
+    expect(mockProfileUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { isPaused: false } }),
+    );
+  });
+
+  it('throws PauseProfileNotFoundError when profile not found', async () => {
+    mockProfileFindUnique.mockResolvedValue(null);
+
+    await expect(resumeVisibility(USER_ID)).rejects.toBeInstanceOf(PauseProfileNotFoundError);
+  });
+});
+
+// ── getAccessLevelDefinitions ──────────────────────────────────────────────────
+
+describe('getAccessLevelDefinitions', () => {
+  it('returns exactly 3 access levels', () => {
+    const levels = getAccessLevelDefinitions();
+
+    expect(levels).toHaveLength(3);
+    expect(levels.map((l) => l.key)).toEqual(['PUBLIC', 'TRUSTED', 'FAMILY']);
+  });
+
+  it('each level has required fields', () => {
+    const levels = getAccessLevelDefinitions();
+
+    for (const level of levels) {
+      expect(level.key).toBeTruthy();
+      expect(level.label).toBeTruthy();
+      expect(level.description).toBeTruthy();
+      expect(Array.isArray(level.visibleFields)).toBe(true);
+      expect(level.visibleFields.length).toBeGreaterThan(0);
+    }
   });
 });

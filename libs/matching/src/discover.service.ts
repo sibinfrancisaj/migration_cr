@@ -3,6 +3,8 @@ import { createChildLogger } from '@abroad-matrimony/logger';
 import { UserRole, MediaType } from '@abroad-matrimony/shared';
 import type { DiscoveryFeedDto, DiscoveryItemDto, ScoreBreakdown, VerificationStatus } from '@abroad-matrimony/shared';
 import { ALGORITHM_VERSION } from './match-score.service.js';
+import { getMatchTuning } from './match-tuning.service.js';
+import { applyTuningToBreakdown } from './scoring.service.js';
 
 const log = createChildLogger({ module: 'matching:discover' });
 
@@ -208,7 +210,11 @@ export async function getDiscoveryFeed(
     }
   }
 
-  // ── 8. Assemble DTOs (preserve score ordering) ────────────────────────────
+  // ── 8. Fetch tuning weights for personalised re-ranking ──────────────────────
+  const tuning = await getMatchTuning(userId);
+  const hasTuning = Object.keys(tuning.weights).length > 0;
+
+  // ── 9. Assemble DTOs, apply tuning, and sort by personalizedScore ─────────
   const items: DiscoveryItemDto[] = [];
   for (const row of rows) {
     const otherId = row.userAId === userId ? row.userBId : row.userAId;
@@ -216,6 +222,11 @@ export async function getDiscoveryFeed(
 
     const profile = profileMap.get(otherId);
     if (!profile) continue;
+
+    const breakdown = row.breakdown as unknown as ScoreBreakdown;
+    const personalizedScore = hasTuning
+      ? applyTuningToBreakdown(breakdown, tuning.weights)
+      : row.totalScore;
 
     items.push({
       userId:            otherId,
@@ -228,8 +239,14 @@ export async function getDiscoveryFeed(
       verificationStatus: profile.verificationStatus as unknown as VerificationStatus,
       photoUrl:          photoMap.get(otherId),
       totalScore:        row.totalScore,
-      scoreBreakdown:    row.breakdown as unknown as ScoreBreakdown,
+      personalizedScore,
+      scoreBreakdown:    breakdown,
     });
+  }
+
+  // Re-sort by personalizedScore when tuning is active (within this page)
+  if (hasTuning) {
+    items.sort((a, b) => b.personalizedScore - a.personalizedScore);
   }
 
   const lastRow    = rows[rows.length - 1];

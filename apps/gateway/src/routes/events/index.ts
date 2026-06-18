@@ -11,8 +11,11 @@ export const eventsRouter = Router();
 
 eventsRouter.use(requireAuth);
 
-/** GET /api/v1/events?tag=SOCIAL|SPIRITUAL|... */
+/** GET /api/v1/events?tag=SOCIAL|SPIRITUAL|...&limit=10&upcoming=true */
 eventsRouter.get('/', validateQuery(listEventsQuerySchema), eventsController.list);
+
+/** GET /api/v1/events/calendar — this week's milestone dates (EVENT-006); MUST be before /:eventId */
+eventsRouter.get('/calendar', eventsController.calendar);
 
 /** GET /api/v1/events/:eventId */
 eventsRouter.get('/:eventId', validateParams(eventIdParamSchema), eventsController.getOne);

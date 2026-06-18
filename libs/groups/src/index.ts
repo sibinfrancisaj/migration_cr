@@ -503,6 +503,20 @@ export {
   type ProposeGroupData,
 } from './proposal.service.js';
 
+export {
+  // Group admin CRUD (ADMIN-010)
+  GroupAdminNotFoundError,
+  GroupAlreadyArchivedError,
+  listAdminGroups,
+  getAdminGroup,
+  createAdminGroup,
+  updateAdminGroup,
+  archiveAdminGroup,
+  type GroupAdminDto,
+  type CreateGroupAdminInput,
+  type UpdateGroupAdminInput,
+} from './group-admin.service.js';
+
 /**
  * List upcoming events for a group.
  *

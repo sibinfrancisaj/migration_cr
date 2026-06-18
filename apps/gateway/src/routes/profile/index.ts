@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth } from '@abroad-matrimony/auth';
-import { validateBody, validateParams } from '../../middleware/validate.middleware.js';
+import { validateBody, validateParams, validateQuery } from '../../middleware/validate.middleware.js';
 import { uploadSinglePhoto } from '../../middleware/upload.middleware.js';
 import { createProfileSchema } from '../../schemas/profile/create-profile.schema.js';
 import {
@@ -14,6 +14,10 @@ import {
 import { profileController } from '../../controllers/profile/profile.controller.js';
 import { profileExtensionsController } from '../../controllers/profile/profile-extensions.controller.js';
 import { voiceIntroUploadSchema, saveVoiceIntroSchema } from '../../schemas/profile/voice-intro.schema.js';
+import { privacyControlsSchema } from '../../schemas/trust/trust.schema.js';
+import { trustController } from '../../controllers/trust/trust.controller.js';
+import { matchTuningQuestionsSchema, tuningImpactQuerySchema } from '../../schemas/matches/matches.schema.js';
+import { matchTuningController } from '../../controllers/matches/tuning.controller.js';
 
 export const profileRouter = Router();
 
@@ -79,4 +83,57 @@ profileRouter.post(
   requireAuth,
   validateBody(saveVoiceIntroSchema),
   profileExtensionsController.saveVoiceIntro,
+);
+
+// PUT /api/v1/profile/privacy-controls — update visibility settings (TRUST-003)
+profileRouter.put(
+  '/privacy-controls',
+  requireAuth,
+  validateBody(privacyControlsSchema),
+  trustController.setPrivacyControls,
+);
+
+// POST /api/v1/profile/pause-visibility — pause appearing in discover (TRUST-004)
+profileRouter.post(
+  '/pause-visibility',
+  requireAuth,
+  trustController.pauseVisibility,
+);
+
+// DELETE /api/v1/profile/pause-visibility — resume visibility (TRUST-005)
+profileRouter.delete(
+  '/pause-visibility',
+  requireAuth,
+  trustController.resumeVisibility,
+);
+
+// GET /api/v1/profile/access-levels — static access level definitions (TRUST-009)
+profileRouter.get(
+  '/access-levels',
+  requireAuth,
+  trustController.getAccessLevels,
+);
+
+// GET /api/v1/profile/match-tuning/impact — preview rank change (ALG-012)
+// Must be registered BEFORE /match-tuning to avoid shadowing
+profileRouter.get(
+  '/match-tuning/impact',
+  requireAuth,
+  validateQuery(tuningImpactQuerySchema),
+  matchTuningController.getImpact,
+);
+
+// GET /api/v1/profile/match-tuning — get tuning as 2 questions (ALG-011)
+profileRouter.get(
+  '/match-tuning',
+  requireAuth,
+  matchTuningController.getQuestions,
+);
+
+// POST /api/v1/profile/match-tuning — save tuning from 2-question UI (ALG-011)
+profileRouter.post(
+  '/match-tuning',
+  requireAuth,
+  validateBody(matchTuningQuestionsSchema),
+  matchTuningController.setQuestions,
 );

@@ -1,0 +1,13 @@
+{
+  "name": "@abroad-matrimony/signals",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/cache": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*"
+  }
+}

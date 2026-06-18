@@ -291,3 +291,16 @@ export async function unresonateResponse(
 
   log.info('unresonateResponse — unresonnated', { userId, responseId });
 }
+
+// ─── Admin service re-exports (ADMIN-009) ────────────────────────────────────
+
+export {
+  PromptAdminNotFoundError,
+  PromptAlreadyExistsError,
+  listAdminPrompts,
+  getAdminPrompt,
+  createPrompt,
+  updatePrompt,
+  type PromptAdminDto,
+  type CreatePromptInput,
+} from './prompt-admin.service.js';

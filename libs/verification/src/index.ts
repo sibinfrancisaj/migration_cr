@@ -207,3 +207,16 @@ export async function getVerificationUploadUrl(
 
   return { uploadUrl, s3Key };
 }
+
+// ─── Admin service re-exports (ADMIN-004) ────────────────────────────────────
+
+export {
+  VerificationRequestNotFoundError,
+  VerificationAlreadyReviewedError,
+  listVerifications,
+  getVerificationAdmin,
+  approveVerification,
+  rejectVerification,
+  type VerificationAdminDto,
+  type VerificationListParams,
+} from './verification-admin.service.js';

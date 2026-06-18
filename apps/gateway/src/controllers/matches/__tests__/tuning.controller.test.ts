@@ -3,12 +3,21 @@ import { createApp } from '../../../app.js';
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
 
-const mockGetMatchTuning = jest.fn();
-const mockSetMatchTuning = jest.fn();
+const mockGetMatchTuning        = jest.fn();
+const mockSetMatchTuning        = jest.fn();
+const mockGetTuningAsQuestions  = jest.fn();
+const mockSetTuningFromQuestions = jest.fn();
+const mockComputeTuningImpact   = jest.fn();
+// enqueueScoreRecompute must return a Promise (fire-and-forget .catch() is called on it)
+const mockEnqueueScoreRecompute = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('@abroad-matrimony/matching', () => ({
   getMatchTuning:              (...a: unknown[]) => mockGetMatchTuning(...a),
   setMatchTuning:              (...a: unknown[]) => mockSetMatchTuning(...a),
+  getTuningAsQuestions:        (...a: unknown[]) => mockGetTuningAsQuestions(...a),
+  setTuningFromQuestions:      (...a: unknown[]) => mockSetTuningFromQuestions(...a),
+  computeTuningImpact:         (...a: unknown[]) => mockComputeTuningImpact(...a),
+  enqueueScoreRecompute:       (...a: unknown[]) => mockEnqueueScoreRecompute(...a),
   computeCompatibilityScore:   jest.fn().mockResolvedValue(0),
   getDiscoveryFeed:            jest.fn().mockResolvedValue({ profiles: [], cursor: null }),
   FeatureFlagService:          jest.fn(),
@@ -55,6 +64,7 @@ jest.mock('@abroad-matrimony/config', () => ({
     RATE_LIMIT_MAX_REQUESTS: 100,
     OTP_RATE_LIMIT_MAX: 3,
     OTP_RATE_LIMIT_WINDOW_MS: 3600000,
+    REDIS_URL: 'redis://localhost:6379',
   }),
 }));
 
@@ -181,6 +191,139 @@ describe('PUT /api/v1/matches/tuning', () => {
     const res = await request(app)
       .put('/api/v1/matches/tuning')
       .send({ weights: { faith: 1.5 } });
+    expect(res.status).toBe(500);
+  });
+
+  it('fires recompute job after successful save (ALG-013)', async () => {
+    mockSetMatchTuning.mockResolvedValue(TUNING_DTO);
+    mockEnqueueScoreRecompute.mockResolvedValue(undefined);
+
+    await request(app)
+      .put('/api/v1/matches/tuning')
+      .send({ weights: { faith: 1.5 } });
+
+    // allow the fire-and-forget to be called
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mockEnqueueScoreRecompute).toHaveBeenCalled();
+  });
+});
+
+// ── GET /api/v1/profile/match-tuning ─────────────────────────────────────────
+
+const QUESTIONS_DTO = {
+  userId: USER_ID,
+  settlementImportance: 4,
+  familyImportance: 3,
+  updatedAt: '2026-06-02T10:00:00.000Z',
+};
+
+describe('GET /api/v1/profile/match-tuning', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with 2-question tuning DTO', async () => {
+    mockGetTuningAsQuestions.mockResolvedValue(QUESTIONS_DTO);
+
+    const res = await request(app).get('/api/v1/profile/match-tuning');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.settlementImportance).toBe(4);
+    expect(res.body.data.familyImportance).toBe(3);
+    expect(mockGetTuningAsQuestions).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetTuningAsQuestions.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/profile/match-tuning');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── POST /api/v1/profile/match-tuning ────────────────────────────────────────
+
+describe('POST /api/v1/profile/match-tuning', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with saved questions DTO', async () => {
+    mockSetTuningFromQuestions.mockResolvedValue(QUESTIONS_DTO);
+    mockEnqueueScoreRecompute.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .post('/api/v1/profile/match-tuning')
+      .send({ settlementImportance: 4, familyImportance: 3 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(mockSetTuningFromQuestions).toHaveBeenCalledWith(USER_ID, 4, 3);
+  });
+
+  it('returns 400 when settlementImportance is out of range', async () => {
+    const res = await request(app)
+      .post('/api/v1/profile/match-tuning')
+      .send({ settlementImportance: 6, familyImportance: 3 });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when familyImportance is missing', async () => {
+    const res = await request(app)
+      .post('/api/v1/profile/match-tuning')
+      .send({ settlementImportance: 3 });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockSetTuningFromQuestions.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app)
+      .post('/api/v1/profile/match-tuning')
+      .send({ settlementImportance: 4, familyImportance: 3 });
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/profile/match-tuning/impact ──────────────────────────────────
+
+const IMPACT_DTO = {
+  pairsAnalysed: 20,
+  profilesUp: 5,
+  profilesDown: 3,
+  profilesUnchanged: 12,
+  topGainers: [{ userId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', currentScore: 0.6, projectedScore: 0.75 }],
+};
+
+describe('GET /api/v1/profile/match-tuning/impact', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with impact DTO', async () => {
+    mockComputeTuningImpact.mockResolvedValue(IMPACT_DTO);
+
+    const res = await request(app)
+      .get('/api/v1/profile/match-tuning/impact?settlementImportance=4&familyImportance=3');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.profilesUp).toBe(5);
+    expect(mockComputeTuningImpact).toHaveBeenCalledWith(USER_ID, 4, 3);
+  });
+
+  it('returns 400 when settlementImportance is missing', async () => {
+    const res = await request(app)
+      .get('/api/v1/profile/match-tuning/impact?familyImportance=3');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when importance values are out of range', async () => {
+    const res = await request(app)
+      .get('/api/v1/profile/match-tuning/impact?settlementImportance=0&familyImportance=6');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockComputeTuningImpact.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app)
+      .get('/api/v1/profile/match-tuning/impact?settlementImportance=4&familyImportance=3');
     expect(res.status).toBe(500);
   });
 });

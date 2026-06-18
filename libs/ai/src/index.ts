@@ -24,3 +24,13 @@ export { enqueueProfileIntelligence } from './enqueue-intelligence.js';
 
 // Types
 export type { ProfileEmbeddingDto, IntroductionDropDraftDto, VibeScores, ContactWindow, ProfileIntelligenceJobData } from './types/ai.types.js';
+
+// AI Monitoring (ADMIN-016)
+export {
+  UserEmbeddingNotFoundError,
+  getEmbeddingStatus,
+  listEmbeddings,
+  recomputeEmbedding,
+  recomputeAllStaleEmbeddings,
+} from './ai-monitoring.service.js';
+export type { EmbeddingStatusDto, EmbeddingUserDto, EmbeddingListParams } from './ai-monitoring.service.js';

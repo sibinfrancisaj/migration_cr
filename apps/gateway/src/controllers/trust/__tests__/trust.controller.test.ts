@@ -3,21 +3,34 @@ import { createApp } from '../../../app.js';
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
 
-const mockBlockUser   = jest.fn();
-const mockUnblockUser = jest.fn();
-const mockListBlocks  = jest.fn();
-const mockReportUser  = jest.fn();
+const mockBlockUser          = jest.fn();
+const mockUnblockUser        = jest.fn();
+const mockListBlocks         = jest.fn();
+const mockReportUser         = jest.fn();
+const mockGetTrustCenter     = jest.fn();
+const mockSetPrivacyControls = jest.fn();
+const mockPauseVisibility    = jest.fn();
+const mockResumeVisibility   = jest.fn();
+const mockGetAccessLevels    = jest.fn();
 
 jest.mock('@abroad-matrimony/trust', () => ({
-  blockUser:          (...a: unknown[]) => mockBlockUser(...a),
-  unblockUser:        (...a: unknown[]) => mockUnblockUser(...a),
-  listBlocks:         (...a: unknown[]) => mockListBlocks(...a),
-  reportUser:         (...a: unknown[]) => mockReportUser(...a),
-  getSignals:         jest.fn().mockResolvedValue({}),
-  AlreadyBlockedError:  class extends Error { constructor() { super('ALREADY_BLOCKED'); this.name = 'AlreadyBlockedError'; } },
-  BlockNotFoundError:   class extends Error { constructor() { super('NOT_FOUND');       this.name = 'BlockNotFoundError'; } },
-  BlockSelfError:       class extends Error { constructor() { super('BLOCK_SELF');      this.name = 'BlockSelfError'; } },
-  ReportSelfError:      class extends Error { constructor() { super('REPORT_SELF');     this.name = 'ReportSelfError'; } },
+  blockUser:                (...a: unknown[]) => mockBlockUser(...a),
+  unblockUser:              (...a: unknown[]) => mockUnblockUser(...a),
+  listBlocks:               (...a: unknown[]) => mockListBlocks(...a),
+  reportUser:               (...a: unknown[]) => mockReportUser(...a),
+  getSignals:               jest.fn().mockResolvedValue({}),
+  getTrustCenter:           (...a: unknown[]) => mockGetTrustCenter(...a),
+  setPrivacyControls:       (...a: unknown[]) => mockSetPrivacyControls(...a),
+  pauseVisibility:          (...a: unknown[]) => mockPauseVisibility(...a),
+  resumeVisibility:         (...a: unknown[]) => mockResumeVisibility(...a),
+  getAccessLevelDefinitions: (...a: unknown[]) => mockGetAccessLevels(...a),
+  AlreadyBlockedError:          class extends Error { constructor() { super('ALREADY_BLOCKED'); this.name = 'AlreadyBlockedError'; } },
+  BlockNotFoundError:           class extends Error { constructor() { super('NOT_FOUND');       this.name = 'BlockNotFoundError'; } },
+  BlockSelfError:               class extends Error { constructor() { super('BLOCK_SELF');      this.name = 'BlockSelfError'; } },
+  ReportSelfError:              class extends Error { constructor() { super('REPORT_SELF');     this.name = 'ReportSelfError'; } },
+  TrustCenterNotFoundError:     class extends Error { constructor() { super('NOT_FOUND');       this.name = 'TrustCenterNotFoundError'; } },
+  PrivacyProfileNotFoundError:  class extends Error { constructor() { super('NOT_FOUND');       this.name = 'PrivacyProfileNotFoundError'; } },
+  PauseProfileNotFoundError:    class extends Error { constructor() { super('NOT_FOUND');       this.name = 'PauseProfileNotFoundError'; } },
 }));
 
 jest.mock('@abroad-matrimony/auth', () => ({
@@ -109,10 +122,13 @@ jest.mock('@abroad-matrimony/payment', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const trustMock = jest.requireMock('@abroad-matrimony/trust') as any;
-const AlreadyBlockedError = trustMock.AlreadyBlockedError as typeof Error;
-const BlockNotFoundError  = trustMock.BlockNotFoundError  as typeof Error;
-const BlockSelfError      = trustMock.BlockSelfError      as typeof Error;
-const ReportSelfError     = trustMock.ReportSelfError     as typeof Error;
+const AlreadyBlockedError         = trustMock.AlreadyBlockedError         as typeof Error;
+const BlockNotFoundError          = trustMock.BlockNotFoundError          as typeof Error;
+const BlockSelfError              = trustMock.BlockSelfError              as typeof Error;
+const ReportSelfError             = trustMock.ReportSelfError             as typeof Error;
+const TrustCenterNotFoundError    = trustMock.TrustCenterNotFoundError    as typeof Error;
+const PrivacyProfileNotFoundError = trustMock.PrivacyProfileNotFoundError as typeof Error;
+const PauseProfileNotFoundError   = trustMock.PauseProfileNotFoundError   as typeof Error;
 
 const app = createApp();
 
@@ -299,6 +315,206 @@ describe('POST /api/v1/trust/report', () => {
     const res = await request(app)
       .post('/api/v1/trust/report')
       .send({ targetUserId: TARGET_ID, reason: 'SPAM' });
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/trust ─────────────────────────────────────────────────────────
+
+const TRUST_CENTER_DTO = {
+  trustScore: 65,
+  maxScore: 100,
+  layers: [
+    { key: 'PHONE_VERIFIED', label: 'Phone verified', completed: true, points: 20 },
+    { key: 'ID_VERIFIED',    label: 'Identity verified', completed: false, points: 25 },
+  ],
+  isPaused: false,
+  privacySettings: {
+    showPhotosBeforeMutual: true,
+    showBioBeforeMutual: true,
+    showAnswersBeforeMutual: false,
+  },
+};
+
+describe('GET /api/v1/trust', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with trust center DTO', async () => {
+    mockGetTrustCenter.mockResolvedValue(TRUST_CENTER_DTO);
+
+    const res = await request(app).get('/api/v1/trust');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.trustScore).toBe(65);
+    expect(res.body.data.layers).toHaveLength(2);
+    expect(mockGetTrustCenter).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 404 when profile not found', async () => {
+    mockGetTrustCenter.mockRejectedValueOnce(new TrustCenterNotFoundError());
+
+    const res = await request(app).get('/api/v1/trust');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetTrustCenter.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/trust');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── PUT /api/v1/profile/privacy-controls ─────────────────────────────────────
+
+const PRIVACY_DTO = {
+  showPhotosBeforeMutual: true,
+  showBioBeforeMutual: false,
+  showAnswersBeforeMutual: false,
+};
+
+describe('PUT /api/v1/profile/privacy-controls', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with updated privacy settings', async () => {
+    mockSetPrivacyControls.mockResolvedValue(PRIVACY_DTO);
+
+    const res = await request(app)
+      .put('/api/v1/profile/privacy-controls')
+      .send({ showBioBeforeMutual: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.showBioBeforeMutual).toBe(false);
+    expect(mockSetPrivacyControls).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ showBioBeforeMutual: false }),
+    );
+  });
+
+  it('returns 400 when no settings are provided', async () => {
+    const res = await request(app)
+      .put('/api/v1/profile/privacy-controls')
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when setting value is not boolean', async () => {
+    const res = await request(app)
+      .put('/api/v1/profile/privacy-controls')
+      .send({ showPhotosBeforeMutual: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when profile not found', async () => {
+    mockSetPrivacyControls.mockRejectedValueOnce(new PrivacyProfileNotFoundError());
+
+    const res = await request(app)
+      .put('/api/v1/profile/privacy-controls')
+      .send({ showPhotosBeforeMutual: false });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockSetPrivacyControls.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app)
+      .put('/api/v1/profile/privacy-controls')
+      .send({ showAnswersBeforeMutual: true });
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── POST /api/v1/profile/pause-visibility ────────────────────────────────────
+
+describe('POST /api/v1/profile/pause-visibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with isPaused: true', async () => {
+    mockPauseVisibility.mockResolvedValue({ isPaused: true });
+
+    const res = await request(app).post('/api/v1/profile/pause-visibility');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.isPaused).toBe(true);
+    expect(mockPauseVisibility).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 404 when profile not found', async () => {
+    mockPauseVisibility.mockRejectedValueOnce(new PauseProfileNotFoundError());
+
+    const res = await request(app).post('/api/v1/profile/pause-visibility');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockPauseVisibility.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).post('/api/v1/profile/pause-visibility');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── DELETE /api/v1/profile/pause-visibility ───────────────────────────────────
+
+describe('DELETE /api/v1/profile/pause-visibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with isPaused: false', async () => {
+    mockResumeVisibility.mockResolvedValue({ isPaused: false });
+
+    const res = await request(app).delete('/api/v1/profile/pause-visibility');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.isPaused).toBe(false);
+    expect(mockResumeVisibility).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 404 when profile not found', async () => {
+    mockResumeVisibility.mockRejectedValueOnce(new PauseProfileNotFoundError());
+
+    const res = await request(app).delete('/api/v1/profile/pause-visibility');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockResumeVisibility.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).delete('/api/v1/profile/pause-visibility');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/profile/access-levels ─────────────────────────────────────────
+
+const ACCESS_LEVELS = [
+  { key: 'PUBLIC',  label: 'Public',        description: 'Visible to everyone', visibleFields: ['name', 'age'] },
+  { key: 'TRUSTED', label: 'Trusted',       description: 'After connection',    visibleFields: ['bio', 'photos'] },
+  { key: 'FAMILY',  label: 'Family-aware',  description: 'Extended detail',     visibleFields: ['contactDetails'] },
+];
+
+describe('GET /api/v1/profile/access-levels', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with 3 access level definitions', async () => {
+    mockGetAccessLevels.mockReturnValue(ACCESS_LEVELS);
+
+    const res = await request(app).get('/api/v1/profile/access-levels');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(3);
+    expect(res.body.meta.total).toBe(3);
+    expect(res.body.data[0].key).toBe('PUBLIC');
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetAccessLevels.mockImplementationOnce(() => { throw new Error('Unexpected'); });
+
+    const res = await request(app).get('/api/v1/profile/access-levels');
     expect(res.status).toBe(500);
   });
 });

@@ -10,4 +10,20 @@ export const setMatchTuningSchema = z.object({
   ),
 });
 
+const importanceField = z.number().int().min(1).max(5);
+
+/** Simplified 2-question tuning body (ALG-011). */
+export const matchTuningQuestionsSchema = z.object({
+  settlementImportance: importanceField,
+  familyImportance:     importanceField,
+});
+
+/** Impact preview query params (ALG-012). */
+export const tuningImpactQuerySchema = z.object({
+  settlementImportance: z.coerce.number().int().min(1).max(5),
+  familyImportance:     z.coerce.number().int().min(1).max(5),
+});
+
 export type SetMatchTuningBody = z.infer<typeof setMatchTuningSchema>;
+export type MatchTuningQuestionsBody = z.infer<typeof matchTuningQuestionsSchema>;
+export type TuningImpactQuery = z.infer<typeof tuningImpactQuerySchema>;

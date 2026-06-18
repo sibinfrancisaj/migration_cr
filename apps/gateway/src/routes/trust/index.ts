@@ -12,6 +12,9 @@ export const trustRouter = Router();
 
 trustRouter.use(requireAuth);
 
+/** GET /api/v1/trust — trust center dashboard (TRUST-002) */
+trustRouter.get('/', trustController.getTrustCenter);
+
 /** POST /api/v1/trust/block */
 trustRouter.post('/block', validateBody(blockUserSchema), trustController.block);
 

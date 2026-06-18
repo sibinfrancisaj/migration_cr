@@ -5,6 +5,8 @@ docs/api/openapi.yaml:
     - '#/info/license'
   no-server-example.com:
     - '#/servers/0/url'
+  no-ambiguous-paths:
+    - '#/paths/~1api~1v1~1introductions~1drops~1{dropId}'
   operation-4xx-response:
     - '#/paths/~1api~1v1~1health/get/responses'
   struct:
@@ -43,6 +45,8 @@ docs/api/openapi.yaml:
     - >-
       #/paths/~1api~1v1~1connections/post/requestBody/content/application~1json/schema/properties/message/nullable
     - >-
+      #/paths/~1api~1v1~1prompts~1current~1response/post/requestBody/content/application~1json/schema/properties/mediaUrl/nullable
+    - >-
       #/paths/~1api~1v1~1prompts~1{promptId}~1respond/post/requestBody/content/application~1json/schema/properties/text/nullable
     - >-
       #/paths/~1api~1v1~1prompts~1{promptId}~1respond/post/requestBody/content/application~1json/schema/properties/audioUrl/nullable
@@ -76,9 +80,11 @@ docs/api/openapi.yaml:
       #/paths/~1admin~1verification~1{verificationId}~1approve/put/requestBody/content/application~1json/schema/properties/note/nullable
     - '#/components/schemas/PaginationMeta/properties/cursor/nullable'
     - '#/components/schemas/PaginationMeta/properties/total/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/habitConsistency/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/habitOverlap/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/promptResonance/nullable'
     - '#/components/schemas/ScoreBreakdown/properties/weeklyRhythm/nullable'
     - '#/components/schemas/ScoreBreakdown/properties/consistencyScore/nullable'
-    - '#/components/schemas/ScoreBreakdown/properties/promptResonance/nullable'
     - '#/components/schemas/ScoreBreakdown/properties/settlementIntentV2/nullable'
     - '#/components/schemas/ScoreBreakdown/properties/familyStyle/nullable'
     - '#/components/schemas/ScoreBreakdown/properties/eventCoAttendance/nullable'
@@ -150,6 +156,18 @@ docs/api/openapi.yaml:
       #/paths/~1admin~1flags~1{flagId}/put/requestBody/content/application~1json/schema
     - >-
       #/paths/~1admin~1payment~1refund/post/requestBody/content/application~1json/example/userId
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/0
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/1
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/2
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/0
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/1
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/2
     - >-
       #/paths/~1api~1v1~1auth~1email~1verify/post/requestBody/content/application~1json/example/token
     - >-

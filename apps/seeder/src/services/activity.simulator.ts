@@ -16,7 +16,7 @@ function randomFrom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)]!;
 }
 
-type Action = 'send_connection' | 'respond_to_intro' | 'log_habit' | 'post_in_group' | 'save_profile' | 'rsvp_event';
+type Action = 'send_connection' | 'respond_to_intro' | 'log_habit' | 'post_in_group' | 'save_profile' | 'rsvp_event' | 'early_access_drop' | 'unlock_drop';
 
 const ALL_ACTIONS: Action[] = [
   'send_connection',
@@ -25,6 +25,8 @@ const ALL_ACTIONS: Action[] = [
   'post_in_group',
   'save_profile',
   'rsvp_event',
+  'early_access_drop',
+  'unlock_drop',
 ];
 
 const GROUP_POST_TEXTS = [
@@ -174,6 +176,46 @@ async function performAction(
       await client.post(`/api/v1/events/${event.id}/rsvp`, {}, asUser(userId)).catch(() => {
         // Already RSVPed is fine
       });
+      break;
+    }
+
+    case 'early_access_drop': {
+      // Find a LIVE or SCHEDULED drop the user has curated intros in
+      const intro = await prisma.introduction.findFirst({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          drop: { status: { in: ['LIVE', 'SCHEDULED'] } },
+        },
+        select: { dropId: true },
+      });
+      if (!intro) break;
+      // Non-fatal — user may lack sufficient diamonds
+      await client.post(
+        `/api/v1/introductions/drops/${intro.dropId}/early-access`,
+        {},
+        asUser(userId),
+      ).catch(() => { /* insufficient diamonds is fine */ });
+      break;
+    }
+
+    case 'unlock_drop': {
+      // Find a drop the user has already early-accessed (viewedEarlyAt set)
+      const earlyIntro = await prisma.introduction.findFirst({
+        where: {
+          OR: [{ userAId: userId }, { userBId: userId }],
+          viewedEarlyAt: { not: null },
+          unlockedEarlyAt: null, // Not yet fully unlocked
+          drop: { status: { in: ['LIVE', 'SCHEDULED'] } },
+        },
+        select: { dropId: true },
+      });
+      if (!earlyIntro) break;
+      // Non-fatal — user may lack sufficient diamonds
+      await client.post(
+        `/api/v1/introductions/drops/${earlyIntro.dropId}/unlock`,
+        {},
+        asUser(userId),
+      ).catch(() => { /* insufficient diamonds is fine */ });
       break;
     }
   }

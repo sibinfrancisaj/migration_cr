@@ -6,5 +6,10 @@ export const signalsRouter = Router();
 
 signalsRouter.use(requireAuth);
 
-/** GET /api/v1/signals — engagement metrics for the authenticated user */
+// Static sub-routes registered before parameterised paths
+signalsRouter.get('/week',         signalsController.getWeek);
+signalsRouter.get('/action-queue', signalsController.getActionQueue);
+signalsRouter.get('/momentum',     signalsController.getMomentum);
+
+/** GET /api/v1/signals — legacy engagement metrics */
 signalsRouter.get('/', signalsController.get);

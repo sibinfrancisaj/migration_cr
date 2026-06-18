@@ -3,19 +3,22 @@ import { createApp } from '../../../app.js';
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
 
-const mockListSavedProfiles  = jest.fn();
-const mockSaveProfile        = jest.fn();
-const mockUpdateSavedProfile = jest.fn();
-const mockUnsaveProfile      = jest.fn();
+const mockListSavedProfiles    = jest.fn();
+const mockSaveProfile          = jest.fn();
+const mockUpdateSavedProfile   = jest.fn();
+const mockUnsaveProfile        = jest.fn();
+const mockCompareSavedProfiles = jest.fn();
 
 jest.mock('@abroad-matrimony/saved-profiles', () => ({
   listSavedProfiles:         (...a: unknown[]) => mockListSavedProfiles(...a),
   saveProfile:               (...a: unknown[]) => mockSaveProfile(...a),
   updateSavedProfile:        (...a: unknown[]) => mockUpdateSavedProfile(...a),
   unsaveProfile:             (...a: unknown[]) => mockUnsaveProfile(...a),
+  compareSavedProfiles:      (...a: unknown[]) => mockCompareSavedProfiles(...a),
   SavedProfileNotFoundError: class extends Error { constructor() { super('NOT_FOUND');     this.name = 'SavedProfileNotFoundError'; } },
   AlreadySavedError:         class extends Error { constructor() { super('ALREADY_SAVED'); this.name = 'AlreadySavedError'; } },
   SaveSelfError:             class extends Error { constructor() { super('SAVE_SELF');     this.name = 'SaveSelfError'; } },
+  ProfileNotSavedError:      class extends Error { constructor() { super('PROFILE_NOT_SAVED'); this.name = 'ProfileNotSavedError'; } },
 }));
 
 jest.mock('@abroad-matrimony/auth', () => ({
@@ -110,6 +113,7 @@ const savedMock = jest.requireMock('@abroad-matrimony/saved-profiles') as any;
 const SavedProfileNotFoundError = savedMock.SavedProfileNotFoundError as typeof Error;
 const AlreadySavedError         = savedMock.AlreadySavedError         as typeof Error;
 const SaveSelfError             = savedMock.SaveSelfError             as typeof Error;
+const ProfileNotSavedError      = savedMock.ProfileNotSavedError      as typeof Error;
 
 const app = createApp();
 
@@ -265,5 +269,109 @@ describe('DELETE /api/v1/saved/:savedUserId', () => {
   it('returns 400 when savedUserId is not a UUID', async () => {
     const res = await request(app).delete('/api/v1/saved/not-a-uuid');
     expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/v1/saved/:savedUserId/note ──────────────────────────────────────
+
+const ANOTHER_USER_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+
+describe('POST /api/v1/saved/:savedUserId/note', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with updated DTO after note saved', async () => {
+    const updated = { ...SAVED_DTO, notes: 'Great match potential' };
+    mockUpdateSavedProfile.mockResolvedValue(updated);
+
+    const res = await request(app)
+      .post(`/api/v1/saved/${SAVED_USER_ID}/note`)
+      .send({ notes: 'Great match potential' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.notes).toBe('Great match potential');
+    expect(mockUpdateSavedProfile).toHaveBeenCalledWith(USER_ID, SAVED_USER_ID, { notes: 'Great match potential' });
+  });
+
+  it('returns 400 when notes field is missing', async () => {
+    const res = await request(app)
+      .post(`/api/v1/saved/${SAVED_USER_ID}/note`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when notes exceeds 500 characters', async () => {
+    const res = await request(app)
+      .post(`/api/v1/saved/${SAVED_USER_ID}/note`)
+      .send({ notes: 'x'.repeat(501) });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when saved profile does not exist', async () => {
+    mockUpdateSavedProfile.mockRejectedValueOnce(new SavedProfileNotFoundError());
+
+    const res = await request(app)
+      .post(`/api/v1/saved/${SAVED_USER_ID}/note`)
+      .send({ notes: 'Some note' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when savedUserId is not a UUID', async () => {
+    const res = await request(app)
+      .post('/api/v1/saved/not-a-uuid/note')
+      .send({ notes: 'Some note' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── GET /api/v1/saved/compare?ids=... ────────────────────────────────────────
+
+const COMPARE_DTO = [
+  { savedUserId: SAVED_USER_ID, label: 'INTERESTED', notes: null, profile: { name: 'Alice' }, realLifeAnswers: [] },
+  { savedUserId: ANOTHER_USER_ID, label: 'MAYBE', notes: 'Possible', profile: { name: 'Bob' }, realLifeAnswers: [] },
+];
+
+describe('GET /api/v1/saved/compare', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with comparison data for 2 profiles', async () => {
+    mockCompareSavedProfiles.mockResolvedValue(COMPARE_DTO);
+
+    const res = await request(app)
+      .get(`/api/v1/saved/compare?ids=${SAVED_USER_ID},${ANOTHER_USER_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(2);
+    expect(mockCompareSavedProfiles).toHaveBeenCalledWith(USER_ID, [SAVED_USER_ID, ANOTHER_USER_ID]);
+  });
+
+  it('returns 400 when only 1 id is provided', async () => {
+    const res = await request(app).get(`/api/v1/saved/compare?ids=${SAVED_USER_ID}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when more than 3 ids are provided', async () => {
+    const ids = [SAVED_USER_ID, ANOTHER_USER_ID, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'ffffffff-ffff-ffff-ffff-ffffffffffff'];
+    const res = await request(app).get(`/api/v1/saved/compare?ids=${ids.join(',')}`);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when ids param is missing', async () => {
+    const res = await request(app).get('/api/v1/saved/compare');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when an id is not a valid UUID', async () => {
+    const res = await request(app).get(`/api/v1/saved/compare?ids=${SAVED_USER_ID},not-a-uuid`);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when a profile is not in the saved list', async () => {
+    mockCompareSavedProfiles.mockRejectedValueOnce(new ProfileNotSavedError(ANOTHER_USER_ID));
+
+    const res = await request(app)
+      .get(`/api/v1/saved/compare?ids=${SAVED_USER_ID},${ANOTHER_USER_ID}`);
+    expect(res.status).toBe(404);
   });
 });

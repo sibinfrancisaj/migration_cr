@@ -461,6 +461,68 @@ AI is always optional: `isAiConfigured()` returns false when `OPENAI_API_KEY` is
 
 ---
 
+### ADR-018 · ProfileView Model for Explicit View Logging
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The Signals Dashboard (Phase 14) requires per-user daily and weekly profile view counts for momentum charts, weekly metrics, and action-queue "complete your profile" nudges. The existing `Profile` model has no view tracking.
+
+**Decision:** New `ProfileView` model: `{ id, viewerId, viewedId, viewedAt }`. Composite indexes on `[viewedId, viewedAt]` and `[viewerId, viewedAt]` for efficient time-range counts.
+
+View logging is **explicit**: Flutter client calls `POST /api/v1/profiles/:id/view` when a user genuinely views a profile card. This avoids counting admin fetches, bot traffic, or repeat refreshes. Service-layer deduplication: same viewer/viewed pair within 1 hour → no new row (prevents spam).
+
+**Consequences:** Slightly more client complexity (client must fire the POST), but better signal quality. The 1-hour deduplication window is configurable as a constant. `ProfileView` table grows at O(DAU × avg_views_per_session) — at 10k DAU with 5 views/session: ~50k rows/day, manageable. Old rows can be pruned after 90 days.
+
+---
+
+### ADR-019 · Trust Score — 6-Layer Composite (Phase 15)
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The original trust spec referenced third-party work/education verification services. These are out of scope for MVP. A trust score is still needed to signal profile credibility to other users.
+
+**Decision:** 6 layers, all achievable without third-party services:
+
+| Layer | Points | Data source |
+|-------|--------|-------------|
+| PHONE_VERIFIED | 20 | `User.isPhoneVerified` |
+| PROFILE_COMPLETE | 20 | `Profile.completionScore >= 80` |
+| PHOTO_UPLOADED | 15 | `Media.count(userId) > 0` |
+| ID_VERIFIED | 25 | `Profile.verificationStatus == APPROVED` (admin-reviewed) |
+| EMAIL_VERIFIED | 10 | `User.isEmailVerified` |
+| VOICE_INTRO | 10 | `Profile.voiceIntroTranscript != null` |
+
+Score is computed and persisted to `Profile.trustScore` on every `GET /api/v1/trust` call (not on a background job) — keeps the displayed score always fresh.
+
+Privacy settings stored as `Profile.privacySettings Json?` (partial-merge semantics) rather than individual columns — avoids repeated schema migrations as visibility controls evolve.
+
+**Consequences:** Work/education verification can be added as future layers (25 pts each) without changing the score structure. The `Profile.trustScore` column serves as a denormalized cache used in ALG-009 (trust layer depth matching dimension).
+
+---
+
+### ADR-020 · Algorithm v2 — Optional Dimensions + Tuning Application (Phase 16)
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The Phase 4 scoring engine has 9 core dimensions. Phases 9, 12, and 16 add habits, prompt resonance, and 5 new v2 dimensions. The `MatchTuning` model (Phase 7b) stored per-user dimension weight multipliers but they were never applied to the discover feed.
+
+**Decision:**
+
+**Dimension architecture:** All new dimensions are **opt-in** — they only contribute to the score when *both* users have the relevant data. When a new dimension is present, a corresponding fraction of the total weight allocation is reserved and the core 9 dimensions scale down proportionally. This keeps `totalScore ∈ [0, 1]` and maintains full backward compatibility.
+
+Weight budget by phase:
+```
+Core (9 dims):     1.00  (baseline)
+HABIT-008:        -0.05  → coreScale 0.95
+PROMPT-007:       -0.02  → coreScale 0.93
+v2 dims (max 5):  -0.10  → coreScale min 0.83
+```
+
+**Tuning application:** `MatchTuning` weights are now applied at **query time** (in `getDiscoveryFeed`), not at score-compute time. `applyTuningToBreakdown(breakdown, weights)` takes a stored `ScoreBreakdown` and computes a personalised total by applying dimension multipliers and renormalising to sum-to-1. The canonical `totalScore` in the DB is unchanged — only the `personalizedScore` field in `DiscoveryItemDto` reflects tuning.
+
+**Simplified tuning UI (ALG-011):** `POST /api/v1/profile/match-tuning` accepts `{ settlementImportance, familyImportance }` (1–5 ratings). Importance ratings map to multipliers: 1→0.5, 2→0.75, 3→1.0, 4→1.75, 5→2.5. Stored in the existing `MatchTuning` model under `settlementIntent` and `familyInvolvement` keys.
+
+**Consequences:** Personalized re-ranking is within-page only (the DB cursor pagination is still ordered by `totalScore`). Full global re-ranking would require applying tuning at the DB query layer (e.g. stored function) — deferred to a future phase. Tuning changes trigger a background BullMQ full rescore job (ALG-013) to update the stored `totalScore` with new dimension data over time.
+
+---
+
 ## 6. Security Architecture
 
 ### Middleware order of operations (fixed — do not reorder)

@@ -171,6 +171,8 @@ export interface DiscoveryItemDto {
   verificationStatus: VerificationStatus;
   photoUrl?: string;
   totalScore: number;
+  /** Personalised score after applying the requesting user's tuning weights. Same as totalScore when no tuning is active. */
+  personalizedScore: number;
   scoreBreakdown: ScoreBreakdown;
 }
 
@@ -198,6 +200,22 @@ export interface ScoreBreakdown {
   groupMembership: number;
   languageMatch: number;
   faithAlignment: number;
+  /** Optional — only present when both users have habit logs (HABIT-008). */
+  habitConsistency?: number;
+  /** Optional — fraction of habits both users share (HABIT-008). */
+  habitOverlap?: number;
+  /** Optional — prompt resonance signal: 1.0 mutual, 0.5 one-way, 0.0 none (PROMPT-007). */
+  promptResonance?: number;
+  /** Optional — Jaccard of PARENTS_INVOLVEMENT + FAMILY_STRUCTURE answers (ALG-004). */
+  familyInvolvement?: number;
+  /** Optional — 1.0 if both attended any shared event, else 0.0 (ALG-006). */
+  eventCoAttendance?: number;
+  /** Optional — both have voice intro: 1.0; one has: 0.5; neither: present=0.0 (ALG-007). */
+  communicationStyle?: number;
+  /** Optional — normalised recent profile view count, capped at 10 views = 1.0 (ALG-008). */
+  profileViewMomentum?: number;
+  /** Optional — average trust score / 100 for both users (ALG-009). */
+  trustLayerDepth?: number;
 }
 
 export interface ConnectionDto {

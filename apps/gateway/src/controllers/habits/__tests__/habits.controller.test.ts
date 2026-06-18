@@ -3,18 +3,26 @@ import { createApp } from '../../../app.js';
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
 
-const mockListHabits        = jest.fn();
-const mockLogHabit          = jest.fn();
-const mockDeleteHabitLog    = jest.fn();
-const mockGetHabitStreak    = jest.fn();
-const mockAddHabitReflection = jest.fn();
+const mockListHabits           = jest.fn();
+const mockLogHabit             = jest.fn();
+const mockDeleteHabitLog       = jest.fn();
+const mockGetHabitStreak       = jest.fn();
+const mockAddHabitReflection   = jest.fn();
+const mockGetAllHabitsWithStreaks = jest.fn();
+const mockGetHabitHistory      = jest.fn();
+const mockGetWeeklyReflection  = jest.fn();
+const mockUpdateSummaryVisibility = jest.fn();
 
 jest.mock('@abroad-matrimony/habits', () => ({
-  listHabits:           (...a: unknown[]) => mockListHabits(...a),
-  logHabit:             (...a: unknown[]) => mockLogHabit(...a),
-  deleteHabitLog:       (...a: unknown[]) => mockDeleteHabitLog(...a),
-  getHabitStreak:       (...a: unknown[]) => mockGetHabitStreak(...a),
-  addHabitReflection:   (...a: unknown[]) => mockAddHabitReflection(...a),
+  listHabits:                (...a: unknown[]) => mockListHabits(...a),
+  logHabit:                  (...a: unknown[]) => mockLogHabit(...a),
+  deleteHabitLog:            (...a: unknown[]) => mockDeleteHabitLog(...a),
+  getHabitStreak:            (...a: unknown[]) => mockGetHabitStreak(...a),
+  addHabitReflection:        (...a: unknown[]) => mockAddHabitReflection(...a),
+  getAllHabitsWithStreaks:    (...a: unknown[]) => mockGetAllHabitsWithStreaks(...a),
+  getHabitHistory:           (...a: unknown[]) => mockGetHabitHistory(...a),
+  getWeeklyReflection:       (...a: unknown[]) => mockGetWeeklyReflection(...a),
+  updateSummaryVisibility:   (...a: unknown[]) => mockUpdateSummaryVisibility(...a),
   HabitLogNotFoundError:  class extends Error { constructor() { super('NOT_FOUND'); this.name = 'HabitLogNotFoundError'; } },
   HabitAlreadyLoggedError: class extends Error { constructor() { super('ALREADY_LOGGED'); this.name = 'HabitAlreadyLoggedError'; } },
 }));
@@ -323,5 +331,182 @@ describe('POST /api/v1/habits/reflection', () => {
       .post('/api/v1/habits/reflection')
       .send({ habitKey: HABIT_KEY, reflection: 'Felt great!' });
     expect(res.status).toBe(404);
+  });
+});
+
+// ── GET /api/v1/habits/streaks ─────────────────────────────────────────────────
+
+const STREAK_WITH_DOTS_DTO = {
+  habitKey: HABIT_KEY,
+  label: 'Drink water',
+  currentStreak: 3,
+  longestStreak: 7,
+  totalCompleted: 10,
+  lastLoggedDate: LOG_DATE,
+  thisWeekDots: [true, true, false, true, false, false, false],
+};
+
+describe('GET /api/v1/habits/streaks', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with all habits and weekly dots', async () => {
+    mockGetAllHabitsWithStreaks.mockResolvedValue([STREAK_WITH_DOTS_DTO]);
+
+    const res = await request(app).get('/api/v1/habits/streaks');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].thisWeekDots).toHaveLength(7);
+    expect(res.body.meta.total).toBe(1);
+    expect(mockGetAllHabitsWithStreaks).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 200 with empty array when no logs yet', async () => {
+    mockGetAllHabitsWithStreaks.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/v1/habits/streaks');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetAllHabitsWithStreaks.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/habits/streaks');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/habits/:habitKey/history ──────────────────────────────────────
+
+const HISTORY_WEEK_DTO = {
+  weekStartDate: '2025-01-06',
+  completedDays: 4,
+  dailyDots: [true, true, false, true, false, false, true],
+};
+
+describe('GET /api/v1/habits/:habitKey/history', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with weekly history', async () => {
+    mockGetHabitHistory.mockResolvedValue([HISTORY_WEEK_DTO]);
+
+    const res = await request(app).get(`/api/v1/habits/${HABIT_KEY}/history`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data[0].weekStartDate).toBe('2025-01-06');
+    expect(mockGetHabitHistory).toHaveBeenCalledWith(USER_ID, HABIT_KEY, 8);
+  });
+
+  it('passes custom weeks param', async () => {
+    mockGetHabitHistory.mockResolvedValue([]);
+
+    const res = await request(app).get(`/api/v1/habits/${HABIT_KEY}/history?weeks=4`);
+
+    expect(res.status).toBe(200);
+    expect(mockGetHabitHistory).toHaveBeenCalledWith(USER_ID, HABIT_KEY, 4);
+  });
+
+  it('returns 400 for invalid habitKey', async () => {
+    const res = await request(app).get('/api/v1/habits/INVALID/history');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 for invalid weeks (> 52)', async () => {
+    const res = await request(app).get(`/api/v1/habits/${HABIT_KEY}/history?weeks=100`);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetHabitHistory.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get(`/api/v1/habits/${HABIT_KEY}/history`);
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── GET /api/v1/habits/weekly-reflection ──────────────────────────────────────
+
+const REFLECTION_DTO = {
+  insight: 'You are most consistent on Mondays.',
+  whyItMatters: 'Partners with consistent habits show higher long-term compatibility.',
+  weekStartDate: '2025-01-06',
+};
+
+describe('GET /api/v1/habits/weekly-reflection', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with reflection DTO', async () => {
+    mockGetWeeklyReflection.mockResolvedValue(REFLECTION_DTO);
+
+    const res = await request(app).get('/api/v1/habits/weekly-reflection');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.insight).toBeTruthy();
+    expect(res.body.data.weekStartDate).toBeTruthy();
+    expect(mockGetWeeklyReflection).toHaveBeenCalledWith(USER_ID);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetWeeklyReflection.mockRejectedValueOnce(new Error('cache error'));
+
+    const res = await request(app).get('/api/v1/habits/weekly-reflection');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── PUT /api/v1/habits/summary-visibility ─────────────────────────────────────
+
+describe('PUT /api/v1/habits/summary-visibility', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 when visibility set to true', async () => {
+    mockUpdateSummaryVisibility.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .put('/api/v1/habits/summary-visibility')
+      .send({ visible: true });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.visible).toBe(true);
+    expect(mockUpdateSummaryVisibility).toHaveBeenCalledWith(USER_ID, true);
+  });
+
+  it('returns 200 when visibility set to false', async () => {
+    mockUpdateSummaryVisibility.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .put('/api/v1/habits/summary-visibility')
+      .send({ visible: false });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.visible).toBe(false);
+  });
+
+  it('returns 400 when visible field is missing', async () => {
+    const res = await request(app)
+      .put('/api/v1/habits/summary-visibility')
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when visible is not a boolean', async () => {
+    const res = await request(app)
+      .put('/api/v1/habits/summary-visibility')
+      .send({ visible: 'yes' });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockUpdateSummaryVisibility.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app)
+      .put('/api/v1/habits/summary-visibility')
+      .send({ visible: true });
+    expect(res.status).toBe(500);
   });
 });

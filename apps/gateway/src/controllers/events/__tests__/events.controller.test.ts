@@ -3,23 +3,32 @@ import { createApp } from '../../../app.js';
 
 // ── Service mocks ──────────────────────────────────────────────────────────────
 
-const mockListEvents       = jest.fn();
-const mockGetEvent         = jest.fn();
-const mockRsvpToEvent      = jest.fn();
-const mockCancelRsvp       = jest.fn();
-const mockGetEventAttendees = jest.fn();
+const mockListEvents          = jest.fn();
+const mockGetEvent            = jest.fn();
+const mockRsvpToEvent         = jest.fn();
+const mockCancelRsvp          = jest.fn();
+const mockGetEventAttendees   = jest.fn();
+const mockGetEventCalendar    = jest.fn();
+const mockGetCoAttendancePairs = jest.fn();
 
 jest.mock('@abroad-matrimony/gatherings', () => ({
-  listEvents:           (...a: unknown[]) => mockListEvents(...a),
-  getEvent:             (...a: unknown[]) => mockGetEvent(...a),
-  rsvpToEvent:          (...a: unknown[]) => mockRsvpToEvent(...a),
-  cancelRsvp:           (...a: unknown[]) => mockCancelRsvp(...a),
-  getEventAttendees:    (...a: unknown[]) => mockGetEventAttendees(...a),
-  EventNotFoundError:   class extends Error { constructor() { super('NOT_FOUND');     this.name = 'EventNotFoundError'; } },
-  AlreadyRsvpdError:    class extends Error { constructor() { super('ALREADY_RSVPD'); this.name = 'AlreadyRsvpdError'; } },
-  NotRsvpdError:        class extends Error { constructor() { super('NOT_RSVPD');     this.name = 'NotRsvpdError'; } },
-  EventFullError:       class extends Error { constructor() { super('EVENT_FULL');    this.name = 'EventFullError'; } },
-  EventNotUpcomingError: class extends Error { constructor() { super('NOT_UPCOMING'); this.name = 'EventNotUpcomingError'; } },
+  listEvents:             (...a: unknown[]) => mockListEvents(...a),
+  getEvent:               (...a: unknown[]) => mockGetEvent(...a),
+  rsvpToEvent:            (...a: unknown[]) => mockRsvpToEvent(...a),
+  cancelRsvp:             (...a: unknown[]) => mockCancelRsvp(...a),
+  getEventAttendees:      (...a: unknown[]) => mockGetEventAttendees(...a),
+  getEventCalendar:       (...a: unknown[]) => mockGetEventCalendar(...a),
+  getCoAttendancePairs:   (...a: unknown[]) => mockGetCoAttendancePairs(...a),
+  EventNotFoundError:     class extends Error { constructor() { super('NOT_FOUND');     this.name = 'EventNotFoundError'; } },
+  AlreadyRsvpdError:      class extends Error { constructor() { super('ALREADY_RSVPD'); this.name = 'AlreadyRsvpdError'; } },
+  NotRsvpdError:          class extends Error { constructor() { super('NOT_RSVPD');     this.name = 'NotRsvpdError'; } },
+  EventFullError:         class extends Error { constructor() { super('EVENT_FULL');    this.name = 'EventFullError'; } },
+  EventNotUpcomingError:  class extends Error { constructor() { super('NOT_UPCOMING'); this.name = 'EventNotUpcomingError'; } },
+}));
+
+const mockEnqueueScoreRecompute = jest.fn();
+jest.mock('@abroad-matrimony/matching', () => ({
+  enqueueScoreRecompute: (...a: unknown[]) => mockEnqueueScoreRecompute(...a),
 }));
 
 jest.mock('@abroad-matrimony/auth', () => ({
@@ -138,7 +147,10 @@ describe('GET /api/v1/events', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data).toHaveLength(1);
     expect(res.body.meta.total).toBe(1);
-    expect(mockListEvents).toHaveBeenCalledWith(USER_ID, undefined);
+    expect(mockListEvents).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ upcoming: true }),
+    );
   });
 
   it('returns 200 filtered by tag', async () => {
@@ -147,11 +159,31 @@ describe('GET /api/v1/events', () => {
     const res = await request(app).get('/api/v1/events?tag=SOCIAL');
 
     expect(res.status).toBe(200);
-    expect(mockListEvents).toHaveBeenCalledWith(USER_ID, 'SOCIAL');
+    expect(mockListEvents).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ tag: 'SOCIAL' }),
+    );
+  });
+
+  it('passes limit to service when provided', async () => {
+    mockListEvents.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/v1/events?limit=5');
+
+    expect(res.status).toBe(200);
+    expect(mockListEvents).toHaveBeenCalledWith(
+      USER_ID,
+      expect.objectContaining({ limit: 5 }),
+    );
   });
 
   it('returns 400 when tag is not a valid EventTag', async () => {
     const res = await request(app).get('/api/v1/events?tag=INVALID_TAG');
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when limit exceeds 100', async () => {
+    const res = await request(app).get('/api/v1/events?limit=200');
     expect(res.status).toBe(400);
   });
 });
@@ -271,5 +303,95 @@ describe('GET /api/v1/events/:eventId/attendees', () => {
 
     const res = await request(app).get(`/api/v1/events/${EVENT_ID}/attendees`);
     expect(res.status).toBe(404);
+  });
+});
+
+// ── GET /api/v1/events/calendar (EVENT-006) ───────────────────────────────────
+
+const MILESTONE = {
+  type: 'INTRO_DROP',
+  title: 'Weekly Introduction Drop',
+  scheduledAt: '2026-06-08T09:00:00.000Z',
+};
+
+describe('GET /api/v1/events/calendar', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns 200 with milestone list', async () => {
+    mockGetEventCalendar.mockResolvedValue([MILESTONE]);
+
+    const res = await request(app).get('/api/v1/events/calendar');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0].type).toBe('INTRO_DROP');
+    expect(res.body.meta.total).toBe(1);
+    expect(mockGetEventCalendar).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 200 with empty array when no milestones', async () => {
+    mockGetEventCalendar.mockResolvedValue([]);
+
+    const res = await request(app).get('/api/v1/events/calendar');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+  });
+
+  it('returns 500 when service throws', async () => {
+    mockGetEventCalendar.mockRejectedValueOnce(new Error('DB error'));
+
+    const res = await request(app).get('/api/v1/events/calendar');
+    expect(res.status).toBe(500);
+  });
+});
+
+// ── POST /admin/events/:eventId/process-attendance (EVENT-007) ────────────────
+
+describe('POST /admin/events/:eventId/process-attendance', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockEnqueueScoreRecompute.mockResolvedValue(undefined);
+  });
+
+  it('returns 200 with pairsFound when attendees exist', async () => {
+    mockGetCoAttendancePairs.mockResolvedValue([
+      { userAId: 'user-a', userBId: 'user-b' },
+      { userAId: 'user-a', userBId: 'user-c' },
+    ]);
+
+    const res = await request(app)
+      .post(`/admin/events/${EVENT_ID}/process-attendance`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.data.pairsFound).toBe(2);
+    expect(mockEnqueueScoreRecompute).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 200 with pairsFound=0 and does not enqueue when no pairs', async () => {
+    mockGetCoAttendancePairs.mockResolvedValue([]);
+
+    const res = await request(app)
+      .post(`/admin/events/${EVENT_ID}/process-attendance`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.pairsFound).toBe(0);
+    expect(mockEnqueueScoreRecompute).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when event does not exist', async () => {
+    mockGetCoAttendancePairs.mockRejectedValueOnce(new EventNotFoundError());
+
+    const res = await request(app)
+      .post(`/admin/events/${EVENT_ID}/process-attendance`);
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 when eventId is not a UUID', async () => {
+    const res = await request(app)
+      .post('/admin/events/not-a-uuid/process-attendance');
+    expect(res.status).toBe(400);
   });
 });

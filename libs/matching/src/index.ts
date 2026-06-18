@@ -1,5 +1,9 @@
 // Pure scoring algorithm
-export { computeMatchScore, SCORE_WEIGHTS, tokenize, jaccardSimilarity, answerSimilarity, recencyScore, ageInYears } from './scoring.service.js';
+export {
+  computeMatchScore, SCORE_WEIGHTS, HABIT_WEIGHTS, PROMPT_RESONANCE_WEIGHT, V2_DIM_WEIGHTS,
+  applyTuningToBreakdown,
+  tokenize, jaccardSimilarity, answerSimilarity, recencyScore, ageInYears,
+} from './scoring.service.js';
 export type { UserScoringData, ScoreResult } from './scoring.service.js';
 
 // DB persistence + orchestration
@@ -17,5 +21,12 @@ export { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge } from './disc
 export type { DiscoverOptions } from './discover.service.js';
 
 // Match tuning
-export { getMatchTuning, setMatchTuning } from './match-tuning.service.js';
-export type { MatchTuningDto, MatchWeights } from './match-tuning.service.js';
+export {
+  getMatchTuning, setMatchTuning,
+  getTuningAsQuestions, setTuningFromQuestions, computeTuningImpact,
+  importanceToMultiplier, multiplierToImportance,
+} from './match-tuning.service.js';
+export type {
+  MatchTuningDto, MatchWeights,
+  TuningQuestionsDto, TuningImpactDto,
+} from './match-tuning.service.js';

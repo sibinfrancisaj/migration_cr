@@ -6,14 +6,16 @@ import {
   rsvpToEvent,
   cancelRsvp,
   getEventAttendees,
+  getEventCalendar,
+  getCoAttendancePairs,
   EventNotFoundError,
   AlreadyRsvpdError,
   NotRsvpdError,
   EventFullError,
   EventNotUpcomingError,
 } from '@abroad-matrimony/gatherings';
+import { enqueueScoreRecompute } from '@abroad-matrimony/matching';
 import type { ApiResponse } from '@abroad-matrimony/shared';
-import { EventTag } from '@abroad-matrimony/shared';
 import { AppError } from '../../middleware/error.middleware.js';
 import { HTTP_STATUS, ERROR_CODES } from '../../constants/index.js';
 import { EVENT_ERRORS, EVENT_MESSAGES } from '../../constants/events.constants.js';
@@ -52,16 +54,71 @@ export const eventsController = {
     const log = createChildLogger({ module: 'gateway:events:list', requestId: req.requestId });
     try {
       const userId = req.user!.id;
-      const { tag } = req.query as unknown as ListEventsQuery;
+      const { tag, limit, upcoming } = req.query as unknown as ListEventsQuery;
 
-      log.info('List events', { userId, tag });
+      log.info('List events', { userId, tag, limit, upcoming });
 
-      const events = await listEvents(userId, tag as EventTag | undefined);
+      const events = await listEvents(userId, { tag, limit, upcoming });
 
       const body: ApiResponse<typeof events> = {
         success: true,
         data: events,
         meta: { total: events.length },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapEventError(err, next);
+    }
+  },
+
+  /**
+   * GET /api/v1/events/calendar
+   * Returns this week's milestone schedule (EVENT-006).
+   */
+  async calendar(_req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:events:calendar', requestId: _req.requestId });
+    try {
+      log.info('Get event calendar');
+
+      const milestones = await getEventCalendar();
+
+      const body: ApiResponse<typeof milestones> = {
+        success: true,
+        data: milestones,
+        meta: { total: milestones.length, message: EVENT_MESSAGES.CALENDAR_RETRIEVED },
+        requestId: _req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * POST /admin/events/:eventId/process-attendance
+   * Records co-attending user pairs and enqueues a batch score recompute (EVENT-007).
+   */
+  async processAttendance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:events:processAttendance', requestId: req.requestId });
+    try {
+      const { eventId } = req.params as unknown as EventIdParams;
+      log.info('Process post-event co-attendance', { eventId });
+
+      const pairs = await getCoAttendancePairs(eventId);
+
+      // Enqueue one global score recompute — picks up all stale pairs including co-attendees
+      if (pairs.length > 0) {
+        const { getEnv } = await import('@abroad-matrimony/config');
+        const env = getEnv();
+        await enqueueScoreRecompute(env.REDIS_URL, { requestedBy: req.user?.id, force: false });
+        log.info('processAttendance — recompute enqueued', { eventId, pairCount: pairs.length });
+      }
+
+      const body: ApiResponse<{ pairsFound: number }> = {
+        success: true,
+        data: { pairsFound: pairs.length },
+        meta: { message: EVENT_MESSAGES.ATTENDANCE_PROCESSED },
         requestId: req.requestId,
       };
       res.status(HTTP_STATUS.OK).json(body);

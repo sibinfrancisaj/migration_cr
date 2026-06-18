@@ -4,6 +4,9 @@ import {
   rsvpToEvent,
   cancelRsvp,
   getEventAttendees,
+  getEventCalendar,
+  getCoAttendancePairs,
+  generateWhyInvited,
   EventNotFoundError,
   AlreadyRsvpdError,
   NotRsvpdError,
@@ -14,12 +17,15 @@ import { EventStatus } from '@abroad-matrimony/shared';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
-const mockEventFindMany  = jest.fn();
+const mockEventFindMany   = jest.fn();
 const mockEventFindUnique = jest.fn();
-const mockEventRsvpFindMany  = jest.fn();
+const mockEventRsvpFindMany   = jest.fn();
 const mockEventRsvpFindUnique = jest.fn();
-const mockEventRsvpCreate    = jest.fn();
-const mockEventRsvpDelete    = jest.fn();
+const mockEventRsvpCreate     = jest.fn();
+const mockEventRsvpDelete     = jest.fn();
+const mockProfileFindUnique   = jest.fn();
+const mockGroupMemberFindMany = jest.fn();
+const mockWeeklyPromptFindMany = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -32,6 +38,15 @@ jest.mock('@abroad-matrimony/db', () => ({
       findUnique: (...a: unknown[]) => mockEventRsvpFindUnique(...a),
       create:     (...a: unknown[]) => mockEventRsvpCreate(...a),
       delete:     (...a: unknown[]) => mockEventRsvpDelete(...a),
+    },
+    profile: {
+      findUnique: (...a: unknown[]) => mockProfileFindUnique(...a),
+    },
+    groupMember: {
+      findMany: (...a: unknown[]) => mockGroupMemberFindMany(...a),
+    },
+    weeklyPrompt: {
+      findMany: (...a: unknown[]) => mockWeeklyPromptFindMany(...a),
     },
   },
 }));
@@ -75,14 +90,22 @@ function makeEvent(overrides: Partial<{
   };
 }
 
+// ── Shared mock setup helpers ─────────────────────────────────────────────────
+
+function setListEventsMocks(events = [makeEvent()], rsvpdIds: string[] = [], completionScore = 80): void {
+  mockEventFindMany.mockResolvedValue(events);
+  mockEventRsvpFindMany.mockResolvedValue(rsvpdIds.map(id => ({ eventId: id })));
+  mockProfileFindUnique.mockResolvedValue({ completionScore });
+  mockGroupMemberFindMany.mockResolvedValue([]);
+}
+
 // ── listEvents ─────────────────────────────────────────────────────────────────
 
 describe('listEvents', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('returns events with isRsvpd=true for events user has RSVP\'d', async () => {
-    mockEventFindMany.mockResolvedValue([makeEvent()]);
-    mockEventRsvpFindMany.mockResolvedValue([{ eventId: EVENT_ID }]);
+    setListEventsMocks([makeEvent()], [EVENT_ID]);
 
     const result = await listEvents(USER_ID);
 
@@ -92,26 +115,23 @@ describe('listEvents', () => {
   });
 
   it('returns isRsvpd=false when user has not RSVPd', async () => {
-    mockEventFindMany.mockResolvedValue([makeEvent()]);
-    mockEventRsvpFindMany.mockResolvedValue([]);
+    setListEventsMocks();
 
     const result = await listEvents(USER_ID);
     expect(result[0].isRsvpd).toBe(false);
   });
 
   it('returns empty array when no upcoming events', async () => {
-    mockEventFindMany.mockResolvedValue([]);
-    mockEventRsvpFindMany.mockResolvedValue([]);
+    setListEventsMocks([]);
 
     const result = await listEvents(USER_ID);
     expect(result).toEqual([]);
   });
 
   it('passes tag filter to prisma when provided', async () => {
-    mockEventFindMany.mockResolvedValue([]);
-    mockEventRsvpFindMany.mockResolvedValue([]);
+    setListEventsMocks([]);
 
-    await listEvents(USER_ID, 'SOCIAL' as any);
+    await listEvents(USER_ID, { tag: 'SOCIAL' as any });
 
     expect(mockEventFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -119,12 +139,44 @@ describe('listEvents', () => {
       }),
     );
   });
+
+  it('applies limit when provided', async () => {
+    setListEventsMocks([]);
+
+    await listEvents(USER_ID, { limit: 5 });
+
+    expect(mockEventFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ take: 5 }),
+    );
+  });
+
+  it('includes whyInvited in each event DTO', async () => {
+    setListEventsMocks([makeEvent({ tag: 'SOCIAL' })]);
+
+    const result = await listEvents(USER_ID);
+    expect(result[0].whyInvited).toBeTruthy();
+    expect(typeof result[0].whyInvited).toBe('string');
+  });
+
+  it('sets group-member whyInvited when user is in event group', async () => {
+    mockEventFindMany.mockResolvedValue([makeEvent({ groupId: 'grp-1' })]);
+    mockEventRsvpFindMany.mockResolvedValue([]);
+    mockProfileFindUnique.mockResolvedValue({ completionScore: 80 });
+    mockGroupMemberFindMany.mockResolvedValue([{ groupId: 'grp-1' }]);
+
+    const result = await listEvents(USER_ID);
+    expect(result[0].whyInvited).toContain("You're part of this community");
+  });
 });
 
 // ── getEvent ───────────────────────────────────────────────────────────────────
 
 describe('getEvent', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockProfileFindUnique.mockResolvedValue({ completionScore: 80 });
+    mockGroupMemberFindMany.mockResolvedValue([]);
+  });
 
   it('returns event with isRsvpd=true', async () => {
     mockEventFindUnique.mockResolvedValue(makeEvent());
@@ -134,6 +186,7 @@ describe('getEvent', () => {
 
     expect(result.id).toBe(EVENT_ID);
     expect(result.isRsvpd).toBe(true);
+    expect(result.whyInvited).toBeTruthy();
   });
 
   it('returns isRsvpd=false when not RSVPd', async () => {
@@ -286,5 +339,147 @@ describe('getEventAttendees', () => {
 
     const result = await getEventAttendees(EVENT_ID);
     expect(result).toHaveLength(0);
+  });
+});
+
+// ── generateWhyInvited ────────────────────────────────────────────────────────
+
+describe('generateWhyInvited()', () => {
+  const noGroups = new Set<string>();
+
+  it('returns group-member text when user is in the event group', () => {
+    const result = generateWhyInvited({ tag: null, groupId: 'grp-1' }, new Set(['grp-1']), 80);
+    expect(result).toContain("You're part of this community");
+  });
+
+  it('returns profile-completion nudge when completionScore < 50', () => {
+    const result = generateWhyInvited({ tag: null, groupId: null }, noGroups, 30);
+    expect(result).toContain('Complete your profile');
+  });
+
+  it('returns SOCIAL tag text', () => {
+    const result = generateWhyInvited({ tag: 'SOCIAL', groupId: null }, noGroups, 80);
+    expect(result).toContain('Indian diaspora');
+  });
+
+  it('returns SPIRITUAL tag text', () => {
+    const result = generateWhyInvited({ tag: 'SPIRITUAL', groupId: null }, noGroups, 80);
+    expect(result).toContain('faith journey');
+  });
+
+  it('returns PROFESSIONAL tag text', () => {
+    const result = generateWhyInvited({ tag: 'PROFESSIONAL', groupId: null }, noGroups, 80);
+    expect(result).toContain('career network');
+  });
+
+  it('returns default text for unknown tag', () => {
+    const result = generateWhyInvited({ tag: null, groupId: null }, noGroups, 80);
+    expect(result).toContain('diaspora community');
+  });
+});
+
+// ── getEventCalendar ──────────────────────────────────────────────────────────
+
+describe('getEventCalendar()', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('always includes INTRO_DROP and CHECK_IN milestones', async () => {
+    mockWeeklyPromptFindMany.mockResolvedValue([]);
+    mockEventFindMany.mockResolvedValue([]);
+
+    const result = await getEventCalendar(new Date('2026-06-01T08:00:00Z'));
+
+    const types = result.map(m => m.type);
+    expect(types).toContain('INTRO_DROP');
+    expect(types).toContain('CHECK_IN');
+  });
+
+  it('includes EVENT milestones for upcoming events in next 7 days', async () => {
+    mockWeeklyPromptFindMany.mockResolvedValue([]);
+    mockEventFindMany.mockResolvedValue([
+      { id: 'evt-1', title: 'London Brunch', startAt: new Date('2026-06-03T12:00:00Z') },
+    ]);
+
+    const result = await getEventCalendar(new Date('2026-06-01T08:00:00Z'));
+
+    const eventMilestones = result.filter(m => m.type === 'EVENT');
+    expect(eventMilestones).toHaveLength(1);
+    expect(eventMilestones[0].title).toBe('London Brunch');
+    expect(eventMilestones[0].eventId).toBe('evt-1');
+  });
+
+  it('includes PROMPT_OPENS and PROMPT_CLOSES for active prompts', async () => {
+    mockWeeklyPromptFindMany.mockResolvedValue([{
+      id:          'prompt-1',
+      question:    'What does home mean to you abroad?',
+      publishedAt: new Date('2026-06-02T09:00:00Z'),
+      expiresAt:   new Date('2026-06-06T09:00:00Z'),
+    }]);
+    mockEventFindMany.mockResolvedValue([]);
+
+    const result = await getEventCalendar(new Date('2026-06-01T08:00:00Z'));
+
+    const types = result.map(m => m.type);
+    expect(types).toContain('PROMPT_OPENS');
+    expect(types).toContain('PROMPT_CLOSES');
+  });
+
+  it('returns milestones sorted chronologically', async () => {
+    mockWeeklyPromptFindMany.mockResolvedValue([]);
+    mockEventFindMany.mockResolvedValue([
+      { id: 'evt-2', title: 'Late Event', startAt: new Date('2026-06-07T18:00:00Z') },
+      { id: 'evt-1', title: 'Early Event', startAt: new Date('2026-06-02T10:00:00Z') },
+    ]);
+
+    const result = await getEventCalendar(new Date('2026-06-01T08:00:00Z'));
+
+    const scheduledAts = result.map(m => m.scheduledAt);
+    for (let i = 1; i < scheduledAts.length; i++) {
+      expect(scheduledAts[i] >= scheduledAts[i - 1]).toBe(true);
+    }
+  });
+});
+
+// ── getCoAttendancePairs ──────────────────────────────────────────────────────
+
+describe('getCoAttendancePairs()', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns unique canonicalized pairs for all GOING RSVPs', async () => {
+    mockEventFindUnique.mockResolvedValue({ id: EVENT_ID });
+    mockEventRsvpFindMany.mockResolvedValue([
+      { userId: 'user-b' },
+      { userId: 'user-a' },
+      { userId: 'user-c' },
+    ]);
+
+    const pairs = await getCoAttendancePairs(EVENT_ID);
+
+    expect(pairs).toHaveLength(3); // C(3,2) = 3 pairs
+    // All pairs should be in canonical order (smaller UUID first)
+    for (const p of pairs) {
+      expect(p.userAId < p.userBId).toBe(true);
+    }
+  });
+
+  it('returns empty array when only one attendee', async () => {
+    mockEventFindUnique.mockResolvedValue({ id: EVENT_ID });
+    mockEventRsvpFindMany.mockResolvedValue([{ userId: 'user-a' }]);
+
+    const pairs = await getCoAttendancePairs(EVENT_ID);
+    expect(pairs).toHaveLength(0);
+  });
+
+  it('returns empty array when no RSVPs', async () => {
+    mockEventFindUnique.mockResolvedValue({ id: EVENT_ID });
+    mockEventRsvpFindMany.mockResolvedValue([]);
+
+    const pairs = await getCoAttendancePairs(EVENT_ID);
+    expect(pairs).toHaveLength(0);
+  });
+
+  it('throws EventNotFoundError when event does not exist', async () => {
+    mockEventFindUnique.mockResolvedValue(null);
+    await expect(getCoAttendancePairs(EVENT_ID)).rejects.toBeInstanceOf(EventNotFoundError);
   });
 });

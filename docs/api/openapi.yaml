@@ -239,8 +239,10 @@ components:
     ScoreBreakdown:
       type: object
       description: |
-        18-dimension compatibility score breakdown. Each field is a normalised float 0.0–1.0.
-        Dimensions 1–9 are v1 (currently active). Dimensions 10–18 are v2 (behind feature flag ALG_V2).
+        Compatibility score breakdown. Each field is a normalised float 0.0–1.0.
+        9 core v1 dimensions are always present. Optional dimensions are added when
+        both users have the relevant data (HABIT-008, PROMPT-007). Future v2 dimensions
+        are behind the ALG_V2 feature flag.
       required:
         - verification
         - settlementIntent
@@ -252,7 +254,7 @@ components:
         - languageMatch
         - faithAlignment
       properties:
-        # v1 dimensions (always present)
+        # v1 core dimensions (always present)
         verification:         { type: number, format: float, description: "Trust score layer completion ratio." }
         settlementIntent:     { type: number, format: float, description: "Alignment on where to settle long-term." }
         realLifeAnswers:      { type: number, format: float, description: "Weighted dot-product of Real Life question answers." }
@@ -262,10 +264,13 @@ components:
         groupMembership:      { type: number, format: float, description: "Overlap of shared regional groups." }
         languageMatch:        { type: number, format: float, description: "Primary language compatibility." }
         faithAlignment:       { type: number, format: float, description: "Faith-in-practice answer similarity." }
+        # Optional v1 dimensions — present only when both users have the relevant data
+        habitConsistency:     { type: number, format: float, nullable: true, description: "HABIT-008 — Similarity of daily habit consistency rates over last 30 days." }
+        habitOverlap:         { type: number, format: float, nullable: true, description: "HABIT-008 — Jaccard overlap of active habit key sets." }
+        promptResonance:      { type: number, format: float, nullable: true, description: "PROMPT-007 — Mutual resonate signals on weekly prompt responses. 1.0=mutual, 0.5=one-way, 0.0=none." }
         # v2 dimensions (present when ALG_V2 feature flag is on)
         weeklyRhythm:         { type: number, format: float, nullable: true, description: "v2 — Similarity in weekly habit cadence." }
         consistencyScore:     { type: number, format: float, nullable: true, description: "v2 — Habit streak depth and recency." }
-        promptResonance:      { type: number, format: float, nullable: true, description: "v2 — Mutual resonate signals on weekly prompts." }
         settlementIntentV2:   { type: number, format: float, nullable: true, description: "v2 — Refined settlement alignment using Match Tuning inputs." }
         familyStyle:          { type: number, format: float, nullable: true, description: "v2 — Parenting and family structure preference match." }
         eventCoAttendance:    { type: number, format: float, nullable: true, description: "v2 — Shared gathering attendance overlap." }
@@ -767,6 +772,13 @@ components:
       schema: { type: string, format: uuid }
       description: Introduction UUID
 
+    dropIdPath:
+      name: dropId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+      description: IntroductionDrop UUID
+
     promptIdPath:
       name: promptId
       in: path
@@ -907,6 +919,24 @@ tags:
     description: Platform-level engagement and signup metrics
   - name: Admin — Verification
     description: ID document and selfie review queue
+  - name: Admin — Groups
+    description: Full group management CRUD, proposal approval/rejection and post pinning
+  - name: Admin — Introductions
+    description: IntroductionDrop lifecycle management — review AI proposals, approve, adjust members, schedule
+  - name: Admin — Feature Flags
+    description: Create, update, and delete runtime feature flags
+  - name: Admin — Audit Log
+    description: Immutable audit trail of all admin actions
+  - name: Admin — Events
+    description: Create, update, and archive platform events
+  - name: Admin — Prompts
+    description: Manage weekly community prompts
+  - name: Admin — AI
+    description: AI proposal generation and ProfileEmbedding monitoring/recompute
+  - name: Admin — System Config
+    description: Key-value store for admin-configurable platform settings
+  - name: Admin — Seeder
+    description: Seeder service status and flush control (non-production only)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -1407,6 +1437,61 @@ paths:
                 properties:
                   success: { type: boolean }
                   data:    { $ref: '#/components/schemas/ProfileDto' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profiles/{id}/match-context:
+    get:
+      tags: [Profile]
+      summary: Get compatibility score + dimension cards for a profile (INTRO-007)
+      description: |
+        Returns the full compatibility breakdown between the authenticated user and
+        the requested profile, including a "Why this match?" explanation.
+        Reads from Redis cache (1h TTL). Falls back to computing on demand if no score exists yet.
+        LLM-enhanced explanation when OPENAI_API_KEY is configured.
+      operationId: getMatchContext
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+          description: Profile UUID to compare against
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Match context
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalScore: 0.82
+                  totalPct: 82
+                  breakdown:
+                    verification: 1.0
+                    settlementIntent: 0.8
+                    realLifeAnswers: 0.7
+                    faithAlignment: 0.9
+                  whyThisMatch:
+                    headline: "Strong match on Life Abroad Plan and Faith Alignment"
+                    summary: "You share strong alignment on Life Abroad Plan and Faith Alignment, which are key indicators of long-term compatibility."
+                    dimensions:
+                      - key: faithAlignment
+                        label: "Faith Alignment"
+                        score: 0.9
+                        pct: 90
+                        tag: "Aligned"
+                    isAiGenerated: false
+                  computedAt: "2026-06-01T09:00:00.000Z"
+        '400':
+          description: Cannot compute match context with yourself
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: VALIDATION, message: "Cannot view match context with yourself" }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
@@ -2251,6 +2336,432 @@ paths:
                 error: { code: PAYMENT_NOT_FOUND, message: "No payment found for this provider payment ID" }
         '500': { $ref: '#/components/responses/500InternalError' }
 
+  # ── Admin — Groups (Phase 8c GRP-R-006) ──────────────────────────────────
+
+  /admin/groups/proposals:
+    get:
+      tags: [Admin — Groups]
+      summary: List group proposals
+      description: Returns INTEREST group proposals with optional status filter. Requires MODERATOR role or higher.
+      operationId: adminListGroupProposals
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+      responses:
+        '200':
+          description: Group proposals list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "proposal-uuid"
+                    name: "Tamil Professionals UK"
+                    description: "For Tamil-speaking professionals in the UK"
+                    status: "PENDING"
+                    proposedBy: "usr-uuid"
+                    createdAt: "2026-05-30T10:00:00.000Z"
+                meta: { total: 1 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/groups/proposals/{proposalId}/approve:
+    post:
+      tags: [Admin — Groups]
+      summary: Approve a group proposal
+      description: |
+        Approves a PENDING INTEREST group proposal — creates the `Group` record and
+        auto-joins the proposer as the first member. Requires MODERATOR role.
+      operationId: adminApproveGroupProposal
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Proposal approved and group created
+          content:
+            application/json:
+              example:
+                success: true
+                data: { groupId: "grp-uuid", name: "Tamil Professionals UK", status: "APPROVED" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Proposal already actioned
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "This proposal has already been actioned" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/groups/proposals/{proposalId}/reject:
+    post:
+      tags: [Admin — Groups]
+      summary: Reject a group proposal
+      description: Rejects a PENDING INTEREST group proposal with an optional reason. Requires MODERATOR role.
+      operationId: adminRejectGroupProposal
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 500 }
+            example:
+              reason: "This group overlaps with an existing Professional group."
+      responses:
+        '200':
+          description: Proposal rejected
+          content:
+            application/json:
+              example:
+                success: true
+                data: { proposalId: "proposal-uuid", status: "REJECTED" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Proposal already actioned
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "This proposal has already been actioned" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/groups/{groupId}/posts/{postId}/pin:
+    post:
+      tags: [Admin — Groups]
+      summary: Pin a group post
+      description: Pins a post to the top of the group feed. Requires MODERATOR role.
+      operationId: adminPinGroupPost
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/groupIdPath'
+        - name: postId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Post pinned
+          content:
+            application/json:
+              example:
+                success: true
+                data: { postId: "post-uuid", isPinned: true }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    delete:
+      tags: [Admin — Groups]
+      summary: Unpin a group post
+      description: Removes the pin from a previously-pinned group post. Requires MODERATOR role.
+      operationId: adminUnpinGroupPost
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/groupIdPath'
+        - name: postId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Post unpinned
+          content:
+            application/json:
+              example:
+                success: true
+                data: { postId: "post-uuid", isPinned: false }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — IntroductionDrop (Phase 8d IDROP-004) ─────────────────────────
+
+  /admin/introductions/drops:
+    get:
+      tags: [Admin — Introductions]
+      summary: List all introduction drops
+      description: |
+        Returns all `IntroductionDrop` records with optional status filter.
+        Includes pairing count and member pool size. Requires MODERATOR role.
+      operationId: adminListDrops
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [DRAFT, PENDING_APPROVAL, SCHEDULED, LIVE, EXPIRED] }
+      responses:
+        '200':
+          description: List of drops
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "drop-uuid-1"
+                    name: "London Drop — May 2026"
+                    status: "DRAFT"
+                    memberPool: ["usr-uuid-1", "usr-uuid-2"]
+                    releaseAt: null
+                    earlyAccessCost: 5
+                    unlockCost: 10
+                    pairingCount: 0
+                    createdAt: "2026-05-30T10:00:00.000Z"
+                meta: { total: 1 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/introductions/drops/propose:
+    post:
+      tags: [Admin — Introductions]
+      summary: Manually propose a new introduction drop
+      description: |
+        Creates a new `IntroductionDrop` in `DRAFT` status without going through the AI
+        proposal flow. The admin supplies the member pool and optional costs/release time.
+        Requires MODERATOR role.
+      operationId: adminProposeDrop
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, memberPool]
+              properties:
+                name:            { type: string, minLength: 1, maxLength: 100 }
+                criteria:        { type: object, description: "Arbitrary JSON criteria metadata." }
+                memberPool:      { type: array, items: { type: string, format: uuid }, minItems: 2 }
+                earlyAccessCost: { type: integer, minimum: 0 }
+                unlockCost:      { type: integer, minimum: 0 }
+                releaseAt:       { type: string, format: date-time }
+            example:
+              name: "London Drop — June 2026"
+              memberPool: ["usr-uuid-1", "usr-uuid-2", "usr-uuid-3"]
+              earlyAccessCost: 5
+              unlockCost: 10
+              releaseAt: "2026-06-15T09:00:00.000Z"
+      responses:
+        '201':
+          description: Drop created as DRAFT
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-new"
+                  name: "London Drop — June 2026"
+                  status: "DRAFT"
+                  memberPool: ["usr-uuid-1", "usr-uuid-2", "usr-uuid-3"]
+                  pairingCount: 0
+                  createdAt: "2026-05-30T10:00:00.000Z"
+                meta: { message: "Introduction drop created as DRAFT" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/introductions/drops/{dropId}:
+    get:
+      tags: [Admin — Introductions]
+      summary: Get admin detail for a single drop
+      description: Returns full admin detail including member pool UUIDs and pairing count. Requires MODERATOR role.
+      operationId: adminGetDropDetail
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      responses:
+        '200':
+          description: Drop admin detail
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  name: "London Drop — May 2026"
+                  status: "PENDING_APPROVAL"
+                  memberPool: ["usr-uuid-1", "usr-uuid-2"]
+                  releaseAt: "2026-06-01T09:00:00.000Z"
+                  earlyAccessCost: 5
+                  unlockCost: 10
+                  pairingCount: 8
+                  createdAt: "2026-05-28T10:00:00.000Z"
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/introductions/drops/{dropId}/approve:
+    patch:
+      tags: [Admin — Introductions]
+      summary: Approve a DRAFT introduction drop
+      description: |
+        Transitions the drop from `DRAFT` to `PENDING_APPROVAL` and fires asynchronous
+        pairing generation (fire-and-forget). After pairings are generated the drop
+        automatically moves to `SCHEDULED`. Requires MODERATOR role.
+      operationId: adminApproveDrop
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      responses:
+        '200':
+          description: Drop approved and pairing generation started
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  status: "PENDING_APPROVAL"
+                  pairingCount: 0
+                meta: { message: "Drop approved — pairing generation started" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Drop is not in DRAFT status
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "Drop must be in DRAFT status to approve" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/introductions/drops/{dropId}/members:
+    patch:
+      tags: [Admin — Introductions]
+      summary: Update member pool for a drop
+      description: |
+        Replaces the entire `memberPool` for the drop. Only allowed when status is
+        `DRAFT`, `PENDING_APPROVAL`, or `SCHEDULED`. Requires MODERATOR role.
+      operationId: adminUpdateDropMembers
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [memberPool]
+              properties:
+                memberPool: { type: array, items: { type: string, format: uuid }, minItems: 2 }
+            example:
+              memberPool: ["usr-uuid-1", "usr-uuid-2", "usr-uuid-3"]
+      responses:
+        '200':
+          description: Member pool updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  memberPool: ["usr-uuid-1", "usr-uuid-2", "usr-uuid-3"]
+                  pairingCount: 0
+                meta: { message: "Member pool updated" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Drop is not in an editable status (e.g. LIVE or EXPIRED)
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "Drop cannot be edited in its current status" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/introductions/drops/{dropId}/schedule:
+    patch:
+      tags: [Admin — Introductions]
+      summary: Set or update drop release time
+      description: |
+        Updates the `releaseAt` timestamp for the drop. Allowed when status is
+        `DRAFT`, `PENDING_APPROVAL`, or `SCHEDULED`. Requires MODERATOR role.
+      operationId: adminScheduleDrop
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [releaseAt]
+              properties:
+                releaseAt: { type: string, format: date-time }
+            example:
+              releaseAt: "2026-06-15T09:00:00.000Z"
+      responses:
+        '200':
+          description: Release time updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  releaseAt: "2026-06-15T09:00:00.000Z"
+                  status: "SCHEDULED"
+                meta: { message: "Drop release time updated" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Drop is not in an editable status
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "Drop cannot be edited in its current status" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
   # ── Auth — Email Magic Link ────────────────────────────────────────────────
 
   /api/v1/auth/email/link:
@@ -2821,6 +3332,75 @@ paths:
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
+  /api/v1/introductions/unlock-early:
+    post:
+      tags: [Introductions]
+      summary: Spend 300 diamonds to unlock this week's introductions early (INTRO-004)
+      description: |
+        Idempotent — if already unlocked this week, returns `alreadyUnlocked: true` without charging.
+        Marks all current-week Introduction rows with `viewedEarlyAt`.
+      operationId: earlyUnlockWeeklyIntroductions
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Unlocked (or already unlocked)
+          content:
+            application/json:
+              example:
+                success: true
+                data: { unlockedCount: 3, alreadyUnlocked: false }
+                meta: { message: "Weekly introductions unlocked early" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '409':
+          description: Insufficient diamonds
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "Insufficient diamonds to unlock early" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/{introId}:
+    get:
+      tags: [Introductions]
+      summary: Get introduction detail (INTRO-003)
+      description: Returns full detail for a single introduction including both user profiles.
+      operationId: getIntroductionDetail
+      parameters:
+        - in: path
+          name: introId
+          required: true
+          schema: { type: string, format: uuid }
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Introduction detail
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "intro-uuid"
+                  status: "PENDING"
+                  weekKey: "2026-W22"
+                  acceptedByMe: false
+                  acceptedByOther: false
+                  otherUser:
+                    id: "user-uuid"
+                    name: "Arjun"
+                    currentCity: "London"
+                    currentCountry: "GB"
+                    verificationStatus: "APPROVED"
+                  expiresAt: "2026-06-08T09:00:00.000Z"
+                  createdAt: "2026-06-01T09:00:00.000Z"
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
   /api/v1/introductions/history:
     get:
       tags: [Introductions]
@@ -2941,6 +3521,163 @@ paths:
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
+  # ── IntroductionDrop — User endpoints (Phase 8d) ─────────────────────────
+
+  /api/v1/introductions/drops:
+    get:
+      tags: [Introductions]
+      summary: List introduction drops for current user
+      description: |
+        Returns all `LIVE` and `SCHEDULED` `IntroductionDrop` records that contain curated
+        `Introduction` pairings for the authenticated user. Includes summary of intros per drop,
+        early-access and unlock cost, and release timestamp.
+      operationId: listDropsForUser
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: User's introduction drops
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "drop-uuid-1"
+                    name: "London Drop — May 2026"
+                    status: "LIVE"
+                    releaseAt: "2026-06-01T09:00:00.000Z"
+                    earlyAccessCost: 5
+                    unlockCost: 10
+                    introCount: 4
+                    isEarlyAccessed: false
+                    isUnlocked: false
+                meta: { total: 1 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/drops/{dropId}:
+    get:
+      tags: [Introductions]
+      summary: Get introduction drop detail
+      description: |
+        Returns full detail for a single introduction drop including the user's curated pairings.
+        Profile cards are blurred (name='Hidden', no city/profession) until `releaseAt` is reached
+        or the user has unlocked the drop early.
+      operationId: getDropDetail
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      responses:
+        '200':
+          description: Drop detail with curated pairings
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  name: "London Drop — May 2026"
+                  status: "LIVE"
+                  releaseAt: "2026-06-01T09:00:00.000Z"
+                  earlyAccessCost: 5
+                  unlockCost: 10
+                  isEarlyAccessed: false
+                  isUnlocked: false
+                  intros:
+                    - id: "intro-uuid-1"
+                      status: "PENDING"
+                      profile: { userId: "usr-uuid", name: "Hidden", age: 29, city: null, country: null, photoUrl: null }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/drops/{dropId}/early-access:
+    post:
+      tags: [Introductions]
+      summary: Spend diamonds for early drop access
+      description: |
+        Spends `drop.earlyAccessCost` diamonds and stamps `viewedEarlyAt` on all user's
+        `Introduction` records in this drop. Profile cards become visible (photo, age, city)
+        but name and contact details remain hidden until `releaseAt` or full unlock.
+        Idempotent: no charge if all intros already have `viewedEarlyAt` set.
+      operationId: earlyAccessDrop
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      responses:
+        '200':
+          description: Early access granted
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  name: "London Drop — May 2026"
+                  status: "LIVE"
+                  isEarlyAccessed: true
+                  isUnlocked: false
+                  intros:
+                    - id: "intro-uuid-1"
+                      status: "PENDING"
+                      profile: { userId: "usr-uuid", name: "Hidden", age: 29, city: "London", country: "UK", photoUrl: "https://cdn.example.com/photo.jpg" }
+                meta: { message: "Early access granted" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Drop not live, insufficient diamonds, or already unlocked
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "Insufficient diamonds for this action" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/introductions/drops/{dropId}/unlock:
+    post:
+      tags: [Introductions]
+      summary: Fully unlock an introduction drop early
+      description: |
+        Spends the incremental cost (`unlockCost - earlyAccessCost`) diamonds and stamps
+        `unlockedEarlyAt` on all user's `Introduction` records. Full profile (name, city,
+        profession) becomes visible immediately before `releaseAt`.
+        Requires the drop to be LIVE or SCHEDULED; throws 409 if already fully unlocked.
+      operationId: unlockDropEarly
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/dropIdPath'
+      responses:
+        '200':
+          description: Drop unlocked
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "drop-uuid-1"
+                  name: "London Drop — May 2026"
+                  status: "LIVE"
+                  isEarlyAccessed: true
+                  isUnlocked: true
+                  intros:
+                    - id: "intro-uuid-1"
+                      status: "PENDING"
+                      profile: { userId: "usr-uuid", name: "Priya Sharma", age: 29, city: "London", country: "UK", photoUrl: "https://cdn.example.com/photo.jpg" }
+                meta: { message: "Drop unlocked successfully" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Drop not live, already unlocked, or insufficient diamonds
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "You have already unlocked this drop" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
   # ── Gatherings (Events) ────────────────────────────────────────────────────
 
   /api/v1/events:
@@ -2978,6 +3715,39 @@ paths:
                     whyInvited: "You're in the UK Indians — London circle"
                     createdAt: "2026-09-01T00:00:00.000Z"
                 meta: { hasMore: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/events/calendar:
+    get:
+      tags: [Gatherings]
+      summary: Get this week's community calendar milestones (EVENT-006)
+      description: |
+        Returns a chronologically-sorted list of upcoming community milestones within the next 7 days:
+        next Introduction Drop (Sunday 09:00 UTC), active weekly prompt open/close times,
+        Sunday check-in opportunity, and community events.
+      operationId: getEventCalendar
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Calendar milestones
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - type: "INTRO_DROP"
+                    title: "Weekly Introduction Drop"
+                    scheduledAt: "2026-06-08T09:00:00.000Z"
+                  - type: "CHECK_IN"
+                    title: "Sunday Check-In"
+                    scheduledAt: "2026-06-08T09:00:00.000Z"
+                  - type: "EVENT"
+                    title: "London Diwali Mixer"
+                    scheduledAt: "2026-06-07T18:00:00.000Z"
+                    eventId: "evt-uuid"
+                meta: { total: 3, message: "Calendar milestones retrieved" }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
@@ -3109,8 +3879,8 @@ paths:
   /api/v1/prompts/current:
     get:
       tags: [Weekly Prompts]
-      summary: Get this week's prompt
-      description: Returns the active weekly prompt. Includes the user's response if already submitted.
+      summary: Get this week's prompt (PROMPT-002)
+      description: Returns the active weekly prompt. 404 when no prompt is scheduled this week.
       operationId: getCurrentPrompt
       security:
         - userBearerAuth: []
@@ -3123,11 +3893,109 @@ paths:
                 success: true
                 data:
                   id: "prompt-uuid"
-                  weekOf: "2026-05-25"
-                  promptText: "What does a Sunday well-spent look like for you?"
-                  responseType: "TEXT"
-                  expiresAt: "2026-06-01T09:00:00.000Z"
-                  myResponse: null
+                  weekKey: "2026-W23"
+                  question: "What does a Sunday well-spent look like for you?"
+                  theme: "Lifestyle"
+                  publishedAt: "2026-06-02T09:00:00.000Z"
+                  expiresAt: "2026-06-09T09:00:00.000Z"
+                  hasResponded: false
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/prompts/current/response:
+    post:
+      tags: [Weekly Prompts]
+      summary: Submit response to current prompt (PROMPT-003)
+      description: |
+        Records the user's text or voice response to this week's active prompt.
+        One response per user per prompt — returns 409 if already responded.
+      operationId: respondToCurrentPrompt
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:     { type: string, minLength: 1, maxLength: 2000, description: "Response text content." }
+                type:     { type: string, enum: [TEXT, AUDIO], default: TEXT }
+                mediaUrl: { type: string, format: uri, nullable: true, description: "S3 URL for voice response audio." }
+            example:
+              text: "A Sunday for me starts slow — chai, journaling, then a long walk."
+              type: "TEXT"
+      responses:
+        '201':
+          description: Response recorded
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: "resp-uuid"
+                  promptId: "prompt-uuid"
+                  userId: "user-uuid"
+                  text: "A Sunday for me starts slow..."
+                  type: "TEXT"
+                  mediaUrl: null
+                  resonateCount: 0
+                  hasResonated: false
+                  authorName: "Arjun"
+                  createdAt: "2026-06-02T10:00:00.000Z"
+                meta: { message: "Response submitted" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404':
+          description: No active prompt this week
+          content:
+            application/json:
+              example: { success: false, error: { code: "NOT_FOUND", message: "Prompt not found or expired" } }
+        '409':
+          description: Already responded to this prompt
+          content:
+            application/json:
+              example: { success: false, error: { code: "CONFLICT", message: "Already responded to this prompt" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/prompts/current/responses:
+    get:
+      tags: [Weekly Prompts]
+      summary: Browse community responses to current prompt (PROMPT-004)
+      description: |
+        Paginated list of all users' responses to this week's prompt, ordered by resonateCount DESC.
+        Returns 404 when no prompt is active this week.
+      operationId: getCurrentPromptResponses
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Paginated prompt responses
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: "resp-uuid-2"
+                    userId: "user-uuid-arjun"
+                    promptId: "prompt-uuid"
+                    text: "Sunday is family brunch followed by cricket highlights."
+                    type: "TEXT"
+                    mediaUrl: null
+                    resonateCount: 7
+                    hasResonated: false
+                    authorName: "Arjun"
+                    createdAt: "2026-06-02T08:00:00.000Z"
+                meta: { total: 42, page: 1, limit: 20 }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
@@ -3266,8 +4134,6 @@ paths:
           in: query
           required: false
           schema: { $ref: '#/components/schemas/SavedProfileLabel' }
-        - $ref: '#/components/parameters/cursorQuery'
-        - $ref: '#/components/parameters/limitQuery'
       responses:
         '200':
           description: Saved profile list
@@ -3277,25 +4143,35 @@ paths:
                 success: true
                 data:
                   - id: "save-uuid"
-                    targetUserId: "usr-uuid-arjun"
-                    label: "HIGH_FIT"
-                    note: "Loved his story prompt"
+                    savedUserId: "usr-uuid-arjun"
+                    label: "INTERESTED"
+                    notes: "Loved his story prompt"
                     createdAt: "2026-05-29T08:00:00.000Z"
-                    profile: { name: "Arjun", age: 30, city: "London", country: "UK", photoUrl: null, totalScore: 0.86 }
-                meta: { hasMore: false }
+                    savedUser: { id: "usr-uuid-arjun", name: "Arjun", currentCity: "London", currentCountry: "UK", verificationStatus: "APPROVED" }
+                meta: { total: 1 }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/saved/{targetUserId}:
     post:
       tags: [Saved Profiles]
       summary: Save a profile
-      description: Idempotent save. Max 50 per user.
       operationId: saveProfile
       security:
         - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [savedUserId]
+              properties:
+                savedUserId: { type: string, format: uuid }
+                label: { $ref: '#/components/schemas/SavedProfileLabel' }
+                notes: { type: string, maxLength: 500 }
+            example:
+              savedUserId: "usr-uuid-arjun"
+              label: "INTERESTED"
       responses:
         '201':
           description: Profile saved
@@ -3303,100 +4179,144 @@ paths:
             application/json:
               example:
                 success: true
-                data: { id: "save-uuid", targetUserId: "usr-uuid-arjun", createdAt: "2026-05-29T08:00:00.000Z" }
+                data: { id: "save-uuid", savedUserId: "usr-uuid-arjun", label: "INTERESTED", notes: null, createdAt: "2026-05-29T08:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
-        '404': { $ref: '#/components/responses/404NotFound' }
         '409':
-          description: Saved list full
+          description: Profile already saved
           content:
             application/json:
               example:
                 success: false
-                error: { code: SAVED_LIST_FULL, message: "You can save up to 50 profiles" }
+                error: { code: CONFLICT, message: "Profile already saved" }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-    delete:
+  /api/v1/saved/compare:
+    get:
       tags: [Saved Profiles]
-      summary: Unsave a profile
-      description: Idempotent removal.
-      operationId: unsaveProfile
+      summary: Compare 2–3 saved profiles side by side
+      operationId: compareSavedProfiles
       security:
         - userBearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated list of 2–3 saved user UUIDs
+          schema: { type: string }
+          example: "uuid-a,uuid-b"
       responses:
         '200':
-          description: Profile unsaved
+          description: Comparison data for each profile
           content:
             application/json:
               example:
                 success: true
-                data: { message: "Profile removed from saved list" }
-        '401': { $ref: '#/components/responses/401Unauthorized' }
-        '404': { $ref: '#/components/responses/404NotFound' }
-        '500': { $ref: '#/components/responses/500InternalError' }
-
-  /api/v1/saved/{targetUserId}/label:
-    put:
-      tags: [Saved Profiles]
-      summary: Set label on a saved profile
-      operationId: setSavedProfileLabel
-      security:
-        - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [label]
-              properties:
-                label: { $ref: '#/components/schemas/SavedProfileLabel', nullable: true }
-            example:
-              label: "HIGH_FIT"
-      responses:
-        '200':
-          description: Label updated
-          content:
-            application/json:
-              example:
-                success: true
-                data: { id: "save-uuid", label: "HIGH_FIT" }
+                data:
+                  - savedUserId: "usr-uuid-arjun"
+                    label: "INTERESTED"
+                    notes: null
+                    profile: { name: "Arjun", dateOfBirth: "1995-03-15T00:00:00.000Z", gender: "MALE", currentCity: "London", currentCountry: "UK", settlementIntent: "SETTLE_ABROAD", bio: null, completionScore: 85, verificationStatus: "APPROVED", trustScore: 7 }
+                    realLifeAnswers: [{ questionKey: "faith", answer: "important" }]
+                meta: { total: 2 }
         '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/saved/{targetUserId}/note:
-    put:
+  /api/v1/saved/{savedUserId}:
+    patch:
       tags: [Saved Profiles]
-      summary: Add or update note on a saved profile
-      operationId: setSavedProfileNote
+      summary: Update label and/or notes on a saved profile
+      operationId: updateSavedProfile
       security:
         - userBearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
+        - name: savedUserId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [note]
               properties:
-                note: { type: string, maxLength: 500, nullable: true }
+                label: { $ref: '#/components/schemas/SavedProfileLabel' }
+                notes: { type: string, maxLength: 500 }
             example:
-              note: "Loved his story prompt about faith."
+              label: "MAYBE"
+              notes: "Good match, revisit in a week"
       responses:
         '200':
-          description: Note updated
+          description: Saved profile updated
           content:
             application/json:
               example:
                 success: true
-                data: { id: "save-uuid", note: "Loved his story prompt about faith." }
+                data: { id: "save-uuid", savedUserId: "usr-uuid-arjun", label: "MAYBE", notes: "Good match" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Saved Profiles]
+      summary: Remove a profile from saved list
+      operationId: unsaveProfile
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: savedUserId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Profile removed from saved list
+          content:
+            application/json:
+              example:
+                success: true
+                data: null
+                meta: { message: "Profile removed from saved" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/saved/{savedUserId}/note:
+    post:
+      tags: [Saved Profiles]
+      summary: Add or replace private note on a saved profile
+      operationId: addSavedProfileNote
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: savedUserId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [notes]
+              properties:
+                notes: { type: string, maxLength: 500 }
+            example:
+              notes: "Loved his story prompt about faith."
+      responses:
+        '200':
+          description: Note saved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "save-uuid", savedUserId: "usr-uuid-arjun", notes: "Loved his story prompt about faith." }
+                meta: { message: "Note saved" }
         '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
@@ -3404,33 +4324,126 @@ paths:
 
   # ── Signals Dashboard ──────────────────────────────────────────────────────
 
+  /api/v1/profiles/{id}/view:
+    post:
+      tags: [Signals]
+      summary: Log a profile view
+      description: Records that the authenticated user viewed this profile. Deduplicated within 1 hour.
+      operationId: logProfileView
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: View logged (or deduplicated)
+          content:
+            application/json:
+              example:
+                success: true
+                data: null
+                meta: { message: "Profile view recorded" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
   /api/v1/signals:
     get:
       tags: [Signals]
-      summary: Get weekly signals dashboard
-      description: |
-        Returns activity metrics, week-over-week deltas, action queue, and momentum score.
-        Cached in Redis per user for 15 minutes.
+      summary: Get engagement signals (legacy)
       operationId: getSignals
       security:
         - userBearerAuth: []
       responses:
         '200':
-          description: Signals dashboard
+          description: Basic engagement signals
           content:
             application/json:
               example:
                 success: true
                 data:
-                  weekOf: "2026-05-25"
+                  profileViews7d: 12
+                  profileViews30d: 48
+                  connectionRequestsSent7d: 3
+                  connectionRequestsReceived7d: 2
+                  matchRate: 67
+                  introductionsThisWeek: 4
+                  checkInsStreak: 5
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/signals/week:
+    get:
+      tags: [Signals]
+      summary: Get 4 weekly metrics with week-over-week deltas
+      operationId: getWeeklyMetrics
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Weekly metrics
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  weekOf: "2026-05-26"
                   metrics:
-                    - { key: "profileViews", label: "Profile Views", value: 24, delta: 6 }
-                    - { key: "connectionRequests", label: "Connection Requests", value: 3, delta: 1 }
-                    - { key: "resonates", label: "Resonates", value: 11, delta: -2 }
-                    - { key: "introPoolSize", label: "Your Intro Pool", value: 5, delta: 0 }
-                  actionQueue:
-                    - { type: "RESPOND_TO_INTRO", label: "Reply to Arjun's intro", targetUserId: "usr-uuid", priority: 1, expiresAt: "2026-06-01T09:00:00.000Z" }
-                  momentumScore: 72
+                    - { key: "profileViews",      label: "Profile Views",        value: 24, delta: 6 }
+                    - { key: "connectionRequests", label: "Connection Requests",  value: 3,  delta: 1 }
+                    - { key: "resonates",          label: "Resonates Received",   value: 11, delta: -2 }
+                    - { key: "introPoolSize",      label: "Your Intro Pool",      value: 5,  delta: 0 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/signals/action-queue:
+    get:
+      tags: [Signals]
+      summary: Get prioritized action queue
+      description: Returns next-step items ordered by priority (1 = highest). Includes pending intros, connections, and profile nudges.
+      operationId: getActionQueue
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Action queue items
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { type: "RESPOND_TO_INTRO",   label: "Respond to your introduction",        priority: 1, targetUserId: "usr-uuid", expiresAt: "2026-06-08T09:00:00.000Z" }
+                  - { type: "ACCEPT_CONNECTION",   label: "Arjun wants to connect",              priority: 2, targetUserId: "usr-uuid-arjun", expiresAt: null }
+                  - { type: "COMPLETE_PROFILE",    label: "Complete your profile to get more matches", priority: 3, targetUserId: null, expiresAt: null }
+                meta: { total: 3 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/signals/momentum:
+    get:
+      tags: [Signals]
+      summary: Get 7-day daily profile view bar chart data
+      operationId: getMomentumData
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Daily view counts for the last 7 days (oldest to newest)
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { date: "2026-05-26", views: 4 }
+                  - { date: "2026-05-27", views: 7 }
+                  - { date: "2026-05-28", views: 2 }
+                  - { date: "2026-05-29", views: 9 }
+                  - { date: "2026-05-30", views: 5 }
+                  - { date: "2026-05-31", views: 3 }
+                  - { date: "2026-06-01", views: 6 }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
@@ -3439,43 +4452,13 @@ paths:
   /api/v1/trust:
     get:
       tags: [Trust Center]
-      summary: Get my trust center
+      summary: Get my trust center (score + layers + privacy settings)
       operationId: getMyTrustCenter
       security:
         - userBearerAuth: []
       responses:
         '200':
-          description: Own trust data
-          content:
-            application/json:
-              example:
-                success: true
-                data:
-                  trustScore: 92
-                  maxScore: 100
-                  layers:
-                    - { layer: "PHONE", isComplete: true, points: 20, label: "Phone Verified", description: "OTP confirmed.", completedAt: "2026-05-01T00:00:00.000Z" }
-                    - { layer: "FACE", isComplete: true, points: 25, label: "Face Verified", description: "Selfie matched to ID.", completedAt: "2026-05-15T00:00:00.000Z" }
-                    - { layer: "VOICE_INTRO", isComplete: true, points: 15, label: "Voice Intro", description: "60s voice intro uploaded.", completedAt: "2026-05-10T00:00:00.000Z" }
-                    - { layer: "WORK", isComplete: true, points: 20, label: "Work Verified", description: "Employment doc reviewed.", completedAt: "2026-05-20T00:00:00.000Z" }
-                    - { layer: "EDUCATION", isComplete: false, points: 20, label: "Education", description: "Not yet uploaded.", completedAt: null }
-                  isBlocked: false
-                  isPaused: false
-        '401': { $ref: '#/components/responses/401Unauthorized' }
-        '500': { $ref: '#/components/responses/500InternalError' }
-
-  /api/v1/trust/{targetUserId}:
-    get:
-      tags: [Trust Center]
-      summary: Get another user's trust score
-      operationId: getUserTrustCenter
-      security:
-        - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
-      responses:
-        '200':
-          description: Target user trust data
+          description: Trust center dashboard
           content:
             application/json:
               example:
@@ -3484,27 +4467,41 @@ paths:
                   trustScore: 65
                   maxScore: 100
                   layers:
-                    - { layer: "PHONE", isComplete: true, points: 20 }
-                    - { layer: "FACE", isComplete: false, points: 25 }
-                    - { layer: "VOICE_INTRO", isComplete: true, points: 15 }
-                    - { layer: "WORK", isComplete: false, points: 20 }
-                    - { layer: "EDUCATION", isComplete: false, points: 20 }
-                  isBlocked: false
+                    - { key: "PHONE_VERIFIED",   label: "Phone verified",          completed: true,  points: 20 }
+                    - { key: "PROFILE_COMPLETE",  label: "Profile complete (≥80%)", completed: true,  points: 20 }
+                    - { key: "PHOTO_UPLOADED",    label: "Photo uploaded",          completed: true,  points: 15 }
+                    - { key: "ID_VERIFIED",       label: "Identity verified",       completed: false, points: 25 }
+                    - { key: "EMAIL_VERIFIED",    label: "Email verified",          completed: false, points: 10 }
+                    - { key: "VOICE_INTRO",       label: "Voice intro recorded",    completed: false, points: 10 }
                   isPaused: false
+                  privacySettings:
+                    showPhotosBeforeMutual: true
+                    showBioBeforeMutual: true
+                    showAnswersBeforeMutual: false
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/trust/{targetUserId}/block:
+  /api/v1/trust/block:
     post:
       tags: [Trust Center]
       summary: Block a user
-      description: Hides both parties from each other. Withdraws any PENDING connection. Idempotent.
+      description: Cancels any pending connection between the two users.
       operationId: blockUser
       security:
         - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId: { type: string, format: uuid }
+                reason: { type: string, maxLength: 500 }
+            example:
+              userId: "usr-uuid-arjun"
       responses:
         '200':
           description: User blocked
@@ -3512,20 +4509,30 @@ paths:
             application/json:
               example:
                 success: true
-                data: { targetUserId: "usr-uuid-arjun", blockedAt: "2026-05-29T10:00:00.000Z" }
+                data: { id: "block-uuid", blockedUserId: "usr-uuid-arjun", blockedUserName: "Arjun", createdAt: "2026-06-02T10:00:00.000Z" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
-        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Already blocked
+          content:
+            application/json:
+              example:
+                success: false
+                error: { code: CONFLICT, message: "User already blocked" }
         '500': { $ref: '#/components/responses/500InternalError' }
 
+  /api/v1/trust/block/{userId}:
     delete:
       tags: [Trust Center]
       summary: Unblock a user
-      description: Idempotent.
       operationId: unblockUser
       security:
         - userBearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
       responses:
         '200':
           description: User unblocked
@@ -3533,21 +4540,19 @@ paths:
             application/json:
               example:
                 success: true
-                data: { message: "User unblocked" }
+                data: null
+                meta: { message: "User unblocked" }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/trust/blocked:
+  /api/v1/trust/blocks:
     get:
       tags: [Trust Center]
-      summary: List blocked users
+      summary: List all blocked users
       operationId: listBlockedUsers
       security:
         - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/cursorQuery'
-        - $ref: '#/components/parameters/limitQuery'
       responses:
         '200':
           description: Blocked users list
@@ -3556,32 +4561,31 @@ paths:
               example:
                 success: true
                 data:
-                  - { targetUserId: "usr-uuid-arjun", name: "Arjun S.", blockedAt: "2026-05-29T10:00:00.000Z" }
-                meta: { hasMore: false }
+                  - { id: "block-uuid", blockedUserId: "usr-uuid-arjun", blockedUserName: "Arjun", createdAt: "2026-05-29T10:00:00.000Z" }
+                meta: { total: 1 }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/trust/{targetUserId}/report:
+  /api/v1/trust/report:
     post:
       tags: [Trust Center]
-      summary: Report a user
-      description: Creates a moderation flag against the target user. Rate-limited to 5 per hour.
+      summary: Report a user for a trust or safety violation
       operationId: reportUser
       security:
         - userBearerAuth: []
-      parameters:
-        - $ref: '#/components/parameters/targetUserIdPath'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
+              required: [targetUserId, reason]
               properties:
-                reason:      { $ref: '#/components/schemas/FlagReason' }
-                description: { type: string, maxLength: 500, nullable: true }
+                targetUserId: { type: string, format: uuid }
+                reason:       { $ref: '#/components/schemas/FlagReason' }
+                description:  { type: string, maxLength: 1000 }
             example:
+              targetUserId: "usr-uuid-arjun"
               reason: "FAKE_IDENTITY"
               description: "Profile photos appear to be stock images"
       responses:
@@ -3591,11 +4595,107 @@ paths:
             application/json:
               example:
                 success: true
-                data: { flagId: "flag-uuid", status: "OPEN" }
+                data: { id: "flag-uuid", status: "OPEN", reason: "FAKE_IDENTITY" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/privacy-controls:
+    put:
+      tags: [Trust Center]
+      summary: Update profile privacy settings
+      description: Controls what other users see before a mutual connection is accepted.
+      operationId: setPrivacyControls
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                showPhotosBeforeMutual:  { type: boolean }
+                showBioBeforeMutual:     { type: boolean }
+                showAnswersBeforeMutual: { type: boolean }
+            example:
+              showBioBeforeMutual: false
+      responses:
+        '200':
+          description: Privacy settings updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  showPhotosBeforeMutual: true
+                  showBioBeforeMutual: false
+                  showAnswersBeforeMutual: false
+                meta: { message: "Privacy settings updated" }
         '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
-        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/pause-visibility:
+    post:
+      tags: [Trust Center]
+      summary: Pause profile visibility (hide from discovery)
+      operationId: pauseVisibility
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Profile hidden from discovery
+          content:
+            application/json:
+              example:
+                success: true
+                data: { isPaused: true }
+                meta: { message: "Profile hidden from discovery" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    delete:
+      tags: [Trust Center]
+      summary: Resume profile visibility (reappear in discovery)
+      operationId: resumeVisibility
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Profile visible in discovery
+          content:
+            application/json:
+              example:
+                success: true
+                data: { isPaused: false }
+                meta: { message: "Profile visible in discovery" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/access-levels:
+    get:
+      tags: [Trust Center]
+      summary: Get the three profile access level definitions
+      operationId: getAccessLevels
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Access level definitions (PUBLIC, TRUSTED, FAMILY)
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { key: "PUBLIC",  label: "Public",        description: "Visible to everyone in discover.", visibleFields: ["name", "age", "currentCity", "currentCountry", "gender", "verificationStatus"] }
+                  - { key: "TRUSTED", label: "Trusted",       description: "Visible after connection accepted.", visibleFields: ["bio", "allPhotos", "realLifeAnswers", "storyPrompts", "voiceIntro", "trustScore"] }
+                  - { key: "FAMILY",  label: "Family-aware",  description: "Extended detail when families are involved.", visibleFields: ["contactDetails", "familyBackground", "settlementIntent", "careerDetails"] }
+                meta: { total: 3 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
   # ── Habits ─────────────────────────────────────────────────────────────────
@@ -3679,9 +4779,12 @@ paths:
   /api/v1/habits/reflection:
     get:
       tags: [Habits]
-      summary: Get weekly habit reflection
-      description: AI-generated or template-based weekly reflection. Returns 404 if fewer than 3 logs this week.
-      operationId: getHabitReflection
+      summary: Get weekly rule-based reflection (HABIT-005)
+      description: |
+        Returns a personalised, rule-based weekly insight based on the user's habit logs
+        over the last 30 days. Identifies most-consistent day-of-week and top streak habit.
+        Result is cached in Redis for 7 days per user.
+      operationId: getWeeklyReflection
       security:
         - userBearerAuth: []
       responses:
@@ -3692,11 +4795,164 @@ paths:
               example:
                 success: true
                 data:
-                  weekOf: "2026-05-23"
-                  reflectionText: "You maintained your morning routine for 5 out of 7 days. Consider adding mindfulness to complement your exercise habit."
-                  generatedAt: "2026-05-29T09:00:00.000Z"
+                  insight: "You are most consistent on Mondays. Your strongest habit is Drink water."
+                  whyItMatters: "Partners who share consistent self-improvement habits show higher long-term compatibility."
+                  weekStartDate: "2026-05-27"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Habits]
+      summary: Add reflection note to today's habit log (existing endpoint)
+      description: Adds or updates a personal reflection text on today's log entry for a specific habit.
+      operationId: addHabitReflectionNote
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [habitKey, reflection]
+              properties:
+                habitKey: { type: string, enum: [HYDRATION, SLEEP, EXERCISE, MINDFULNESS, PRAYER, GRATITUDE, READING, JOURNALING, NO_ALCOHOL, NO_SMOKING] }
+                reflection: { type: string, minLength: 1, maxLength: 1000 }
+      responses:
+        '200':
+          description: Reflection saved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { habitKey: HYDRATION, logDate: "2026-05-29", reflection: "Felt refreshed" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/streaks:
+    get:
+      tags: [Habits]
+      summary: Get all habits with weekly dots (HABIT-004)
+      description: |
+        Returns all 10 preset habits enriched with currentStreak, longestStreak, totalCompleted,
+        and thisWeekDots — a 7-element boolean array (index 0=Monday … index 6=Sunday) indicating
+        which days of the current week the habit was logged.
+      operationId: getAllHabitsWithStreaks
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: All habits with streak data and weekly dots
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - habitKey: HYDRATION
+                    label: Drink water
+                    currentStreak: 3
+                    longestStreak: 7
+                    totalCompleted: 15
+                    lastLoggedDate: "2026-05-29"
+                    thisWeekDots: [true, true, false, true, false, false, false]
+                meta: { total: 10 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/weekly-reflection:
+    get:
+      tags: [Habits]
+      summary: Alias — same as GET /api/v1/habits/reflection
+      description: Returns the same rule-based weekly reflection. Provided as a convenience path.
+      operationId: getWeeklyReflectionAlias
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Weekly reflection
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  insight: "You are most consistent on Mondays."
+                  whyItMatters: "Partners with consistent habits show higher long-term compatibility."
+                  weekStartDate: "2026-05-27"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/summary-visibility:
+    put:
+      tags: [Habits]
+      summary: Toggle habit summary visibility on profile (HABIT-006)
+      description: |
+        Controls whether the user's habit consistency score is shown to other users
+        viewing their profile. Defaults to false (private).
+      operationId: updateHabitSummaryVisibility
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visible]
+              properties:
+                visible: { type: boolean }
+      responses:
+        '200':
+          description: Visibility updated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { visible: true }
+                meta: { message: "Habit summary visibility updated" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/habits/{habitKey}/history:
+    get:
+      tags: [Habits]
+      summary: Per-habit weekly history for chart (HABIT-007)
+      description: |
+        Returns weekly completion data for a single habit over N weeks (default 8, max 52).
+        Ordered oldest-first. Each entry has `dailyDots` (7-element boolean Mon–Sun array)
+        so the client can render a calendar heatmap without extra computation.
+      operationId: getHabitHistory
+      parameters:
+        - in: path
+          name: habitKey
+          required: true
+          schema:
+            type: string
+            enum: [HYDRATION, SLEEP, EXERCISE, MINDFULNESS, PRAYER, GRATITUDE, READING, JOURNALING, NO_ALCOHOL, NO_SMOKING]
+        - in: query
+          name: weeks
+          schema: { type: integer, minimum: 1, maximum: 52, default: 8 }
+          description: Number of past weeks to return (default 8)
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Weekly habit history
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - weekStartDate: "2026-04-07"
+                    completedDays: 5
+                    dailyDots: [true, true, false, true, true, false, false]
+                  - weekStartDate: "2026-04-14"
+                    completedDays: 7
+                    dailyDots: [true, true, true, true, true, true, true]
+                meta: { total: 8 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
   /api/v1/habits/check-in:
@@ -3743,32 +4999,27 @@ paths:
   /api/v1/matches/tuning:
     get:
       tags: [Match Tuning]
-      summary: Get current match tuning preferences
+      summary: Get current dimension weight multipliers
       operationId: getMatchTuning
       security:
         - userBearerAuth: []
       responses:
         '200':
-          description: Match tuning preferences
+          description: Current dimension multipliers (empty object = all defaults at 1.0)
           content:
             application/json:
               example:
                 success: true
                 data:
-                  maxDistanceKm: null
-                  preferredCountries: ["GB", "CA"]
-                  familyStylePreference: "FLEXIBLE"
-                  openToKids: true
-                  ageRangeMin: 26
-                  ageRangeMax: 36
-                  updatedAt: "2026-05-20T10:00:00.000Z"
+                  userId: "usr-uuid"
+                  weights: { settlementIntent: 1.75, familyInvolvement: 2.5 }
+                  updatedAt: "2026-06-02T10:00:00.000Z"
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
     put:
       tags: [Match Tuning]
-      summary: Update match tuning preferences
-      description: "Partial update — only provided fields are changed. Triggers async rescore via BullMQ. Rate-limited to 10 per hour."
+      summary: Update dimension weight multipliers (advanced). Triggers background rescore (ALG-013).
       operationId: updateMatchTuning
       security:
         - userBearerAuth: []
@@ -3778,29 +5029,111 @@ paths:
           application/json:
             schema:
               type: object
+              required: [weights]
               properties:
-                maxDistanceKm:         { type: integer, minimum: 0, nullable: true }
-                preferredCountries:    { type: array, items: { type: string }, nullable: true }
-                familyStylePreference: { type: string, enum: [NUCLEAR, JOINT, FLEXIBLE], nullable: true }
-                openToKids:            { type: boolean, nullable: true }
-                ageRangeMin:           { type: integer, minimum: 18, maximum: 80, nullable: true }
-                ageRangeMax:           { type: integer, minimum: 18, maximum: 80, nullable: true }
+                weights:
+                  type: object
+                  additionalProperties: { type: number, minimum: 0.1, maximum: 3.0 }
             example:
-              preferredCountries: ["GB", "CA"]
-              familyStylePreference: "FLEXIBLE"
-              ageRangeMin: 26
-              ageRangeMax: 36
+              weights: { settlementIntent: 1.75, realLifeAnswers: 1.5, faithAlignment: 2.0 }
       responses:
         '200':
-          description: Tuning updated
+          description: Tuning updated + background rescore triggered
           content:
             application/json:
               example:
                 success: true
-                data: { updatedAt: "2026-05-29T10:00:00.000Z", rescoreEnqueued: true }
+                data: { userId: "usr-uuid", weights: { settlementIntent: 1.75 }, updatedAt: "2026-06-02T10:00:00.000Z" }
         '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
-        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/match-tuning:
+    get:
+      tags: [Match Tuning]
+      summary: Get tuning expressed as 2 importance ratings (1–5) (ALG-011)
+      operationId: getMatchTuningQuestions
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Current tuning as simplified question answers
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  userId: "usr-uuid"
+                  settlementImportance: 4
+                  familyImportance: 3
+                  updatedAt: "2026-06-02T10:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+    post:
+      tags: [Match Tuning]
+      summary: Save tuning from 2-question UI. Triggers background rescore (ALG-011/013).
+      operationId: setMatchTuningQuestions
+      security:
+        - userBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settlementImportance, familyImportance]
+              properties:
+                settlementImportance: { type: integer, minimum: 1, maximum: 5, description: "How important is settling in the same country? (1=not, 5=critical)" }
+                familyImportance:     { type: integer, minimum: 1, maximum: 5, description: "How important is family involvement in marriage? (1=independent, 5=very involved)" }
+            example:
+              settlementImportance: 4
+              familyImportance: 3
+      responses:
+        '200':
+          description: Preferences saved
+          content:
+            application/json:
+              example:
+                success: true
+                data: { userId: "usr-uuid", settlementImportance: 4, familyImportance: 3, updatedAt: "2026-06-02T10:00:00.000Z" }
+                meta: { message: "Preferences saved" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/match-tuning/impact:
+    get:
+      tags: [Match Tuning]
+      summary: Preview rank change from proposed tuning (ALG-012)
+      operationId: getMatchTuningImpact
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: settlementImportance
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - name: familyImportance
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 5 }
+      responses:
+        '200':
+          description: Impact preview based on top 20 stored pairs
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  pairsAnalysed: 20
+                  profilesUp: 5
+                  profilesDown: 3
+                  profilesUnchanged: 12
+                  topGainers:
+                    - { userId: "usr-uuid-arjun", currentScore: 0.61, projectedScore: 0.78 }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
   # ── Payment — Credits (extended) ───────────────────────────────────────────
@@ -4192,4 +5525,1097 @@ paths:
               example:
                 success: false
                 error: { code: VERIFICATION_NOT_REVIEWABLE, message: "This submission is already resolved" }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Users (extended — ADMIN-002) ──────────────────────────────────
+
+  /admin/users/{userId}/unsuspend:
+    post:
+      tags: [Admin — Users]
+      summary: Unsuspend a user
+      operationId: adminUnsuspendUser
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '200':
+          description: User unsuspended
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "User unsuspended" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: User is not suspended
+          content:
+            application/json:
+              example: { success: false, error: { code: CONFLICT, message: "User is not suspended" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/users/{userId}/ban:
+    post:
+      tags: [Admin — Users]
+      summary: Permanently ban a user
+      description: Bans user and revokes all tokens. Requires SUPERADMIN.
+      operationId: adminBanUser
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 10, maxLength: 500 }
+            example: { reason: "Repeated harassment confirmed." }
+      responses:
+        '200':
+          description: User banned
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "User banned and tokens revoked" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/users/{userId}/wipe-seeded-data:
+    delete:
+      tags: [Admin — Users]
+      summary: Wipe seeded data for a test user
+      description: Deletes all seeded activity for the user. SUPERADMIN only. Non-production.
+      operationId: adminWipeSeededUser
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '200':
+          description: Seeded data wiped
+          content:
+            application/json:
+              example: { success: true, data: { deletedRecords: { messages: 12, habits: 30 } } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Feature Flags (ADMIN-003) ─────────────────────────────────────
+
+  /admin/feature-flags:
+    get:
+      tags: [Admin — Feature Flags]
+      summary: List all feature flags
+      description: Returns all runtime feature flags. Requires SUPERADMIN.
+      operationId: adminListFeatureFlags
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Feature flags list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { key: "ALGORITHM_V2", enabled: true, rolloutPercent: 50 }
+                  - { key: "INTRO_DROPS_V2", enabled: false, rolloutPercent: 0 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Admin — Feature Flags]
+      summary: Create a feature flag
+      operationId: adminCreateFeatureFlag
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key:            { type: string, minLength: 1 }
+                enabled:        { type: boolean, default: false }
+                rolloutPercent: { type: number, minimum: 0, maximum: 100 }
+                description:    { type: string, maxLength: 200 }
+      responses:
+        '201':
+          description: Feature flag created
+          content:
+            application/json:
+              example: { success: true, data: { key: "INTRO_DROPS_V2", enabled: false } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '409':
+          description: Flag key already exists
+          content:
+            application/json:
+              example: { success: false, error: { code: CONFLICT, message: "Feature flag key already exists" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/feature-flags/{key}:
+    get:
+      tags: [Admin — Feature Flags]
+      summary: Get a feature flag by key
+      operationId: adminGetFeatureFlag
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Feature flag detail
+          content:
+            application/json:
+              example: { success: true, data: { key: "ALGORITHM_V2", enabled: true, rolloutPercent: 50 } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    patch:
+      tags: [Admin — Feature Flags]
+      summary: Update a feature flag
+      operationId: adminUpdateFeatureFlag
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:        { type: boolean }
+                rolloutPercent: { type: number, minimum: 0, maximum: 100 }
+                description:    { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Feature flag updated
+          content:
+            application/json:
+              example: { success: true, data: { key: "ALGORITHM_V2", enabled: true, rolloutPercent: 100 } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    delete:
+      tags: [Admin — Feature Flags]
+      summary: Delete a feature flag
+      operationId: adminDeleteFeatureFlag
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Feature flag deleted
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "Feature flag deleted" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Audit Log (ADMIN-005) ─────────────────────────────────────────
+
+  /admin/audit-log:
+    get:
+      tags: [Admin — Audit Log]
+      summary: List admin audit log entries
+      description: Paginated, filterable audit trail of all admin actions. Requires SUPERADMIN.
+      operationId: adminListAuditLog
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: adminId, in: query, schema: { type: string, format: uuid } }
+        - { name: action,  in: query, schema: { type: string } }
+        - { name: entity,  in: query, schema: { type: string } }
+        - { name: from,    in: query, schema: { type: string, format: date-time } }
+        - { name: to,      in: query, schema: { type: string, format: date-time } }
+        - { name: limit,   in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor,  in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - { id: "log-uuid", adminId: "adm-uuid", action: "SUSPEND_USER", entity: "User", entityId: "usr-uuid", createdAt: "2026-05-29T10:00:00.000Z" }
+                  hasMore: false
+                  nextCursor: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Analytics (extended — ADMIN-007 + ADMIN-017) ──────────────────
+
+  /admin/analytics/kpi:
+    get:
+      tags: [Admin — Analytics]
+      summary: KPI dashboard (ADMIN-007)
+      description: DAU, WAU, MAU, signups, conversations, match rate. Requires ANALYST or higher.
+      operationId: adminGetKpi
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: KPI dashboard data
+          content:
+            application/json:
+              example:
+                success: true
+                data: { dau: 1240, wau: 5820, mau: 18400, newSignupsToday: 34, activeConversations: 892, matchRate: 0.34 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/cohort-retention:
+    get:
+      tags: [Admin — Analytics]
+      summary: Cohort retention analysis (ADMIN-007)
+      description: Week-0 to week-12 retention by signup cohort. Requires ANALYST or higher.
+      operationId: adminGetCohortRetention
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: cohorts, in: query, schema: { type: integer, minimum: 1, maximum: 12, default: 6 } }
+      responses:
+        '200':
+          description: Cohort retention data
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { cohortWeek: "2026-05-04", week0: 1.0, week1: 0.62, week2: 0.48, week4: 0.31 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/groups:
+    get:
+      tags: [Admin — Analytics]
+      summary: Group engagement analytics (ADMIN-017)
+      description: Trends in group membership, posts, join rates by type. Requires ANALYST or higher.
+      operationId: adminGetGroupAnalytics
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Group analytics
+          content:
+            application/json:
+              example:
+                success: true
+                data: { totalGroups: 21, byType: { REGIONAL: 5, CULTURAL: 6, PROFESSIONAL: 5, INTEREST: 5 }, postsThisWeek: 342 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/drops:
+    get:
+      tags: [Admin — Analytics]
+      summary: IntroductionDrop engagement analytics (ADMIN-017)
+      description: Drop funnel — early access, unlocks, acceptance rate. Requires ANALYST or higher.
+      operationId: adminGetDropAnalytics
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Drop analytics
+          content:
+            application/json:
+              example:
+                success: true
+                data: { totalDrops: 8, liveDrops: 3, earlyAccessPurchases: 120, unlockPurchases: 45, acceptanceRate: 0.62 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/ai:
+    get:
+      tags: [Admin — Analytics]
+      summary: AI intelligence analytics (ADMIN-017)
+      description: Embedding coverage, AI vs admin drop ratios. Requires ANALYST or higher.
+      operationId: adminGetAiAnalytics
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: AI analytics
+          content:
+            application/json:
+              example:
+                success: true
+                data: { embeddingsTotal: 1240, embeddingsCurrent: 1190, staleEmbeddings: 50, aiProposedDrops: 12, adminApprovedDrops: 9 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/analytics/diamonds:
+    get:
+      tags: [Admin — Analytics]
+      summary: Diamond economy analytics (ADMIN-017)
+      description: Spend by ledger reason. Requires ANALYST or higher.
+      operationId: adminGetDiamondAnalytics
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Diamond economy data
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  totalSpent: 48200
+                  byReason: { INTRO_EARLY_VIEW: 12000, INTRO_EARLY_UNLOCK: 8400, GROUP_CONVERSATION_INITIATION: 27800 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Events (ADMIN-008) ─────────────────────────────────────────────
+
+  /admin/events:
+    get:
+      tags: [Admin — Events]
+      summary: List all platform events
+      description: Paginated event list. Requires MODERATOR or higher.
+      operationId: adminListEvents
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [UPCOMING, LIVE, ENDED, CANCELLED] } }
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Events list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - { id: "evt-uuid", title: "Diwali Mixer London", status: "UPCOMING", startAt: "2026-10-20T19:00:00.000Z", rsvpCount: 48 }
+                  hasMore: false
+                  nextCursor: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Admin — Events]
+      summary: Create a platform event
+      operationId: adminCreateEvent
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, startAt, endAt]
+              properties:
+                title:       { type: string, minLength: 3, maxLength: 100 }
+                description: { type: string, maxLength: 1000 }
+                startAt:     { type: string, format: date-time }
+                endAt:       { type: string, format: date-time }
+                location:    { type: string, maxLength: 200 }
+                maxAttendees: { type: integer, minimum: 1 }
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              example: { success: true, data: { id: "evt-uuid", title: "Diwali Mixer London", status: "UPCOMING" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/events/{eventId}:
+    get:
+      tags: [Admin — Events]
+      summary: Get event detail (admin view)
+      operationId: adminGetEvent
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Event detail
+          content:
+            application/json:
+              example: { success: true, data: { id: "evt-uuid", title: "Diwali Mixer London", rsvpCount: 48 } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    patch:
+      tags: [Admin — Events]
+      summary: Update a platform event
+      operationId: adminUpdateEvent
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:       { type: string, minLength: 3, maxLength: 100 }
+                description: { type: string, maxLength: 1000 }
+                startAt:     { type: string, format: date-time }
+                endAt:       { type: string, format: date-time }
+                location:    { type: string, maxLength: 200 }
+                maxAttendees: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Event updated
+          content:
+            application/json:
+              example: { success: true, data: { id: "evt-uuid", title: "Diwali Mixer London" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    delete:
+      tags: [Admin — Events]
+      summary: Archive (cancel) a platform event
+      operationId: adminArchiveEvent
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Event archived
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "Event archived" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Event already cancelled
+          content:
+            application/json:
+              example: { success: false, error: { code: CONFLICT, message: "Event is already archived" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/events/{eventId}/process-attendance:
+    post:
+      tags: [Admin — Events]
+      summary: Trigger post-event co-attendance score boost (EVENT-007)
+      description: |
+        Finds all users who attended this event (GOING RSVP status), logs unique co-attending
+        pairs, and enqueues a global score recompute job. This surfaces co-attendance as a
+        matching relevance signal at the next full rescore.
+      operationId: processEventAttendance
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Attendance processed — recompute enqueued
+          content:
+            application/json:
+              example:
+                success: true
+                data: { pairsFound: 15 }
+                meta: { message: "Post-event attendance boost enqueued" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Prompts (ADMIN-009) ────────────────────────────────────────────
+
+  /admin/prompts:
+    get:
+      tags: [Admin — Prompts]
+      summary: List weekly prompts (admin view)
+      operationId: adminListPrompts
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Prompts list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - { id: "prm-uuid", weekKey: "2026-W22", question: "What does home mean to you?" }
+                  hasMore: false
+                  nextCursor: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Admin — Prompts]
+      summary: Create a weekly prompt
+      description: Unique per weekKey. Requires MODERATOR or higher.
+      operationId: adminCreatePrompt
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [weekKey, question]
+              properties:
+                weekKey:  { type: string }
+                question: { type: string, minLength: 10, maxLength: 300 }
+            example: { weekKey: "2026-W22", question: "What does home mean to you now that you live abroad?" }
+      responses:
+        '201':
+          description: Prompt created
+          content:
+            application/json:
+              example: { success: true, data: { id: "prm-uuid", weekKey: "2026-W22" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '409':
+          description: Prompt already exists for this week
+          content:
+            application/json:
+              example: { success: false, error: { code: CONFLICT, message: "Prompt already exists for this week" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/prompts/{promptId}:
+    get:
+      tags: [Admin — Prompts]
+      summary: Get a weekly prompt (admin view)
+      operationId: adminGetPrompt
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: promptId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Prompt detail
+          content:
+            application/json:
+              example: { success: true, data: { id: "prm-uuid", weekKey: "2026-W22", question: "What does home mean?" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    patch:
+      tags: [Admin — Prompts]
+      summary: Update a weekly prompt
+      operationId: adminUpdatePrompt
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: promptId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                question: { type: string, minLength: 10, maxLength: 300 }
+      responses:
+        '200':
+          description: Prompt updated
+          content:
+            application/json:
+              example: { success: true, data: { id: "prm-uuid", weekKey: "2026-W22", question: "Updated question." } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Groups CRUD (ADMIN-010) ────────────────────────────────────────
+
+  /admin/groups:
+    get:
+      tags: [Admin — Groups]
+      summary: List all groups (admin CRUD view)
+      description: Paginated group list. Requires MODERATOR or higher.
+      operationId: adminListGroups
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: type,   in: query, schema: { type: string, enum: [REGIONAL, CULTURAL, PROFESSIONAL, INTEREST] } }
+        - { name: status, in: query, schema: { type: string, enum: [ACTIVE, ARCHIVED] } }
+        - { name: limit,  in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Groups list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - { id: "grp-uuid", name: "Indians in UK", type: "REGIONAL", memberCount: 340 }
+                  hasMore: false
+                  nextCursor: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Admin — Groups]
+      summary: Create a system-provisioned group
+      description: Requires SUPERADMIN.
+      operationId: adminCreateGroup
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, type]
+              properties:
+                name:          { type: string, minLength: 3, maxLength: 100 }
+                type:          { type: string, enum: [REGIONAL, CULTURAL, PROFESSIONAL, INTEREST] }
+                scope:         { type: string, enum: [COUNTRY, GLOBAL], default: GLOBAL }
+                description:   { type: string, maxLength: 500 }
+                country:       { type: string }
+                parentGroupId: { type: string, format: uuid }
+            example: { name: "Indians in Singapore", type: "REGIONAL", scope: "COUNTRY", country: "SG" }
+      responses:
+        '201':
+          description: Group created
+          content:
+            application/json:
+              example: { success: true, data: { id: "grp-uuid", name: "Indians in Singapore", type: "REGIONAL" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/groups/{groupId}:
+    get:
+      tags: [Admin — Groups]
+      summary: Get group detail (admin view)
+      operationId: adminGetGroup
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Group detail
+          content:
+            application/json:
+              example: { success: true, data: { id: "grp-uuid", name: "Indians in UK", type: "REGIONAL", memberCount: 340, postCount: 128 } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    patch:
+      tags: [Admin — Groups]
+      summary: Update a group (admin)
+      operationId: adminUpdateGroup
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:        { type: string, minLength: 3, maxLength: 100 }
+                description: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Group updated
+          content:
+            application/json:
+              example: { success: true, data: { id: "grp-uuid", name: "Indians in UK (Updated)" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    delete:
+      tags: [Admin — Groups]
+      summary: Archive a group
+      operationId: adminArchiveGroup
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: groupId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Group archived
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "Group archived" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '409':
+          description: Group already archived
+          content:
+            application/json:
+              example: { success: false, error: { code: CONFLICT, message: "Group is already archived" } }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — AI Proposals (ADMIN-012) ───────────────────────────────────────
+
+  /admin/ai/drops/propose:
+    post:
+      tags: [Admin — AI]
+      summary: Trigger AI to propose IntroductionDrops for a region
+      description: Calls GPT-4o-mini to generate DRAFT drops. Requires SUPERADMIN.
+      operationId: adminAiProposeDrops
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [region]
+              properties:
+                region: { type: string, minLength: 2, maxLength: 100 }
+            example: { region: "UK" }
+      responses:
+        '200':
+          description: Draft drops proposed
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  drops:
+                    - { id: "drp-uuid", theme: "Diwali Mixer", status: "DRAFT", memberCount: 28 }
+                meta: { message: "2 draft drops proposed" }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/ai/events/{eventId}/pre-connections:
+    post:
+      tags: [Admin — AI]
+      summary: Generate event pre-connection drops
+      description: SCHEDULED IntroductionDrops for event attendees 72h before start. Requires SUPERADMIN.
+      operationId: adminAiGeneratePreConnections
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: eventId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Pre-connection drop generated
+          content:
+            application/json:
+              example:
+                success: true
+                data: { dropId: "drp-uuid", status: "SCHEDULED", memberCount: 42 }
+                meta: { message: "Pre-connection drop generated" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — System Config (ADMIN-014) ─────────────────────────────────────
+
+  /admin/system-config:
+    get:
+      tags: [Admin — System Config]
+      summary: List all system config entries
+      description: Returns all key-value config pairs. Requires SUPERADMIN.
+      operationId: adminListSystemConfig
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: System config list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - { key: "SUGGESTED_GROUPS_MAX", value: "20", description: "Max groups in onboarding" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    post:
+      tags: [Admin — System Config]
+      summary: Create a system config entry
+      operationId: adminCreateSystemConfig
+      security:
+        - adminBearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key:         { type: string, minLength: 1 }
+                value:       { type: string, minLength: 1 }
+                description: { type: string, maxLength: 200 }
+            example: { key: "DRIP_BATCH_SIZE", value: "5" }
+      responses:
+        '201':
+          description: Config entry created
+          content:
+            application/json:
+              example: { success: true, data: { key: "DRIP_BATCH_SIZE", value: "5" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/system-config/{configKey}:
+    get:
+      tags: [Admin — System Config]
+      summary: Get a system config entry by key
+      operationId: adminGetSystemConfig
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: configKey, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Config entry
+          content:
+            application/json:
+              example: { success: true, data: { key: "SUGGESTED_GROUPS_MAX", value: "20" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    put:
+      tags: [Admin — System Config]
+      summary: Upsert a system config entry
+      operationId: adminUpsertSystemConfig
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: configKey, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value:       { type: string, minLength: 1 }
+                description: { type: string, maxLength: 200 }
+            example: { value: "25" }
+      responses:
+        '200':
+          description: Config entry upserted
+          content:
+            application/json:
+              example: { success: true, data: { key: "SUGGESTED_GROUPS_MAX", value: "25" } }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    delete:
+      tags: [Admin — System Config]
+      summary: Delete a system config entry
+      operationId: adminDeleteSystemConfig
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: configKey, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Config entry deleted
+          content:
+            application/json:
+              example: { success: true, data: null, meta: { message: "Config entry deleted" } }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — Seeder Monitoring (ADMIN-015) ──────────────────────────────────
+
+  /admin/seeder/status:
+    get:
+      tags: [Admin — Seeder]
+      summary: Get seeder service status
+      description: Seeder state and counts. Non-production only. Requires SUPERADMIN.
+      operationId: adminGetSeederStatus
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Seeder status
+          content:
+            application/json:
+              example:
+                success: true
+                data: { isRunning: false, totalSeededProfiles: 487, lastDripAt: "2026-05-31T18:00:00.000Z", dripPaused: false }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/seeder/flush:
+    post:
+      tags: [Admin — Seeder]
+      summary: Flush all seeded data
+      description: Deletes all isSeeded=true records. Irreversible. SUPERADMIN only.
+      operationId: adminFlushSeededData
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Seeded data flushed
+          content:
+            application/json:
+              example:
+                success: true
+                data: { deletedCounts: { users: 487, profiles: 487, messages: 8420 } }
+                meta: { message: "All seeded data flushed" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # ── Admin — AI Monitoring (ADMIN-016) ─────────────────────────────────────
+
+  /admin/ai/embeddings/status:
+    get:
+      tags: [Admin — AI]
+      summary: Get AI embedding queue status
+      description: Coverage overview. Requires SUPERADMIN.
+      operationId: adminGetEmbeddingStatus
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Embedding status
+          content:
+            application/json:
+              example:
+                success: true
+                data: { totalProfiles: 1240, withEmbedding: 1190, stale: 50, queueDepth: 3 }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/ai/embeddings:
+    get:
+      tags: [Admin — AI]
+      summary: List ProfileEmbeddings
+      description: Paginated list with optional stale filter. Requires SUPERADMIN.
+      operationId: adminListEmbeddings
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - { name: staleOnly, in: query, schema: { type: boolean, default: false } }
+        - { name: limit,     in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { name: cursor,    in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Embeddings list
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  items:
+                    - { userId: "usr-uuid", updatedAt: "2026-05-29T10:00:00.000Z", isStale: false }
+                  hasMore: false
+                  nextCursor: null
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/ai/embeddings/recompute-all:
+    post:
+      tags: [Admin — AI]
+      summary: Recompute all stale embeddings
+      description: Enqueues BullMQ jobs for stale or missing embeddings. Requires SUPERADMIN.
+      operationId: adminRecomputeAllEmbeddings
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Jobs enqueued
+          content:
+            application/json:
+              example:
+                success: true
+                data: { jobsQueued: 50 }
+                meta: { message: "50 recompute jobs enqueued" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /admin/ai/embeddings/{userId}/recompute:
+    post:
+      tags: [Admin — AI]
+      summary: Recompute embedding for a single user
+      description: Enqueues BullMQ profile intelligence job. Requires SUPERADMIN.
+      operationId: adminRecomputeUserEmbedding
+      security:
+        - adminBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userIdPath'
+      responses:
+        '200':
+          description: Recompute job enqueued
+          content:
+            application/json:
+              example:
+                success: true
+                data: { jobId: "pi-usr-uuid", userId: "usr-uuid" }
+                meta: { message: "Recompute job enqueued" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
         '500': { $ref: '#/components/responses/500InternalError' }

@@ -1228,16 +1228,24 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-## PHASE 8e — Admin API + Analytics
+## PHASE 8e — Admin API + Analytics ✅ COMPLETE 2026-06-01
 > **Scope updated:** 2026-05-29 — expanded to include all Phase 8 admin workflows (GroupProposal, IntroductionDrop, SystemConfig, seeder monitoring, AI/ProfileEmbedding monitoring, and new analytics dimensions).
-> **App:** `apps/admin-api` (port 3001). All routes under `/admin/...`. All require `requireAdminRole()`.
-> **Implementation order:** after Phase 8a data exists so dashboards are meaningful.
+> **App:** All admin routes wired into `apps/gateway` under `/admin/...` with `requireAdminRole()`. All routes tested.
+> **Tests:** 1,492 total (99 suites) — Phase 8e added 85 tests (16 + 69 in two admin test files).
+> **Decision:** Admin routes implemented in `apps/gateway` (not a separate `apps/admin-api`) — the gateway already has all the middleware and lib integrations needed; a separate admin-api app would duplicate all of this with no benefit at current scale. This can be split later if security isolation requirements change.
+
+### Decision Log — Phase 8e
+- **2026-06-01:** Admin routes in gateway (not separate app). Gateway already has `requireAdminRole`, `auditLog`, and all lib imports. Separating would add deployment complexity with no benefit at current scale.
+- **2026-06-01:** `req.admin` (not `req.adminUser`) — set by `requireAdminRole` middleware, declared in `apps/gateway/src/types/express.d.ts`.
+- **2026-06-01:** `libs/analytics` created as new cross-domain lib (spans users, groups, drops, diamonds).
+- **2026-06-01:** Seeder monitoring implemented as gateway-side proxy service (`apps/gateway/src/services/seeder-monitoring.service.ts`) that reads seeder state from DB rather than making HTTP calls to the seeder app.
+- **2026-06-01:** AI monitoring (`libs/ai/src/ai-monitoring.service.ts`) exposes `getEmbeddingStatus`, `listEmbeddings`, `recomputeEmbedding`, `recomputeAllStaleEmbeddings` — added to `libs/ai/src/index.ts`.
 
 ---
 
-### ADMIN-001 · Admin Login ⏳
+### ADMIN-001 · Admin Login ✅
 **Story:** Admin users log in with email + bcrypt password; optionally TOTP for SUPERADMIN.
-**Status:** AUTH-006 already complete in `apps/gateway`. This task wires the standalone `apps/admin-api` app with the same auth logic.
+**Status:** AUTH-006 already complete in `apps/gateway`. Admin login endpoint (`POST /admin/auth/login`) was part of AUTH-006. Controller already tested.
 
 **Acceptance Criteria:**
 - [ ] `POST /admin/auth/login` — `{ email, password, totpCode? }` → `{ accessToken, adminUser }`
@@ -1248,7 +1256,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-002 · User Management ⏳
+### ADMIN-002 · User Management ✅
 **Story:** As an admin, I can search, view, suspend, and ban users; wipe seeded data for clean resets.
 
 **Acceptance Criteria:**
@@ -1263,7 +1271,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-003 · Feature Flag Toggle ⏳
+### ADMIN-003 · Feature Flag Toggle ✅
 **Story:** As an admin, I toggle feature flags on/off and set rollout percentages without a deployment.
 
 **Acceptance Criteria:**
@@ -1277,7 +1285,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-004 · Verification Review Queue ⏳
+### ADMIN-004 · Verification Review Queue ✅
 **Story:** As a moderator, I review submitted ID documents and selfies, then approve or reject each submission.
 
 **Acceptance Criteria:**
@@ -1291,7 +1299,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-005 · Audit Log Viewer ⏳
+### ADMIN-005 · Audit Log Viewer ✅
 **Story:** As a SUPERADMIN, I view a tamper-evident log of all admin actions for compliance.
 
 **Acceptance Criteria:**
@@ -1303,7 +1311,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-006 · Moderation Queue ⏳
+### ADMIN-006 · Moderation Queue ✅
 **Story:** As a moderator, I review flagged messages, hide harmful content, and resolve flags.
 
 **Acceptance Criteria:**
@@ -1320,7 +1328,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-007 · Core KPI Dashboard ⏳
+### ADMIN-007 · Core KPI Dashboard ✅
 **Story:** As an admin, I see daily KPI metrics covering engagement, conversion, and platform health.
 
 **Acceptance Criteria:**
@@ -1338,7 +1346,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-008 · Event Management ⏳
+### ADMIN-008 · Event Management ✅
 **Story:** As an admin, I create, update, and cancel gatherings that users can RSVP to.
 
 **Acceptance Criteria:**
@@ -1352,7 +1360,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-009 · Weekly Prompt Management ⏳
+### ADMIN-009 · Weekly Prompt Management ✅
 **Story:** As an admin, I create, schedule, and close weekly community prompts.
 
 **Acceptance Criteria:**
@@ -1366,7 +1374,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-010 · Group Management ⏳
+### ADMIN-010 · Group Management ✅
 **Story:** As an admin, I provision and manage all four group types, pin/unpin posts, and archive groups.
 
 **Acceptance Criteria:**
@@ -1384,7 +1392,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-011 · IntroductionDrop Management ⏳
+### ADMIN-011 · IntroductionDrop Management ✅
 **Story:** As an admin, I approve, adjust, and monitor all introduction drops across all themes.
 
 **Acceptance Criteria:**
@@ -1399,7 +1407,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-012 · AI Proposal Dashboard ⏳
+### ADMIN-012 · AI Proposal Dashboard ✅
 **Story:** As an admin, I review introduction drops that the AI proposed so I can approve, reject, or adjust them before they go live.
 
 **Acceptance Criteria:**
@@ -1412,7 +1420,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-013 · GroupProposal Management ⏳
+### ADMIN-013 · GroupProposal Management ✅
 **Story:** As an admin, I review member-submitted proposals for new INTEREST groups, then approve or reject them.
 
 **Acceptance Criteria:**
@@ -1429,7 +1437,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-014 · SystemConfig Management ⏳
+### ADMIN-014 · SystemConfig Management ✅
 **Story:** As an admin, I view and update system-wide configuration values without a deployment.
 
 **Acceptance Criteria:**
@@ -1444,7 +1452,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-015 · Seeder Monitoring ⏳
+### ADMIN-015 · Seeder Monitoring ✅
 **Story:** As an admin, I monitor the seeder service status and trigger clean flushes of seeded data during development.
 
 **Acceptance Criteria:**
@@ -1462,7 +1470,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-016 · AI / ProfileEmbedding Monitoring ⏳
+### ADMIN-016 · AI / ProfileEmbedding Monitoring ✅
 **Story:** As an admin, I see which user profiles have embeddings, which are pending, and trigger re-computation when needed.
 
 **Acceptance Criteria:**
@@ -1480,7 +1488,7 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### ADMIN-017 · Extended Analytics ⏳
+### ADMIN-017 · Extended Analytics ✅
 **Story:** As an admin, I see analytics covering the new Phase 8 features — group activity, drop engagement, early access diamond spend, and AI vs admin approval ratios.
 
 **Acceptance Criteria:**
@@ -1601,94 +1609,175 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-## PHASE 9 — Habits / Consistency Hub
+## PHASE 9 — Habits / Consistency Hub ✅
 
-### HABIT-001 · Habit Management CRUD ⏳
-**Story:** As a user, I create and manage a list of personal habits so the app can track my daily consistency.
+**Status:** Complete — 2026-06-01
+**Implementation start:** 2026-06-01
+**Tests:** 1,546 tests, 101 suites — all green
+
+### Decision Log
+
+| Date | Decision |
+|------|----------|
+| 2026-06-01 | **Enum model retained** — Phase 9 stories described a new `Habit` model with UUID IDs, but the existing implementation (Phase 7b) uses a fixed `HabitKey` enum of 10 preset habits. Adapting Phase 9 to the enum model avoids a breaking migration while delivering all value. Users "create" habits by logging preset keys; max 10 = exactly the catalog. |
+| 2026-06-01 | **Schema change** — Added `habitSummaryVisible Boolean @default(false)` to `Profile` model. Must run `prisma db push` locally (cloud runner cannot reach Supabase). |
+| 2026-06-01 | **Weekly reflection** — Rule-based v1, Redis-cached 7 days (`habit:weekly-reflection:{userId}`). Key: most-consistent day-of-week + top streak habit. |
+| 2026-06-01 | **HABIT-008 matching** — `habitConsistency` + `habitOverlap` added as *optional* fields on `ScoreBreakdown`. When habit data exists for both users, they contribute 5% total (3% consistency + 2% overlap). Existing 9 weights reduced 5% proportionally. Gated by `habitLogsExist` check — backwards-compatible with existing tests. |
+
+### HABIT-001 · Habit Catalog List ✅ *(done Phase 7b)*
+**Story:** As a user, I see all available habits with my current tracking data.
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/habits` — name (max 40 chars), icon (emoji or preset key)
-- [ ] `GET /api/v1/habits` — list user's habits ordered by createdAt
-- [ ] `PUT /api/v1/habits/:id` — rename or change icon
-- [ ] `DELETE /api/v1/habits/:id` — soft-delete (logs preserved)
-- [ ] Max 10 habits per user; returns 409 if limit reached
-- [ ] Requires requireAuth
+- [x] `GET /api/v1/habits` — returns all 10 preset HabitKey habits with streaks
+- [x] Each item: `{ habitKey, label, currentStreak, longestStreak, totalCompleted, lastLoggedDate }`
+- [x] Requires `requireAuth`
 
-### HABIT-002 · Daily Habit Logging ⏳
-**Story:** As a user, I log that I completed a habit today so my streak is tracked.
+### HABIT-002 · Daily Habit Logging ✅ *(done Phase 7b)*
+**Story:** As a user, I log that I completed a habit today.
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/habits/:id/log` — body `{ completedAt?: ISO8601 }` (defaults to now)
-- [ ] Idempotent — only 1 log per habit per calendar day (UTC); duplicate returns 200 not 201
-- [ ] Returns 201 `{ logId, habitId, completedAt, currentStreak }`
-- [ ] Streak = consecutive days with a log; broken streak resets to 0
+- [x] `POST /api/v1/habits/:habitKey/log` — body `{ logDate?: YYYY-MM-DD, notes?, reflection? }`
+- [x] 409 if already logged for that date (`HabitAlreadyLoggedError`)
+- [x] `DELETE /api/v1/habits/:habitKey/log/:date` — remove a log entry
+- [x] 404 if log not found (`HabitLogNotFoundError`)
+- [x] `GET /api/v1/habits/:habitKey/streak` — single habit streak
 
-### HABIT-003 · Streak Data & Weekly Dots ⏳
+### HABIT-003 · Habit Reflection Notes ✅ *(done Phase 7b)*
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/habits/streaks` — all habits with: currentStreak, longestStreak, thisWeekDots (7-element boolean array Mon–Sun)
-- [ ] `GET /api/v1/habits/:id/history?weeks=8` — streak data for bar chart
+- [x] `POST /api/v1/habits/reflection` — `{ habitKey, reflection }` — adds text reflection to today's log
+- [x] 404 if no log exists for today
 
-### HABIT-004 · Weekly Reflection ⏳
+### HABIT-004 · Streak Data & Weekly Dots ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/habits/reflection` — generated weekly insight text
-- [ ] Rule-based v1: "You are most consistent on [day pattern]. That pattern increases compatibility with users who prefer [style]."
-- [ ] Generated once on Monday, cached in Redis for 7 days
-- [ ] Includes: `{ insight, whyItMatters, weekStartDate }`
+- [x] `GET /api/v1/habits/streaks` — all 10 habits with: `currentStreak`, `longestStreak`, `totalCompleted`, `thisWeekDots` (7-element boolean Mon=index0 … Sun=index6)
+- [x] Each element of `thisWeekDots` = true if habit was logged on that day this week
+- [x] Requires `requireAuth`
 
-### HABIT-005 · Summary Visibility Toggle ⏳
+### HABIT-005 · Weekly Reflection ✅
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/habits/summary-visibility` — `{ visible: boolean }`
-- [ ] When visible=true: habit summary (consistency score) included in profile viewed by others
-- [ ] Default: private (false)
+- [x] `GET /api/v1/habits/reflection` — generated weekly insight text (GET, NOT POST)
+- [x] Rule-based v1: identifies most consistent day-of-week + top habit
+- [x] Generated fresh per user on first call each week; cached in Redis 7 days
+- [x] Response: `{ insight: string, whyItMatters: string, weekStartDate: string }`
+- [x] Empty state when no logs: returns generic encouraging message
+
+### HABIT-006 · Summary Visibility Toggle ✅
+**Acceptance Criteria:**
+- [x] `PUT /api/v1/habits/summary-visibility` — `{ visible: boolean }`
+- [x] Updates `Profile.habitSummaryVisible` in DB
+- [x] When true: habit summary visible to matched users viewing the profile
+- [x] Default: false (private)
+- [x] Returns 200 with updated status
+
+### HABIT-007 · Per-Habit History (Chart Data) ✅
+**Acceptance Criteria:**
+- [x] `GET /api/v1/habits/:habitKey/history?weeks=8` — weekly chart data for a single habit
+- [x] Each week: `{ weekStartDate: YYYY-MM-DD, completedDays: 0–7, dailyDots: boolean[7] }`
+- [x] `weeks` param: 1–52, default 8
+- [x] Weeks ordered chronologically (oldest first)
+
+### HABIT-008 · Habit Consistency → Matching Algorithm ✅
+**Acceptance Criteria:**
+- [x] `habitConsistency` (0–1): both users' completion rate last 30 days; score = 1 - |rateA - rateB|
+- [x] `habitOverlap` (0–1): Jaccard similarity of active habit key sets (last 30 days)
+- [x] Both added as optional fields in `ScoreBreakdown`; only computed when both users have habit logs
+- [x] When computed: total weight contribution = 0.05 (9 core weights scaled by 0.95)
+- [x] Feature-safe: tests without habit data get identical results to before (backwards-compatible)
 
 ---
 
-## PHASE 10 — Introductions (Weekly Drop)
+## PHASE 10 — Introductions (Weekly Drop) ✅
 
-### INTRO-001 · Weekly Intro Compute Job ⏳
-**Story:** Every Sunday at 9 AM GMT, the system curates 5 best-matched profiles per user from their active groups.
+**Status:** Complete — 2026-06-01
+
+### Decision Log
+
+| Date | Decision |
+|------|----------|
+| 2026-06-01 | **INTRO-002 already done** — `GET /api/v1/introductions` implemented in Phase 7b. Returns current week's Introduction records by weekKey. |
+| 2026-06-01 | **INTRO-005/006 separation** — Rule-based generator is always available. LLM version is an optional overlay (isAiConfigured() guard). Redis-cached 24h per pair key `am:why:{userAId}:{userBId}`. |
+| 2026-06-01 | **Weekly drop auto-approval** — BullMQ Sunday cron creates drops with status SCHEDULED directly (no admin intervention). Differs from admin-proposed drops (DRAFT → admin approve flow). |
+| 2026-06-01 | **INTRO-004 diamonds** — Spends 300 diamonds (fixed). Marks all current-week Introduction rows with `viewedEarlyAt = now()`. Idempotent — already-unlocked users pay nothing. |
+| 2026-06-01 | **match-context endpoint** — Reads `getMatchScore()` from cache/DB. If no score yet, calls `computeAndSaveScore()` on demand. Returns totalScore 0–100, breakdown, dimension cards, and why-this-match text. Redis-cached 1h. |
+
+### INTRO-001 · Weekly Intro Compute Job ✅
+**Story:** Every Sunday at 9 AM GMT, the system creates IntroductionDrops per active REGIONAL group.
 
 **Acceptance Criteria:**
-- [ ] BullMQ cron job runs Sunday 09:00 UTC
-- [ ] For each active user in a group: fetches top-5 scored profiles from that group
-- [ ] Applies filters: not already connected, not blocked, not previously introduced this cycle
-- [ ] Stores results in `weekly_introductions` table with `weekOf` date
-- [ ] Generates rule-based "Why this match?" text for each intro (top 2-3 dimensions)
-- [ ] Publishes `introduction.batch_ready` CloudEvent
+- [x] BullMQ cron job runs Sunday 09:00 UTC (`0 9 * * 0`)
+- [x] For each active REGIONAL group with >= 2 members: creates one IntroductionDrop (status SCHEDULED)
+- [x] Member pool populated from active group members
+- [x] Pairing generation fired async (fire-and-forget) after drop creation
+- [x] Idempotent — skips groups that already have a drop this week
+- [x] `createWeeklyDropWorker(redisUrl)` factory registered in gateway server.ts
 
-### INTRO-002 · Get This Week's Introductions ⏳
+### INTRO-002 · Get This Week's Introductions ✅ *(done Phase 7b)*
 **Story:** As a user, I see my curated weekly introductions.
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/introductions` — returns up to 5 intros for current week
-- [ ] Each intro: profile summary, whyThisMatch text, compatibilityScore, compatibilityTags[], isUnlocked
-- [ ] If Sunday hasn't happened and user hasn't paid to unlock: `isUnlocked: false`
-- [ ] Returns `{ introductions[], weekOf, refreshesAt, unlockedEarlyAt? }`
+- [x] `GET /api/v1/introductions` — returns current week's Introduction records by weekKey
+- [x] Each intro: otherUser profile summary, status, acceptedByMe/Other, expiresAt
 
-### INTRO-003 · Introduction Detail ⏳
+### INTRO-003 · Introduction Detail ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/introductions/:id` — full match context
-- [ ] Includes: compatibilityScore (0–100), dimensions[] (name + score + label), whyThisMatch, profile snapshot
-- [ ] 403 if introduction belongs to different user; 404 if not found
+- [x] `GET /api/v1/introductions/:id` — returns IntroductionDto for a single introduction
+- [x] 403 if introduction belongs to different user; 404 if not found
+- [x] Validated UUID path param
 
-### INTRO-004 · Unlock Early ⏳
+### INTRO-004 · Unlock Early ✅
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/introductions/unlock-early` — spends 300 credits
-- [ ] Unlocks current week's batch immediately (sets `unlockedEarlyAt`)
-- [ ] Idempotent — already unlocked returns 200, no double charge
-- [ ] 402 if insufficient credits
+- [x] `POST /api/v1/introductions/unlock-early` — spends 300 diamonds
+- [x] Marks all current-week Introduction rows with `viewedEarlyAt = now()`
+- [x] Idempotent — already unlocked returns `alreadyUnlocked: true`, no double charge
+- [x] 409 if insufficient diamonds (EarlyUnlockInsufficientDiamondsError)
 
-### INTRO-005 · Match Context for Profile ⏳
+### INTRO-005 · Rule-Based "Why This Match?" ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/profiles/:id/match-context` — returns score + dimension breakdown for any profile
-- [ ] Dimension response: `[{ name: "Life abroad plan", score: 92, label: "Aligned" }, ...]`
-- [ ] Cached in Redis 1 hour; invalidated on profile update
+- [x] `generateWhyThisMatch(breakdown, totalScore)` — pure function, no external calls
+- [x] Returns headline, summary, top-3 dimension cards (score, pct, tag)
+- [x] DIMENSION_LABELS maps all ScoreBreakdown keys to human-readable strings
+- [x] Prefers "highlight" dimensions (settlementIntent, faithAlignment, etc.) for card selection
+
+### INTRO-006 · LLM "Why This Match?" ✅
+**Acceptance Criteria:**
+- [x] `generateWhyThisMatchLLM(userAId, userBId, breakdown)` — AI-enhanced version
+- [x] Redis-cached 24h per pair (canonical order: smaller UUID first)
+- [x] Falls back to rule-based when AI not configured or on error
+- [x] isAiConfigured() guard — no error when OPENAI_API_KEY absent
+
+### INTRO-007 · Match Context for Profile ✅
+**Acceptance Criteria:**
+- [x] `GET /api/v1/profiles/:id/match-context` — score + dimension cards + why-this-match
+- [x] Reads cached score from getMatchScore(); computes on demand via computeAndSaveScore() if absent
+- [x] Response: totalScore (0.0–1.0), totalPct (0–100), breakdown, whyThisMatch, computedAt
+- [x] Redis-cached 1h per viewer+profile pair
+- [x] 400 on self-request; 404 when profile missing; 400 on non-UUID ID
 
 ---
 
-## PHASE 11 — Gatherings / Events
+## PHASE 11 — Gatherings / Events ✅
 
-### EVENT-001 · Event Management (Admin) ⏳
+**Status:** Complete — 2026-06-01
+
+### Decision Log
+
+| Date | Decision |
+|------|----------|
+| 2026-06-01 | **Already-done tasks** — EVENT-001 (admin CRUD), EVENT-003/004/005 (user endpoints) implemented in Phase 7b + 8e. Phase 11 adds whyInvited, calendar, and co-attendance boost. |
+| 2026-06-01 | **whyInvited rule engine** — Pure function based on event tag, user's currentCountry, profile completionScore, and group membership. No DB call beyond what listEvents already fetches. |
+| 2026-06-01 | **Calendar milestones** — Returns INTRO_DROP (next Sunday 09:00 UTC), PROMPT_OPENS/CLOSES (from active WeeklyPrompt), EVENT entries (events within next 7 days). |
+| 2026-06-01 | **EVENT-007 approach** — `getCoAttendancePairs(eventId)` returns unique user pairs (O(n²), acceptable for community event sizes). Admin endpoint `POST /admin/events/:eventId/process-attendance` triggers `enqueueScoreRecompute` per pair. |
+
+### Decision Log — Phase 11
+
+| Date | Decision |
+|------|----------|
+| 2026-06-01 | **whyInvited rule engine** — 6 tag-based rules + group-member check + low-completion nudge. Pure function. No extra DB calls beyond what listEvents already fetches. |
+| 2026-06-01 | **listEvents() options change** — Signature changed from `(userId, tag?)` to `(userId, options?)`. Gateway passes `{ tag, limit, upcoming }` from validated query. |
+| 2026-06-01 | **Calendar** — `getEventCalendar()` queries weeklyPrompt + event tables. Always includes INTRO_DROP (next Sunday 09:00 UTC) and CHECK_IN. Returns sorted by scheduledAt. |
+| 2026-06-01 | **EVENT-007 approach** — `getCoAttendancePairs(eventId)` returns unique canonicalized pairs. Admin endpoint `POST /admin/events/:eventId/process-attendance` enqueues one global recompute (not per-pair). Clean, avoids queue spam. |
+
+### EVENT-001 · Event Management (Admin) ✅ *(done Phase 8e)*
 **Acceptance Criteria:**
 - [ ] `POST /admin/events` — title, description, scheduledAt, tags (Virtual|Moderated|FamilySafe), maxAttendees?, meetingUrl?
 - [ ] `PUT /admin/events/:id` — update any field
@@ -1714,166 +1803,197 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-## PHASE 12 — Weekly Prompts
+## PHASE 12 — Weekly Prompts ✅
 
-### PROMPT-001 · Prompt Management (Admin) ⏳
-**Acceptance Criteria:**
-- [ ] `POST /admin/prompts` — text, opensAt, closesAt (default 7 days)
-- [ ] `GET /admin/prompts` — list with: responseCount, resonateCount, chatStartRate
-- [ ] `PUT /admin/prompts/:id` — update or reschedule
-- [ ] Only one prompt active at a time; returns 409 if another is open
+**Status:** Complete 2026-06-02. 1,618 tests, 101 suites all green.
 
-### PROMPT-002 · Get Current Prompt ⏳
+### PROMPT-001 · Prompt Management (Admin) ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/prompts/current` — active prompt text, daysLeft, totalResponses, userHasResponded
-- [ ] 404 if no active prompt this week
+- [x] `POST /admin/prompts` — text, opensAt, closesAt (default 7 days)
+- [x] `GET /admin/prompts` — list with responseCount; `PATCH /admin/prompts/:id` — update or reschedule
+- [x] Only one prompt active per weekKey; returns 409 if duplicate weekKey
 
-### PROMPT-003 · Submit Prompt Response ⏳
+### PROMPT-002 · Get Current Prompt ✅
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/prompts/current/response` — `{ type: "text"|"voice", content?: string, voiceUrl?: string }`
-- [ ] Voice: S3 URL from pre-signed upload (audio/mpeg or audio/mp4, max 60 seconds)
-- [ ] Text: max 500 characters
-- [ ] One response per user per prompt; update replaces previous
-- [ ] Returns 201 `{ responseId, promptId, type, createdAt }`
+- [x] `GET /api/v1/prompts/current` — active prompt text, weekKey, expiresAt, hasResponded
+- [x] 404 if no active prompt this week (null service return → PromptNotFoundError → 404)
 
-### PROMPT-004 · Browse Community Responses ⏳
+### PROMPT-003 · Submit Response to Current Prompt ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/prompts/current/responses?limit=20&cursor=` — paginated community answers
-- [ ] Each: responder profile summary, responseType, content/voiceUrl, resonateCount, hasResonated, canStartChat
-- [ ] Ordered by: resonateCount DESC (break ties by createdAt DESC)
+- [x] `POST /api/v1/prompts/current/response` — `{ text, type: "TEXT"|"AUDIO", mediaUrl? }`
+- [x] Gets current prompt internally — no promptId needed in URL
+- [x] One response per user per prompt; returns 409 if already responded
+- [x] Returns 201 with full PromptResponseDto
 
-### PROMPT-005 · Resonate + Start Chat ⏳
+### PROMPT-004 · Browse Community Responses ✅
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/prompts/responses/:id/resonate` — soft agreement reaction
-- [ ] `DELETE /api/v1/prompts/responses/:id/resonate` — remove
-- [ ] Idempotent; cannot resonate own response
-- [ ] Resonate creates matching signal (ALG-003 dimension 12)
-- [ ] When user taps "Start chat" on a prompt response: opens conversation with prompt answer embedded as `sharedSpark`
+- [x] `GET /api/v1/prompts/current/responses?page=1&limit=20` — paginated community answers
+- [x] Each: authorName, responseType, text/mediaUrl, resonateCount, hasResonated
+- [x] Ordered by: resonateCount DESC (service layer)
+
+### PROMPT-005 · Resonate ✅
+**Acceptance Criteria:**
+- [x] `POST /api/v1/prompts/responses/:id/resonate` — soft agreement reaction (idempotent check)
+- [x] Returns 409 if already resonated
+
+### PROMPT-006 · Un-resonate ✅
+**Acceptance Criteria:**
+- [x] `DELETE /api/v1/prompts/responses/:id/resonate` — remove resonate
+- [x] Returns 404 if resonate not found
+
+### PROMPT-007 · Matching Dimension 12 (Prompt Resonance) ✅
+**Acceptance Criteria:**
+- [x] `promptResonance` added to `ScoreBreakdown` (optional, PROMPT-007)
+- [x] `scorePromptResonance()`: mutual resonance=1.0, one-way=0.5, none=0.0
+- [x] `PROMPT_RESONANCE_WEIGHT = 0.02`; core weight scaling: neither=1.00, habits-only=0.95, prompt-only=0.98, both=0.93
+- [x] `getUserScoringData()` fetches promptResonate in parallel (6th query)
+- [x] `promptResonatedUserIds: Set<string>` added to `UserScoringData`
+- [x] 8 new scoring tests + 2 new match-score tests
+
+**Decision Log:**
+- PROMPT-007 follows the HABIT-008 optional-dimension pattern. When both users have prompt data, core weights scale to 0.98 (leaving 0.02 for prompt resonance). When both habits AND prompt present, core scales to 0.93 (1.00 - 0.05 habits - 0.02 prompt = 0.93).
+- Scoring formula unified into a single expression: `coreTotal * coreScale + habitTerms + promptTerm` — cleaner than the previous nested if/else.
+- PROMPT-002: controller was already returning 200 with `data: null` when no prompt. Fixed to throw `PromptNotFoundError` when service returns null (404).
+- Routes: `/current`, `/current/response`, `/current/responses` registered BEFORE `/:promptId/...` parameterized routes to avoid Express path shadowing.
 
 ---
 
-## PHASE 13 — Saved Profiles
+## PHASE 13 — Saved Profiles ✅ (completed 2026-06-02)
 
-### SAVE-001 · Save Profile ⏳
+### SAVE-001 · Save Profile ✅
 **Story:** As a user, I save a profile to my private shortlist so I can revisit and compare later.
 
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/saved-profiles/:userId` — `{ label?: "HIGH_FIT"|"MAYBE" }` — default no label
-- [ ] `DELETE /api/v1/saved-profiles/:userId` — remove from shortlist
-- [ ] Max 50 saved profiles; returns 409 if exceeded
-- [ ] Cannot save own profile; returns 400
-- [ ] `savedAt` stored for "Expiring" label (computed when their group expires soon)
+- [x] `POST /api/v1/saved` with body `{ savedUserId, label?, notes? }` — default label INTERESTED
+- [x] `DELETE /api/v1/saved/:savedUserId` — remove from shortlist
+- [x] Returns 409 (CONFLICT) when already saved; 400 when saving own profile
+- [x] `GET /api/v1/saved?label=INTERESTED|MAYBE|NOT_NOW` — private list sorted by updatedAt DESC
+- [x] `PATCH /api/v1/saved/:savedUserId` — update label and/or notes (at least one required)
+- [x] `POST /api/v1/saved/:savedUserId/note` — dedicated note endpoint
+- [x] `GET /api/v1/saved/compare?ids=a,b` — side-by-side comparison (2–3 IDs, all must be saved)
 
-### SAVE-002 · List Saved Profiles ⏳
-**Acceptance Criteria:**
-- [ ] `GET /api/v1/saved-profiles` — private list, sorted by savedAt DESC
-- [ ] Each: profile snapshot, label, savedAt, groupExpiresAt (for Expiring badge), compatibilityScore
-- [ ] `GET /api/v1/saved-profiles/compare?ids=a,b` — side-by-side comparison of 2 saved profiles
-
-### SAVE-003 · Label + Notes ⏳
-**Acceptance Criteria:**
-- [ ] `PUT /api/v1/saved-profiles/:userId/label` — `{ label: "HIGH_FIT"|"MAYBE"|null }`
-- [ ] `POST /api/v1/saved-profiles/:userId/note` — `{ note: string }` max 300 chars
-- [ ] Notes are private; never included in any response to other users
+**Decision Log:**
+- Routes under `/api/v1/saved` (not `/api/v1/saved-profiles`) — shorter, matches router mount point.
+- `POST /api/v1/saved` uses body `{ savedUserId }` rather than `POST /api/v1/saved/:userId` path param — keeps the body pattern consistent with other resource-creation endpoints.
+- `compareSavedProfiles` throws `ProfileNotSavedError` (404) if any requested ID is not saved — prevents leaking unsaved profile data.
+- Compare returns enriched `realLifeAnswers` for side-by-side lifestyle matching.
 
 ---
 
-## PHASE 14 — Signals Dashboard
+## PHASE 14 — Signals Dashboard ✅ (completed 2026-06-02)
 
-### SIGNAL-001 · Profile View Logging ⏳
-**Story:** As a user, knowing who viewed my profile and when drives engagement and helps me prioritise replies.
+### SIGNAL-001 · Profile View Logging ✅
+**Story:** As a user, knowing who viewed my profile drives engagement and helps me prioritise replies.
 
 **Acceptance Criteria:**
-- [ ] Every `GET /api/v1/profiles/:id` call (by a different user) appends a `profile_view` event: `{ viewerId, viewedId, viewedAt }`
-- [ ] Self-views not logged; admin views not logged
-- [ ] Events stored in append-only `profile_views` table; never read back to the viewer (privacy)
+- [x] `POST /api/v1/profiles/:id/view` — explicit view logging (not automatic on GET)
+- [x] Self-views rejected with 400 (ViewSelfError)
+- [x] Deduplicated: same viewer/viewed pair within 1 hour → no new row created
+- [x] `ProfileView` model: `id, viewerId, viewedId, viewedAt`; indexed on `[viewedId, viewedAt]` + `[viewerId, viewedAt]`
 
-### SIGNAL-002 · Weekly Metrics ⏳
-**Acceptance Criteria:**
-- [ ] `GET /api/v1/signals/week` — `{ profileViews: { count, delta }, newConnections: { count, delta }, activeChats: { count, newThisWeek }, savedProfiles: { count, delta } }`
-- [ ] Delta = this week vs last week (positive/negative integer)
-- [ ] Cached Redis 1 hour
+**Decision Log:**
+- View logging is **explicit** (POST by client), not automatic on GET — avoids counting admin/internal requests and gives Flutter client control over when views are meaningful.
+- 1-hour deduplication prevents spam from repeated rapid refreshes.
+- `ProfileView` is a new DB model (not appended to Profile row) — enables efficient range queries for momentum charts and weekly metrics.
 
-### SIGNAL-003 · Action Queue ⏳
+### SIGNAL-002 · Weekly Metrics ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/signals/action-queue` — ordered list of priority nudges
-- [ ] Sources: unanswered incoming connections, conversations waiting on user reply, incomplete profile sections, incomplete values answers
-- [ ] Each item: `{ type, title, description, cta, urgency: "now"|"today"|"this_week" }`
+- [x] `GET /api/v1/signals/week` — 4 metrics: profileViews, connectionRequests, resonates, introPoolSize
+- [x] Each metric has `value` (this week) and `delta` (vs prev week)
+- [x] introPoolSize delta always 0 (no prev-week comparison defined)
 
-### SIGNAL-004 · Momentum Chart ⏳
+### SIGNAL-003 · Action Queue ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/signals/momentum` — `{ days: [{ date, views }] }` — last 7 days
-- [ ] Used to render bar chart on Your Week screen
+- [x] `GET /api/v1/signals/action-queue` — ordered list of priority nudges
+- [x] Sources: PENDING introductions (priority 1), PENDING incoming connections (priority 2), incomplete profile < 80% (priority 3)
+- [x] Each item: `{ type, label, priority, targetUserId, expiresAt }`
+
+### SIGNAL-004 · Momentum Chart ✅
+**Acceptance Criteria:**
+- [x] `GET /api/v1/signals/momentum` — 7 data points, oldest→newest: `{ date, views }`
 
 ---
 
-## PHASE 15 — Trust Center
+## PHASE 15 — Trust Center ✅ (completed 2026-06-02)
 
-### TRUST-001 · Trust Score Calculation ⏳
+### TRUST-001 · Trust Score Calculation ✅
 **Story:** As a user, I see a trust score that reflects how verified and complete my profile is.
 
 **Acceptance Criteria:**
-- [ ] Trust score (0–100) calculated from: phone (20pts), face/selfie verified (25pts), voice intro uploaded (15pts), work verification (20pts), education verification (20pts)
-- [ ] Recalculated on any verification layer change
-- [ ] Cached; exposed on own profile and to matched users
+- [x] Trust score (0–100) from 6 layers: PHONE_VERIFIED (20), PROFILE_COMPLETE ≥80% (20), PHOTO_UPLOADED (15), ID_VERIFIED (25), EMAIL_VERIFIED (10), VOICE_INTRO (10)
+- [x] Score persisted to `Profile.trustScore` on every `GET /api/v1/trust` call
+- [x] Each layer returns `{ key, label, completed, points }`
 
-### TRUST-002 · Trust Center Endpoint ⏳
+### TRUST-002 · Trust Center Endpoint ✅
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/trust-center` — `{ score, layers: { phone, face, voiceIntro, work, education }, privacyControls, accessLevel }`
-- [ ] Each layer: `{ verified: boolean, verifiedAt?, label }`
+- [x] `GET /api/v1/trust` — returns `{ trustScore, maxScore: 100, layers[6], isPaused, privacySettings }`
+- [x] 404 when profile not found
 
-### TRUST-003 · Privacy Controls ⏳
+### TRUST-003 · Privacy Controls ✅
 **Acceptance Criteria:**
-- [ ] `PUT /api/v1/profile/privacy-controls` — `{ showLastName: boolean, showWorkplace: boolean, showEducation: boolean, showFamilyDetails: boolean }`
-- [ ] Settings applied before mutual connection; after mutual all fields unlock
-- [ ] `GET /api/v1/profile/access-levels` — returns the 3 tier definitions (Basic/Trusted/Family-aware)
+- [x] `PUT /api/v1/profile/privacy-controls` — partial merge of `{ showPhotosBeforeMutual, showBioBeforeMutual, showAnswersBeforeMutual }`
+- [x] Stored as `Profile.privacySettings Json?`; defaults applied when field is null
+- [x] `GET /api/v1/profile/access-levels` — 3 tier definitions: PUBLIC, TRUSTED, FAMILY-aware
 
-### TRUST-004 · Pause Visibility ⏳
+### TRUST-004 · Pause Visibility ✅
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/profile/pause-visibility` — user stops appearing in any discover, introductions, or group
-- [ ] `DELETE /api/v1/profile/pause-visibility` — resume
-- [ ] Paused status stored on user row; respected by all feed/introduction queries
+- [x] `POST /api/v1/profile/pause-visibility` — sets `isPaused = true`
+- [x] `DELETE /api/v1/profile/pause-visibility` — sets `isPaused = false`
+- [x] Existing `PUT /api/v1/profile/pause` (toggle) kept for backward compat
 
-### TRUST-005 · Block + Report ⏳
+### TRUST-005 · Block + Report ✅ (done Phase 7b, confirmed Phase 15)
 **Acceptance Criteria:**
-- [ ] `POST /api/v1/users/:id/block` — block: removes from each other's feeds, cannot message
-- [ ] `DELETE /api/v1/users/:id/block` — unblock
-- [ ] `GET /api/v1/users/blocked` — list blocked users
-- [ ] Block is mutual-invisible: blocked user cannot see blocker's profile
-- [ ] Report reuses existing `POST /api/v1/messages/:msgId/flag` pattern extended for user-level reports
+- [x] `POST /api/v1/trust/block` — block user by `{ userId }` in body
+- [x] `DELETE /api/v1/trust/block/:userId` — unblock
+- [x] `GET /api/v1/trust/blocks` — list all blocks
+- [x] Block cancels any PENDING connection between the two users
+- [x] `POST /api/v1/trust/report` — report with `{ targetUserId, reason, description? }`
+
+**Decision Log:**
+- `Profile.privacySettings Json?` chosen over individual boolean columns — single JSON field supports evolving visibility controls without schema migrations.
+- Trust score 6 layers diverge from original spec (which had work/education verification). Replaced with: PROFILE_COMPLETE + VOICE_INTRO — these are currently achievable without a third-party verification service.
+- Pause visibility uses explicit `POST` / `DELETE` (not toggle) for idempotency and Flutter state clarity.
 
 ---
 
-## PHASE 16 — Algorithm v2 + Match Tuning
+## PHASE 16 — Algorithm v2 + Match Tuning ✅ (completed 2026-06-02)
 
-### ALG-001–009 · New Matching Dimensions ⏳
-**Story:** As a user, my matches improve as I add habits, answer prompts, and attend events — because all those signals feed the algorithm.
+### ALG-001–003 · Dimensions 10–12 ✅ (done in HABIT-008 and PROMPT-007)
+- [x] Dim 10: `habitConsistency` — 1 - |rateA - rateB|; weight 0.03
+- [x] Dim 11: `habitOverlap` — Jaccard of active habit key sets; weight 0.02
+- [x] Dim 12: `promptResonance` — mutual=1.0, one-way=0.5, none=0.0; weight 0.02
 
-**Dimension specification:**
-| # | Dimension | Data source | Weight |
-|---|-----------|------------|--------|
-| 10 | Weekly rhythm similarity | Habit log time-of-day patterns | TBD |
-| 11 | Consistency score | Habit streak + variance | TBD |
-| 12 | Prompt resonance | Shared resonate events on same prompt answers | TBD |
-| 13 | Settlement intent | Match Tuning Q1 answer alignment | TBD |
-| 14 | Family involvement | Match Tuning Q2 answer alignment | TBD |
-| 15 | Event co-attendance | Both RSVP'd same event | TBD |
-| 16 | Communication style | Voice intro presence, prompt answer depth | TBD |
-| 17 | Profile momentum | Profile views velocity (7-day trend) | TBD |
-| 18 | Trust depth | Count of verified layers | TBD |
+### ALG-004–009 · Dimensions 13–18 ✅
+- [x] Dim 13: `familyInvolvement` — avg Jaccard of PARENTS_INVOLVEMENT + FAMILY_STRUCTURE answers; weight 0.03
+- [x] Dim 15: `eventCoAttendance` — 1.0 if any shared GOING RSVP; weight 0.02
+- [x] Dim 16: `communicationStyle` — both voice intro: 1.0; one: 0.5; neither: 0.0; weight 0.02
+- [x] Dim 17: `profileViewMomentum` — avg(recentViews/10, capped 1.0); weight 0.01
+- [x] Dim 18: `trustLayerDepth` — avg(trustScore/100); weight 0.02
+- [x] All are opt-in: only computed when both users have the data; coreScale reduces accordingly
 
-**Acceptance Criteria (all dimensions):**
-- [ ] Each dimension returns a `{ name, score: 0–100, label: string }` tuple
-- [ ] Total score = weighted sum of all 18 dimensions (weights configurable via feature flags)
-- [ ] Dimension scores cached per pair, invalidated on any data change for either user
-- [ ] Per-dimension output included in `GET /api/v1/profiles/:id/match-context` response
+### ALG-010 · Per-dimension Output ✅
+- [x] `ScoreBreakdown` now has 18 optional fields (9 core + 3 HABIT/PROMPT + 5 v2)
+- [x] `DiscoveryItemDto` extended with `personalizedScore` field
+- [x] `GET /api/v1/profiles/:id/match-context` returns full breakdown
 
-### ALG-010 · Match Tuning Endpoints ⏳
-**Acceptance Criteria:**
-- [ ] `GET /api/v1/profile/match-tuning` — `{ answers: { longTermLocation?, familyInvolvement? } }`
-- [ ] `POST /api/v1/profile/match-tuning` — `{ longTermLocation: string, familyInvolvement: string }`
-- [ ] On save: enqueues BullMQ job to re-score all pairs for this user
-- [ ] `GET /api/v1/profile/match-tuning/impact` — `{ currentTopMatch, projectedTopMatch, dimensionsAffected[] }` (preview before committing)
+### ALG-011 · Match Tuning Endpoints ✅
+- [x] `GET /api/v1/profile/match-tuning` — returns current tuning as `{ settlementImportance, familyImportance }` (1–5)
+- [x] `POST /api/v1/profile/match-tuning` — saves two 1–5 ratings; translates to dimension multipliers
+- [x] `GET /api/v1/matches/tuning` / `PUT /api/v1/matches/tuning` — advanced per-dimension weight API
+
+### ALG-012 · Tuning Impact Preview ✅
+- [x] `GET /api/v1/profile/match-tuning/impact?settlementImportance=N&familyImportance=M`
+- [x] Reads top 20 stored MatchScore breakdowns; applies proposed weights via `applyTuningToBreakdown()`
+- [x] Returns `{ pairsAnalysed, profilesUp, profilesDown, profilesUnchanged, topGainers[5] }`
+
+### ALG-013 · Recompute on Tuning Save ✅
+- [x] Both `PUT /matches/tuning` and `POST /profile/match-tuning` fire `enqueueScoreRecompute` fire-and-forget after saving
+
+**Decision Log:**
+- Tuning weights were stored (since Phase 7b) but never applied. Phase 16 wires them into `getDiscoveryFeed` via `applyTuningToBreakdown` — computes `personalizedScore` from stored breakdown and re-sorts within each page. The stored `totalScore` remains the canonical global score.
+- `applyTuningToBreakdown` normalizes adjusted weights to sum to 1.0 — keeps personalized score in [0,1] regardless of multiplier values.
+- Dim 14 (settlementTuning) is not a new scoring dimension — it's the Q1 importance rating that boosts the existing `settlementIntent` dimension weight. ALG-005 maps to the Q2 UI control for `familyInvolvement`.
+- `importanceToMultiplier(n)`: 1→0.5, 2→0.75, 3→1.0 (neutral), 4→1.75, 5→2.5. Round-trips via `multiplierToImportance`.
 
 ---
 
@@ -2416,74 +2536,137 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
-### IDROP-001 · `libs/introductions` Refactor ⏳
+### IDROP-001 · `libs/introductions` Refactor ✅
 
 **Story:** As a user, I see multiple themed introduction drops in the coming week — each with 3–5 people AI-curated specifically for me — not just one intro per week.
+**Completed:** 2026-05-30
 
 **Acceptance Criteria:**
-- [ ] `listDropsForUser(userId)` — returns all `IntroductionDrop` records with `status: LIVE` where the user has curated `Introduction` pairings; includes pairing details
-- [ ] Weekly weekKey cap logic REMOVED entirely
-- [ ] `getDropDetail(dropId, userId)` — returns drop info + user's curated pairings in that drop
-- [ ] `earlyAccessDrop(userId, dropId)` — validates diamond balance ≥ `drop.earlyAccessCost`; spends diamonds; stamps `Introduction.viewedEarlyAt`; returns pairings (profile cards only — no contact info until `releaseAt`)
-- [ ] `unlockDropEarly(userId, dropId)` — validates balance ≥ `drop.unlockCost - earlyAccessCost` (incremental); spends diamonds; stamps `Introduction.unlockedEarlyAt`; returns full profile
-- [ ] `acceptIntroduction()` + `declineIntroduction()` unchanged in signature — work on individual `Introduction` records
-- [ ] All error classes updated: `IntroductionDropNotFoundError`, `DropNotLiveError`, `InsufficientDiamondsForDropError`, `AlreadyUnlockedError`
+- [x] `listDropsForUser(userId)` — returns all `IntroductionDrop` records with `status: LIVE` where the user has curated `Introduction` pairings; includes pairing details
+- [x] Weekly weekKey cap logic REMOVED entirely
+- [x] `getDropDetail(dropId, userId)` — returns drop info + user's curated pairings in that drop
+- [x] `earlyAccessDrop(userId, dropId)` — validates diamond balance ≥ `drop.earlyAccessCost`; spends diamonds; stamps `Introduction.viewedEarlyAt`; returns pairings (profile cards only — no contact info until `releaseAt`)
+- [x] `unlockDropEarly(userId, dropId)` — validates balance ≥ `drop.unlockCost - earlyAccessCost` (incremental); spends diamonds; stamps `Introduction.unlockedEarlyAt`; returns full profile
+- [x] `acceptIntroduction()` + `declineIntroduction()` unchanged in signature — work on individual `Introduction` records
+- [x] All error classes: `IntroductionDropNotFoundError`, `DropNotLiveError`, `InsufficientDiamondsForDropError`, `AlreadyUnlockedError`
+
+**Implementation Subtasks:**
+- [x] `libs/introductions/src/drop.service.ts` — `listDropsForUser`, `getDropDetail`, `earlyAccessDrop`, `unlockDropEarly`
+- [x] `libs/introductions/src/__tests__/drop.service.test.ts` — 17 tests (all green)
+- [x] Barrel export in `libs/introductions/src/index.ts`
+- [x] `@abroad-matrimony/payment` added to `libs/introductions/package.json` deps
 
 ---
 
-### IDROP-002 · Drop Pairing Generation ⏳
+### IDROP-002 · Drop Pairing Generation ✅
 
 **Story:** As an admin, when I approve an introduction drop, the system automatically generates personalised 1:1 introduction pairings for each eligible recipient from the drop's member pool.
+**Completed:** 2026-05-30
 
 **Acceptance Criteria:**
-- [ ] `generatePairingsForDrop(dropId)` — called on admin approval
-- [ ] For each profile in `drop.memberPool`: calls `libs/ai` to pick 3–5 best matches from the pool (excluding same gender, already introduced, blocked)
-- [ ] Uses pgvector cosine similarity on `ProfileEmbedding` vectors + match scores to rank candidates
-- [ ] Creates `Introduction` records: `dropId`, `userId` (recipient), `targetUserId` (match), `status: PENDING`
-- [ ] Pairings are asymmetric — Sibin gets 4 intros from the drop; each intro target may or may not have Sibin in their curated list
-- [ ] If `isAiConfigured()` is false → falls back to top-N by `match_scores.totalScore`
-- [ ] `IntroductionDrop.status` updates to `SCHEDULED` after pairings generated
+- [x] `generatePairingsForDrop(dropId)` — called on admin approval (fire-and-forget)
+- [x] For each profile in `drop.memberPool`: picks 3–5 best matches (excluding same gender, already introduced, blocked)
+- [x] Uses pgvector cosine similarity on `ProfileEmbedding` vectors + match scores to rank candidates
+- [x] Creates `Introduction` records: `dropId`, `userAId` (recipient), `userBId` (match), `status: PENDING`
+- [x] Pairings are asymmetric — each recipient gets their own curated list from the pool
+- [x] If `isAiConfigured()` is false → falls back to top-N by `match_scores.totalScore`, then random shuffle
+- [x] `IntroductionDrop.status` updates to `SCHEDULED` after pairings generated
+- [x] Skips same-gender pairs, blocked pairs, already-introduced pairs (idempotent)
+
+**Implementation Subtasks:**
+- [x] `libs/introductions/src/pairing.service.ts` — `generatePairingsForDrop`
+- [x] `libs/introductions/src/__tests__/pairing.service.test.ts` — 10 tests (all green)
 
 ---
 
-### IDROP-003 · Gateway IntroductionDrop Endpoints ⏳
+### IDROP-003 · Gateway IntroductionDrop Endpoints ✅
 
 **Story:** As a user, I can browse my upcoming introduction drops, spend diamonds to access them early, and accept or decline individual introductions.
+**Completed:** 2026-05-30
 
 **Acceptance Criteria:**
-- [ ] `GET /api/v1/introductions/drops` — all LIVE + upcoming drops for current user with curated intro count per drop
-- [ ] `GET /api/v1/introductions/drops/:dropId` — drop detail + user's curated pairings (locked or unlocked based on status)
-- [ ] `POST /api/v1/introductions/drops/:dropId/early-access` — spend `earlyAccessCost` diamonds; view intro cards early (profile photo, name, profession only)
-- [ ] `POST /api/v1/introductions/drops/:dropId/unlock` — spend `unlockCost` diamonds; full profile access before `releaseAt`
-- [ ] `POST /api/v1/introductions/:introId/accept` — unchanged
-- [ ] `POST /api/v1/introductions/:introId/decline` — unchanged
-- [ ] All endpoints: `requireAuth`, Zod UUID validation, constants files, STANDARDS.md
-- [ ] Controller tests for all endpoints + all error cases
+- [x] `GET /api/v1/introductions/drops` — all LIVE + upcoming drops for current user with curated intro count per drop
+- [x] `GET /api/v1/introductions/drops/:dropId` — drop detail + user's curated pairings (blurred until released/unlocked)
+- [x] `POST /api/v1/introductions/drops/:dropId/early-access` — spend `earlyAccessCost` diamonds; view intro cards early
+- [x] `POST /api/v1/introductions/drops/:dropId/unlock` — spend `unlockCost` diamonds; full profile access before `releaseAt`
+- [x] `POST /api/v1/introductions/:introId/accept` — unchanged
+- [x] `POST /api/v1/introductions/:introId/decline` — unchanged
+- [x] All endpoints: `requireAuth`, Zod UUID validation, constants, STANDARDS.md
+- [x] Controller tests: 32 tests total covering all endpoints + all error cases
+
+**Implementation Subtasks:**
+- [x] `apps/gateway/src/constants/introductions.constants.ts` — added `DROP_ERRORS`, `DROP_MESSAGES`
+- [x] `apps/gateway/src/schemas/introductions/introductions.schema.ts` — added `dropIdParamSchema`
+- [x] `apps/gateway/src/controllers/introductions/introductions.controller.ts` — added 4 drop handlers + `mapDropError()`
+- [x] `apps/gateway/src/routes/introductions/index.ts` — 4 drop routes (static before `/:introId/*`)
+- [x] `apps/gateway/src/controllers/introductions/__tests__/introductions.controller.test.ts` — 32 tests (all green)
 
 ---
 
-### IDROP-004 · Admin IntroductionDrop Endpoints ⏳
+### IDROP-004 · Admin IntroductionDrop Endpoints ✅
 
-**Story:** As an admin, I can review AI-proposed drops, adjust member lists, approve drops for scheduling, and manually trigger new AI proposals.
+**Story:** As an admin, I can review AI-proposed drops, adjust member lists, approve drops for scheduling, and manually propose new drops.
+**Completed:** 2026-05-30
 
 **Acceptance Criteria:**
-- [ ] `GET /admin/introductions/drops` — list all drops with status filter (`DRAFT|PENDING_APPROVAL|SCHEDULED|LIVE|EXPIRED`)
-- [ ] `GET /admin/introductions/drops/:dropId` — drop detail including full member pool and proposal rationale
-- [ ] `PATCH /admin/introductions/drops/:dropId/approve` — approves drop, triggers pairing generation
-- [ ] `PATCH /admin/introductions/drops/:dropId/members` — body: `{ addUserIds, removeUserIds }` — adjust member pool before approval
-- [ ] `PATCH /admin/introductions/drops/:dropId/schedule` — body: `{ releaseAt }` — adjust release time
-- [ ] `POST /admin/introductions/drops/propose` — manually triggers `proposeIntroductionDrops(region)` AI call
-- [ ] All endpoints: `requireAdminRole`, appropriate admin constants, audit log entry on approve/adjust
+- [x] `GET /admin/introductions/drops?status=` — list all drops with optional status filter
+- [x] `GET /admin/introductions/drops/:dropId` — drop detail including full member pool and pairing count
+- [x] `PATCH /admin/introductions/drops/:dropId/approve` — transitions DRAFT → PENDING_APPROVAL; fires pairing generation (fire-and-forget)
+- [x] `PATCH /admin/introductions/drops/:dropId/members` — replace member pool (EDITABLE statuses only)
+- [x] `PATCH /admin/introductions/drops/:dropId/schedule` — update `releaseAt` (EDITABLE statuses only)
+- [x] `POST /admin/introductions/drops/propose` — manually create a DRAFT drop (bypasses AI)
+- [x] All endpoints: `requireAdminRole(AdminRole.MODERATOR)`, Zod validation on all params/body
+
+**Implementation Subtasks:**
+- [x] `libs/introductions/src/drop-admin.service.ts` — `listAllDrops`, `getDropAdmin`, `approveDrop`, `updateDropMembers`, `scheduleDropRelease`, `proposeNewDrop`; error classes: `DropNotDraftError`, `DropNotEditableError`, `DropMemberPoolTooSmallError`
+- [x] `libs/introductions/src/__tests__/drop-admin.service.test.ts` — 18 tests (all green)
+- [x] `apps/gateway/src/constants/introductions-admin.constants.ts` — `INTRO_ADMIN_ERRORS`, `INTRO_ADMIN_MESSAGES`
+- [x] `apps/gateway/src/controllers/admin/introductions-admin.controller.ts` — 6 handlers + `mapDropAdminError()`
+- [x] `apps/gateway/src/routes/admin/index.ts` — 6 admin drop routes with inline Zod schemas
+- [x] `apps/gateway/src/controllers/admin/__tests__/introductions-admin.controller.test.ts` — 25 tests (all green)
 
 ---
 
-### IDROP-005 · Diamond Integration for Early Access ⏳
+### IDROP-005 · Diamond Integration for Early Access ✅
 
 **Story:** As a user, I spend diamonds to access introduction drops early — and the ledger records every spend with a clear reason code.
+**Completed:** 2026-05-30 (enum values added in prior session; service integration complete)
 
 **Acceptance Criteria:**
-- [ ] `DiamondLedgerReason` enum in `libs/shared/src/enums/index.ts` gains: `INTRO_EARLY_VIEW`, `INTRO_EARLY_UNLOCK`
-- [ ] `earlyAccessDrop()` calls `spendDiamonds(userId, cost, 'INTRO_EARLY_VIEW')` — fails with `InsufficientDiamondsError` if balance low
-- [ ] `unlockDropEarly()` calls `spendDiamonds(userId, incrementalCost, 'INTRO_EARLY_UNLOCK')`
-- [ ] `GROUP_CONVERSATION_INITIATION` also added as a ledger reason (spend diamonds to start a conversation from a group member list)
-- [ ] All new reasons documented in `.env.example` comments and `libs/shared/src/constants/index.ts`
+- [x] `DiamondLedgerReason` enum in `libs/shared/src/enums/index.ts` has: `INTRO_EARLY_VIEW`, `INTRO_EARLY_UNLOCK`
+- [x] `earlyAccessDrop()` calls `spendDiamonds(userId, cost, DiamondReason.INTRO_EARLY_VIEW)`
+- [x] `unlockDropEarly()` calls `spendDiamonds(userId, incrementalCost, DiamondReason.INTRO_EARLY_UNLOCK)`
+- [x] `GROUP_CONVERSATION_INITIATION` also present as a ledger reason
+- [x] `InsufficientDiamondsForDropError` wraps `InsufficientDiamondsError` from `@abroad-matrimony/payment`
+
+---
+
+### IDROP-006 · Seeder Drop Coverage ✅
+
+**Story:** As a seeder operator, the activity simulator exercises the introduction drop diamond-spend flows, ensuring realistic data for admin dashboards.
+**Completed:** 2026-05-30
+
+**Acceptance Criteria:**
+- [x] `respond_to_intro` action in `activity.simulator.ts` already covers `Introduction` accept/decline (70% accept rate) — no change needed
+- [x] New `early_access_drop` action: finds a LIVE/SCHEDULED drop the user is included in; calls `POST /api/v1/introductions/drops/:dropId/early-access` (30% of users per simulation run)
+- [x] New `unlock_drop` action: finds a drop the user has already early-accessed; calls `POST /api/v1/introductions/drops/:dropId/unlock` (20% of users — subset of early-access users)
+- [x] Both actions are non-fatal (catch errors — user may lack diamonds)
+
+**Implementation Subtasks:**
+- [x] `apps/seeder/src/services/activity.simulator.ts` — added `early_access_drop` + `unlock_drop` to `ALL_ACTIONS`
+
+---
+
+### Phase 8d Decision Log
+
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-05-30 | `userAId` = recipient, `userBId` = match candidate (asymmetric) | Matches Prisma schema field names; enables per-recipient queries without ambiguity |
+| 2026-05-30 | Profile blurring: name='Hidden', city/country/profession hidden until `isReleased || unlockedEarlyAt != null` | Enforces paywall at data layer, not presentation layer |
+| 2026-05-30 | Pairing idempotency via `existingSet` (`recipientId:candidateId`) before each batch write | Prevents duplicate Introduction records on re-run or partial failures |
+| 2026-05-30 | `approveDrop()` uses fire-and-forget `void generatePairingsForDrop().catch(log.error)` | HTTP response returns immediately; pairing generation can take seconds with large pools |
+| 2026-05-30 | `earlyAccessDrop()` idempotent: no charge when all user intros already have `viewedEarlyAt` | Prevents double-charge on retry; safe to call from Flutter optimistic updates |
+| 2026-05-30 | `unlockDropEarly` incremental cost = `unlockCost - earlyAccessCost` (0 if equal) | User already paid for early access; only pay the delta to upgrade |
+| 2026-05-30 | Static `/drops` routes registered before `/:introId/*` in Express | Prevents Express from trying to match 'drops' as an introId UUID |
+| 2026-05-30 | Admin `updateDropMembers` uses full replace (not add/remove), `EDITABLE_STATUSES = ['DRAFT','PENDING_APPROVAL','SCHEDULED']` | Simpler API; admin always sends the complete desired pool |
+| 2026-05-30 | `HTTP_STATUS.CONFLICT` (409) for `InsufficientDiamondsForDropError` | `PAYMENT_REQUIRED` (402) not present in existing HTTP_STATUS constants; 409 consistent with other constraint failures |

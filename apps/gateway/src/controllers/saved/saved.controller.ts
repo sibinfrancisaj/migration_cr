@@ -5,9 +5,11 @@ import {
   saveProfile,
   updateSavedProfile,
   unsaveProfile,
+  compareSavedProfiles,
   SavedProfileNotFoundError,
   AlreadySavedError,
   SaveSelfError,
+  ProfileNotSavedError,
 } from '@abroad-matrimony/saved-profiles';
 import type { ApiResponse } from '@abroad-matrimony/shared';
 import { SavedProfileLabel } from '@abroad-matrimony/shared';
@@ -19,6 +21,8 @@ import type {
   SavedUserIdParams,
   UpdateSavedProfileBody,
   ListSavedQuery,
+  AddNoteBody,
+  CompareQuery,
 } from '../../schemas/saved/saved.schema.js';
 
 // ─── Error mapper ─────────────────────────────────────────────────────────────
@@ -34,6 +38,10 @@ function mapSavedError(err: unknown, next: NextFunction): void {
   }
   if (err instanceof SaveSelfError) {
     next(new AppError(HTTP_STATUS.BAD_REQUEST, ERROR_CODES.VALIDATION_ERROR, SAVED_ERRORS.SAVE_SELF));
+    return;
+  }
+  if (err instanceof ProfileNotSavedError) {
+    next(new AppError(HTTP_STATUS.NOT_FOUND, ERROR_CODES.NOT_FOUND, SAVED_ERRORS.PROFILE_NOT_SAVED));
     return;
   }
   next(err);
@@ -127,6 +135,51 @@ export const savedController = {
         success: true,
         data: null,
         meta: { message: SAVED_MESSAGES.REMOVED },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapSavedError(err, next);
+    }
+  },
+
+  async addNote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:saved:addNote', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { savedUserId } = req.params as unknown as SavedUserIdParams;
+      const { notes } = req.body as AddNoteBody;
+
+      log.info('Add note to saved profile', { userId, savedUserId });
+
+      const dto = await updateSavedProfile(userId, savedUserId, { notes });
+
+      const body: ApiResponse<typeof dto> = {
+        success: true,
+        data: dto,
+        meta: { message: SAVED_MESSAGES.NOTE_ADDED },
+        requestId: req.requestId,
+      };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) {
+      mapSavedError(err, next);
+    }
+  },
+
+  async compare(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:saved:compare', requestId: req.requestId });
+    try {
+      const userId = req.user!.id;
+      const { ids } = req.query as unknown as CompareQuery;
+
+      log.info('Compare saved profiles', { userId, ids });
+
+      const results = await compareSavedProfiles(userId, ids);
+
+      const body: ApiResponse<typeof results> = {
+        success: true,
+        data: results,
+        meta: { total: results.length },
         requestId: req.requestId,
       };
       res.status(HTTP_STATUS.OK).json(body);

@@ -7,6 +7,8 @@ export const EVENT_ERRORS = {
 } as const;
 
 export const EVENT_MESSAGES = {
-  RSVP_CONFIRMED: 'RSVP confirmed',
-  RSVP_CANCELLED: 'RSVP cancelled',
+  RSVP_CONFIRMED:       'RSVP confirmed',
+  RSVP_CANCELLED:       'RSVP cancelled',
+  CALENDAR_RETRIEVED:   'Calendar milestones retrieved',
+  ATTENDANCE_PROCESSED: 'Post-event attendance boost enqueued',
 } as const;

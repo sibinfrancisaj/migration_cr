@@ -11,3 +11,11 @@ export const introHistoryQuerySchema = z.object({
 
 export type IntroIdParams = z.infer<typeof introIdParamSchema>;
 export type IntroHistoryQuery = z.infer<typeof introHistoryQuerySchema>;
+
+// ─── IntroductionDrop ─────────────────────────────────────────────────────────
+
+export const dropIdParamSchema = z.object({
+  dropId: z.string().uuid('dropId must be a valid UUID'),
+});
+
+export type DropIdParams = z.infer<typeof dropIdParamSchema>;
