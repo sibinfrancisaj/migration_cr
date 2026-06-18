@@ -8,6 +8,7 @@ import { createChildLogger } from '@abroad-matrimony/logger';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
 import { errorMiddleware } from './middleware/error.middleware.js';
 import { notFoundMiddleware } from './middleware/not-found.middleware.js';
+import { seederAuthMiddleware } from './middleware/seeder-auth.middleware.js';
 import { registerRoutes } from './routes/index.js';
 
 const log = createChildLogger({ module: 'gateway:app' });
@@ -40,6 +41,11 @@ export function createApp(): express.Application {
 
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // ── Seeder auth bypass (SEED-004 / ADR-014) ──────────────────────────────────
+  // Must run BEFORE requireAuth so seeder tokens set req.user directly.
+  // In production: strict no-op even if SEEDER_SECRET is somehow set.
+  app.use(seederAuthMiddleware);
 
   app.use(
     rateLimit({

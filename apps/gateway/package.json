@@ -15,6 +15,7 @@
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/matching": "*",
     "@abroad-matrimony/shared": "*",
     "cors": "^2.8.5",
     "express": "^4.21.0",

@@ -3,6 +3,7 @@ import {
   getDiamondBalance,
   spendDiamonds,
   createDiamondCheckout,
+  getCreditTransactions,
   InsufficientDiamondsError,
   InvalidDiamondPackageError,
   DIAMOND_PACKAGES,
@@ -62,6 +63,29 @@ export const diamondController = {
       } else {
         next(err);
       }
+    }
+  },
+
+  /**
+   * GET /api/v1/payment/credits/transactions?page=&limit=
+   * List the user's diamond ledger transaction history.
+   */
+  async getTransactions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const page = Math.max(1, parseInt(String(req.query['page'] ?? '1'), 10));
+      const limit = Math.min(50, Math.max(1, parseInt(String(req.query['limit'] ?? '20'), 10)));
+
+      const result = await getCreditTransactions(userId, page, limit);
+
+      res.status(200).json({
+        success: true,
+        requestId: req.requestId,
+        data: result.transactions,
+        meta: { total: result.total, page, limit },
+      });
+    } catch (err) {
+      next(err);
     }
   },
 

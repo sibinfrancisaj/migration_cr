@@ -53,6 +53,31 @@ Add it to **Section 7** of this file AND to `project-management/architecture.md`
 ### Starter prompt maintenance
 Keep Section 11's starter prompt updated to always reflect the *next* task and *current* branch state.
 
+### API documentation maintenance
+These rules apply every time an endpoint is added, changed, or removed.
+
+**Files to keep in sync:**
+- `docs/api/openapi.yaml` — OpenAPI 3.1.0 spec (source of truth for the API contract)
+- `docs/api/postman-collection.json` — Postman Collection v2.1
+
+**Triggers — update BOTH files when:**
+- A new route is added to any `apps/gateway/src/routes/` file
+- An existing route path, method, or auth requirement changes
+- A request body field is added, renamed, or removed
+- A response body field is added, renamed, or removed
+- A new enum value is added to `libs/shared/src/enums/index.ts` or any domain type
+- A new error code or HTTP status is introduced for an existing endpoint
+- A webhook signature header requirement changes
+
+**How:**
+1. Add the new `path` block to `openapi.yaml` under the correct tag
+2. Add the new request item to the matching folder in `postman-collection.json`
+3. Validate: `npx @redocly/cli lint docs/api/openapi.yaml`
+4. Commit both files in the same commit as the implementation
+
+**Rule:** A task is not Done until `openapi.yaml` and `postman-collection.json` are updated and valid.
+Full maintenance guide: `docs/api/STANDARDS.md`.
+
 ---
 
 ## 1. Project Overview
@@ -393,6 +418,154 @@ All items committed on `claude/modest-albattani-BJ7yn` (commit `c28a71f`).
 
 ---
 
+## 6g. Complete — Phase 7b: New Feature Libs + Tests ✅
+
+> Service layers were pre-implemented; this phase added jest configs + unit tests.
+
+| Task ID | Lib / Feature | Tests |
+|---------|--------------|-------|
+| **LIB-CONN** | `libs/connections` — connection requests service | ✅ 21 tests |
+| **LIB-GRP** | `libs/groups` — groups + events service | ✅ 24 tests |
+| **LIB-GATH** | `libs/gatherings` — events RSVP service | ✅ 18 tests |
+| **LIB-VER** | `libs/verification` — ID doc verification + trust score | ✅ 13 tests |
+| **LIB-HAB** | `libs/habits` — habit logging + streak computation | ✅ 18 tests |
+| **LIB-INTRO** | `libs/introductions` — weekly intro drops + getWeekKey | ✅ 18 tests |
+| **LIB-PROMPT** | `libs/prompts` — weekly prompts + resonate | ✅ 18 tests |
+| **LIB-SAVE** | `libs/saved-profiles` — saved profile shortlist | ✅ 14 tests |
+| **LIB-TRUST** | `libs/trust` — block/unblock/report/signals | ✅ 15 tests |
+| **LIB-TUNE** | `libs/matching` — match-tuning.service + weight clamping | ✅ 7 tests |
+| **LIB-MAGIC** | `libs/auth` — email magic link send + verify | ✅ 9 tests |
+| **LIB-EXT** | `libs/profile` — profile pause, voice intro upload/save | ✅ 10 tests |
+
+**Total after Phase 7b lib work: 950 tests, 70 suites all green.**
+
+**TypeScript fixes applied:**
+- `PaginationMeta` interface: `hasMore` made optional, added `page?`, `limit?`, `message?`, `total?`
+- `StorageAdapter` interface: added `getPublicUrl(key: string): string` method (S3 + Mock implementations)
+- `libs/profile/src/extensions.service.ts`: fixed `getPresignedUploadUrl` destructuring
+- `libs/verification/src/index.ts`: removed `as string[]` Prisma enum casts, fixed upload URL destructuring
+- `libs/gatherings/src/index.ts`: removed Prisma enum casts + `.includes()` replaced with equality checks
+- `libs/groups/src/index.ts`: same Prisma enum cast fixes, renamed unused `userId` → `_userId`
+- `libs/saved-profiles/src/index.ts`: removed `label as string` cast from Prisma where clause
+- `libs/payment/src/membership.service.ts`: `toMembershipDto` helper accepts `string` types to avoid Prisma/shared enum mismatch
+- `libs/auth/src/email-magic-link.service.ts`: corrected `issueTokenPair(id, role, deviceId)` and `storeRefreshToken(tokenId, userId, deviceId, token, expiresAt)` call signatures
+
+**New jest.config.ts files added:** connections, groups, gatherings, verification, habits, introductions, prompts, saved-profiles, trust
+
+**Phase 7b gateway test + code review work (2026-05-29):**
+- 10 gateway controller test files written (connections, habits, tuning, signals, profile-extensions, introductions, trust, events, saved, prompts)
+- 5 new constants files created: `introductions.constants.ts`, `events.constants.ts`, `prompts.constants.ts`, `saved.constants.ts`, `trust.constants.ts`
+- 22 STANDARDS.md files created: all 11 new route dirs + 11 controller dirs
+- Code review violations fixed: magic strings eliminated from 5 controllers; `HTTP_STATUS` import added to signals controller; dead `CONNECTION_ERRORS.SELF_CONNECT` constant removed
+
+---
+
+## 6h. Complete — Phase 8 Series ✅
+
+**Scoped:** 2026-05-29 | **Status:** All phases complete 2026-06-01
+
+### Scope Summary
+
+| Phase | What | Status |
+|-------|------|--------|
+| **DB-MIGRATION-001** | Schema migration — all new models | ✅ Done |
+| **Phase 8a** | `apps/seeder` — automated data seeding | ✅ Done 2026-05-29 |
+| **Phase 8b** | `libs/ai` — OpenAI intelligence layer | ✅ Done 2026-05-29 |
+| **Phase 8c** | Groups revamp — 4-type taxonomy + social feed | ✅ Done 2026-05-30 |
+| **Phase 8d** | IntroductionDrop — multi-drop, AI-curated | ✅ Done 2026-05-30 |
+| **Phase 8e** | Admin API + Analytics (17 tasks) | ✅ Done 2026-06-01 |
+
+### Key Design Decisions (all locked — see epics-stories.md Phase 8 Design Decisions Log)
+
+**Seeder:**
+- `apps/seeder` — independent NX app, port 3100, never runs in production (hard env guard)
+- `SEEDER_SECRET` — gateway middleware bypass; `isSeeded` flag on User/Profile/Group/GroupPost
+- 500 profiles: UK 35%, Germany 20%, Australia 20%, Canada 15%, India 10%
+- Drip: 3–5 new profiles at random offset within 3–4 hour window (organic feel)
+- S3 photos from `seeder/profile-photos/male|female/` prefix (operator uploads once)
+- Control API: `POST /seed/run`, `POST /seed/flush`, `GET /seed/status`
+
+**Groups:**
+- Single `Group` model with `type: GroupType` enum: `REGIONAL | CULTURAL | PROFESSIONAL | INTEREST`
+- `scope: GroupScope` enum: `COUNTRY | GLOBAL` (global DB-provisioned, country-specific for now)
+- REGIONAL country-level: auto-join on registration. Everything else: suggested → manual join
+- Suggested at onboarding (max 20, configurable via `SystemConfig`), also shown in home feed
+- All members visible in all group types; initiating conversation from group costs diamonds
+- Social feed: posts + flat comments + likes. No video, no nested threads
+- INTEREST group creation: member proposes → admin approves (hybrid)
+- Hierarchy: flat with `parentGroupId` (city → country)
+
+**IntroductionDrop:**
+- `IntroductionDrop` (themed category/pool) + `Introduction` (curated 1:1 per recipient from pool)
+- No weekly cap — multiple drops live simultaneously across different themes
+- AI picks 3–5 best matches from pool per recipient (personalized, not same for everyone)
+- Early access: spend `earlyAccessCost` diamonds to VIEW (locked); spend `unlockCost` to UNLOCK
+- Flow: AI proposes DRAFT → admin approves → pairing generation → SCHEDULED → LIVE at `releaseAt`
+- Event pre-connections: auto-SCHEDULED, 72h before event, no admin approval
+
+**AI (`libs/ai`):**
+- `gpt-4o-mini` + `text-embedding-3-small` + `Whisper` via OpenAI
+- `ProfileEmbedding`: summary (150w), traitTags (8–12), vibeScores (5 dimensions 1–10), pgvector embedding
+- Supabase pgvector (native support) — no extra infrastructure
+- All AI paths are no-ops when `OPENAI_API_KEY` absent (`isAiConfigured()` guard)
+- BullMQ job fired (60s debounce) on any profile signal update
+
+**New env vars required:**
+- `SEEDER_SECRET` (gateway + seeder)
+- `GATEWAY_URL` (seeder)
+- `SEEDER_PORT` (seeder, default 3100)
+- `SEEDER_PHOTO_S3_PREFIX` (seeder)
+- `SEEDER_INITIAL_COUNT` (seeder, default 500)
+- `OPENAI_API_KEY` (libs/ai)
+- `AI_MODEL` (libs/ai, default `gpt-4o-mini`)
+- `EMBEDDING_MODEL` (libs/ai, default `text-embedding-3-small`)
+
+---
+
+## 6i. Complete — Phase 9: Habits / Consistency Hub ✅
+
+> Full story specs → `project-management/epics-stories.md`
+
+| Task ID | Endpoint / Feature | Status |
+|---------|--------------------|--------|
+| **HABIT-001** | `GET /api/v1/habits` — list all 10 preset habits *(done Phase 7b)* | ✅ Done |
+| **HABIT-002** | `POST /:habitKey/log` + `DELETE /:habitKey/log/:date` *(done Phase 7b)* | ✅ Done |
+| **HABIT-003** | `POST /reflection` + `GET /:habitKey/streak` *(done Phase 7b)* | ✅ Done |
+| **HABIT-004** | `GET /api/v1/habits/streaks` — all habits + `thisWeekDots` (7-bool Mon–Sun) | ✅ Done |
+| **HABIT-005** | `GET /api/v1/habits/weekly-reflection` — rule-based insight, Redis cached 7 days | ✅ Done |
+| **HABIT-006** | `PUT /api/v1/habits/summary-visibility` — toggle `Profile.habitSummaryVisible` | ✅ Done |
+| **HABIT-007** | `GET /api/v1/habits/:habitKey/history?weeks=8` — per-habit weekly chart data | ✅ Done |
+| **HABIT-008** | Habit consistency → optional matching dimensions 10+11 (backwards-compatible) | ✅ Done |
+
+**Phase 9 complete: 1,546 tests, 101 suites all green (+54 tests from Phase 9).**
+
+**Key design decisions:**
+- Phase 9 uses the existing `HabitKey` enum model (10 preset habits). No new UUID-based Habit model.
+- Schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` — run `prisma db push` locally.
+- Weekly reflection: rule-based v1, Redis-cached 7 days (`habit:weekly-reflection:{userId}`).
+- `thisWeekDots`: 7-element boolean array (Mon=index0 … Sun=index6) per habit.
+- HABIT-008 matching: `habitConsistency` + `habitOverlap` optional on `ScoreBreakdown`. When both users have habit data: 9 core weights scaled ×0.95, habits contribute 0.05 total. Fully backwards-compatible.
+
+**Key files from Phase 9:**
+- `libs/habits/src/index.ts` — added `getAllHabitsWithStreaks()`, `getHabitHistory()`, `getWeeklyReflection()`, `updateSummaryVisibility()`, `getHabitConsistencyRate()`, `getActiveHabitKeys()`; DTOs `HabitWithStreakDto`, `WeeklyHabitHistoryDto`, `WeeklyReflectionDto`; helpers `getWeekMonday()`, `buildWeekDots()`
+- `libs/habits/src/__tests__/habits.service.test.ts` — 31 tests (was 13, +18 for new functions)
+- `libs/habits/package.json` — `@abroad-matrimony/cache` added to deps
+- `libs/shared/src/types/index.ts` — `ScoreBreakdown` extended with optional `habitConsistency?` + `habitOverlap?`
+- `libs/matching/src/scoring.service.ts` — `HABIT_WEIGHTS { habitConsistency: 0.03, habitOverlap: 0.02 }`; `UserScoringData` extended with `habitConsistencyRate?` + `activeHabitKeys?`; `computeMatchScore()` includes habit path when both users have habit data
+- `libs/matching/src/match-score.service.ts` — `getUserScoringData()` now fetches `habitLog` in parallel (5th query), computes `habitConsistencyRate` + `activeHabitKeys`
+- `libs/matching/src/__tests__/scoring.service.test.ts` — 7 new HABIT-008 test cases
+- `libs/matching/src/__tests__/match-score.service.test.ts` — `mockHabitLogFindMany` added; `habitLog.findMany` in prisma mock
+- `libs/db/prisma/schema.prisma` — `Profile`: `habitSummaryVisible Boolean @default(false)` added (⚠️ run `prisma db push` locally)
+- `apps/gateway/src/constants/habits.constants.ts` — `PROFILE_NOT_FOUND`, `VISIBILITY_UPDATED` added
+- `apps/gateway/src/schemas/habits/habits.schema.ts` — `habitHistoryQuerySchema`, `summaryVisibilitySchema` added
+- `apps/gateway/src/controllers/habits/habits.controller.ts` — `getAllStreaks`, `getHistory`, `getWeeklyReflection`, `updateVisibility` handlers added
+- `apps/gateway/src/routes/habits/index.ts` — 4 new routes; static routes registered BEFORE `/:habitKey/*` parameterized routes
+- `apps/gateway/src/controllers/habits/__tests__/habits.controller.test.ts` — 4 new test suites (14 new tests)
+- `docs/api/openapi.yaml` — 5 new habit paths added; `GET /api/v1/habits/{habitKey}/history` path added
+- `docs/api/postman-collection.json` — 5 new requests in Habits folder
+
+---
+
 ## 7. Architecture Decisions (ADRs)
 
 > Full context and diagrams → `project-management/architecture.md`
@@ -477,6 +650,26 @@ app.use(express.json());
 **Decision:** `getStripeAdapter()` and `getRazorpayAdapter()` in `libs/payment/src/adapters/index.ts` use `require()` inside the factory function body (not top-level `import`) to instantiate Stripe/Razorpay SDK objects.
 
 **Rationale:** Top-level `import Stripe from 'stripe'` causes Jest to load the Stripe module during test module resolution, even when `stripe` is not installed (CI without credentials). Dynamic `require()` defers loading to call time, by which point the module is either mocked or not needed. Combined with `MockPaymentAdapter` used in all tests, the real SDKs never load during test runs.
+
+### ADR-013: Automated Data Seeding Service (`apps/seeder`)
+**Decision:** `apps/seeder` — standalone NX app, independent Express server (port 3100), BullMQ scheduler, hard `NODE_ENV === production` exit guard. Uses `SEEDER_SECRET` token to call gateway endpoints as synthetic users. `isSeeded` flag on seeded DB records enables clean flush.
+**Rationale:** Complex matching, AI grouping, and weekly intro drops all require 500+ realistic, continuously-updated profiles. One-time seed scripts don't capture ongoing activity signals. An independent service keeps seeding concerns out of gateway code entirely.
+
+### ADR-014: SEEDER_SECRET Gateway Auth Bypass
+**Decision:** New gateway middleware checks `Authorization: Bearer <token>` before `requireAuth`. If token === `SEEDER_SECRET` env var AND `NODE_ENV !== production`, decodes `{ userId, role }` payload and sets `req.user` directly, bypassing JWT. In production: no-op.
+**Rationale:** Avoids fake phone numbers / real OTP flows for 500+ synthetic users. Production safety is enforced at the middleware level, not by configuration discipline alone.
+
+### ADR-015: Four-Type Group Taxonomy (REGIONAL | CULTURAL | PROFESSIONAL | INTEREST)
+**Decision:** Single `Group` model with `type` + `scope` enums. REGIONAL country-level auto-joins on register. All others suggested at onboarding and in home feed. All member lists visible; conversation initiation costs diamonds. Social feed (posts + flat comments + likes) on all types. INTEREST groups require member proposal + admin approval. Hierarchy via `parentGroupId`.
+**Rationale:** Four genuinely different use cases with different join rules, visibility, and capabilities. One model + type enum is simpler than four separate models while making behaviour explicit and testable.
+
+### ADR-016: IntroductionDrop Model — Replacing WeekKey Cap
+**Decision:** `IntroductionDrop` (themed category with member pool + release schedule) sits above `Introduction` (curated 1:1 pairing per recipient). No weekly cap. AI picks 3–5 best matches per recipient from the pool. Early access via tiered diamond spend. Event-based drops auto-approved.
+**Rationale:** Single-weekly-intro cap prevented multi-themed, multi-frequency drops. Separating the "drop concept" from the "individual pairing" enables personalised curation at scale and creates natural monetisation touchpoints.
+
+### ADR-017: AI Integration — OpenAI + pgvector for Profile Intelligence
+**Decision:** `libs/ai` wraps gpt-4o-mini (completions), text-embedding-3-small (embeddings), and Whisper (voice transcription). ProfileEmbedding model stores summary, trait tags, vibe scores, and 1536-dim vector in Supabase pgvector. All AI paths are optional no-ops when API key absent.
+**Rationale:** Demographic matching alone is insufficient for Indian diaspora matrimony. Voice intro vibes, prompt answer depth, habit consistency, and event attendance are personality signals that only semantic AI analysis can extract. pgvector is native to Supabase — zero extra infrastructure. gpt-4o-mini is 15× cheaper than gpt-4o with sufficient quality for profile analysis.
 
 ---
 
@@ -709,9 +902,280 @@ PAY-006 ✅ POST /api/v1/payment/diamonds/purchase — Stripe diamond checkout +
 PAY-007 ✅ GET /api/v1/payment/diamonds/balance + POST /diamonds/spend
 PAY-008 ✅ POST /admin/payment/refund (SUPERADMIN) — refund + ledger reversal
 
-Next task: Phase 5 backlog — GROUP-001/002/003 (regional groups), CONN-001/002/003 (connections), VER-001/002/003 (identity verification)
-OR Phase 8 — Admin API + Analytics (ADMIN-001 through ADMIN-007)
-Check with user which phase to tackle next.
+Phase 7b ✅ New Feature Libs + Tests ALL DONE (950 tests, 70 suites).
+Service layers (libs) + jest.config.ts + unit tests written and passing for:
+  - libs/connections — sendConnectionRequest, listConnections, acceptConnection, declineConnection, withdrawConnection (21 tests)
+  - libs/groups — listGroups, getGroup, joinGroup, leaveGroup, getGroupMembers, getGroupEvents (24 tests)
+  - libs/gatherings — listEvents, getEvent, rsvpToEvent, cancelRsvp, getEventAttendees (18 tests)
+  - libs/verification — submitVerification, getVerificationStatus, getTrustScore, getVerificationUploadUrl (13 tests)
+  - libs/habits — listHabits, logHabit, deleteHabitLog, getHabitStreak, addHabitReflection + computeStreaks (18 tests)
+  - libs/introductions — getWeekKey, listCurrentIntroductions, listIntroductionHistory, acceptIntroduction, declineIntroduction (18 tests)
+  - libs/prompts — getCurrentPrompt, respondToPrompt, getPromptResponses, resonateResponse, unresonateResponse (18 tests)
+  - libs/saved-profiles — listSavedProfiles, saveProfile, updateSavedProfile, unsaveProfile (14 tests)
+  - libs/trust — blockUser, unblockUser, listBlocks, reportUser, getSignals (15 tests)
+  - libs/matching — getMatchTuning, setMatchTuning + weight clamping (7 tests, added to existing suite)
+  - libs/auth — sendMagicLink, verifyMagicLink email magic link (9 tests, added to existing suite)
+  - libs/profile — toggleProfilePause, getVoiceIntroUploadUrl, saveVoiceIntro extensions (10 tests, added to existing suite)
+TypeScript fixes also applied: PaginationMeta extended, StorageAdapter.getPublicUrl added, membership enum casting fixed,
+  gatherings/groups/verification/saved-profiles Prisma enum cast issues resolved, email-magic-link function signatures corrected.
+Phase 7b gateway test + code review work (2026-05-29):
+  - 10 gateway controller test files written (connections, habits, tuning, signals, profile-extensions, introductions, trust, events, saved, prompts)
+  - 5 new constants files + 22 STANDARDS.md files created across all new route/controller dirs
+  - Code review violations fixed: magic strings eliminated, HTTP_STATUS import added, dead constant removed
+
+Phase 8a ✅ Seeder ALL DONE (1,091 tests after seeder, 77 suites).
+apps/seeder port 3100: SEED-001→009 complete. autonomous drip seeder, 500 profiles, 6 activity types, flush + status control API.
+See "Key files from Phase 8a (Seeder)" section below.
+
+Phase 8b ✅ AI Intelligence Layer ALL DONE (1,223 tests, 89 suites).
+libs/ai: AI-001→007 all complete. OpenAI gpt-4o-mini + text-embedding-3-small + Whisper-1. BullMQ 60s debounce worker.
+AI-001 ✅ libs/ai scaffold — isAiConfigured() guard, getAiClient() singleton, AiNotConfiguredError
+AI-002 ✅ generateProfileIntelligence(userId) — queries User model (not Profile), GPT + embeddings, upserts ProfileEmbedding
+AI-003 ✅ transcribeVoiceIntro(userId, s3Key) — GetObjectCommand download, whisper-1, voiceIntroTranscript update
+AI-004 ✅ proposeIntroductionDrops(region) — user.currentCountry filter, min 10 profiles, DRAFT IntroductionDrops
+AI-005 ✅ generateEventPreConnections(eventId) — eventRsvp + userBlock models, event.title/startAt, SCHEDULED drops 72h before
+AI-006 ✅ quiet-window.ts — isWithinWindow(), msUntilWindowOpens(), getContactWindow(); notification worker re-queues on defer
+AI-007 ✅ ai.worker.ts + enqueue-intelligence.ts — BullMQ concurrency 2, jobId 'pi:${userId}' debounce, conditional startup
+See "Key files from Phase 8b (AI)" section below.
+
+Phase 8c ✅ Groups Revamp ALL DONE (1,312 tests, 93 suites).
+libs/groups + apps/gateway/src/controllers/groups + apps/gateway/src/routes/groups: GRP-R-001→007 complete.
+GRP-R-001 ✅ libs/groups refactor — REGIONAL/CULTURAL/PROFESSIONAL/INTEREST types; joinGroup(userId, groupId, joinedVia), leaveGroup, autoJoinRegionalCountryGroup; listSuggestedGroups; getSuggestedGroupsForOnboarding; paginated getGroupMembers
+GRP-R-002 ✅ Group suggestion engine — listSuggestedGroups(userId, limit) ranked by country match + memberCount; SystemConfig.SUGGESTED_GROUPS_MAX
+GRP-R-003 ✅ Group social feed service — feed.service.ts: createPost, listPosts (isPinned DESC), deletePost (author/admin), likePost/unlikePost idempotent, addComment, listComments, pinPost/unpinPost
+GRP-R-004 ✅ Interest group proposal flow — proposal.service.ts: proposeGroup, getGroupProposals, approveGroupProposal ($transaction: Group create + auto-join), rejectGroupProposal; ProposalNotPendingError guard
+GRP-R-005 ✅ Gateway endpoints — 16 routes: list, get, suggested, onboarding-suggestions, join, leave, members, events, feed, posts CRUD, like/unlike, comments, proposals; static routes before /:groupId
+GRP-R-006 ✅ Admin endpoints — groups-admin.controller.ts: GET/POST/POST proposals, POST/DELETE pin; 17 tests
+GRP-R-007 ✅ Seeder group data — 21 system groups (5 REGIONAL + 6 CULTURAL + 5 PROFESSIONAL + 5 INTEREST); seedSystemGroups() idempotent; POST /seed/groups endpoint; called in triggerRun before drip
+See "Key files from Phase 8c (Groups Revamp)" section below.
+
+Phase 8d ✅ IntroductionDrop ALL DONE (1,407 tests, 97 suites).
+libs/introductions + apps/gateway: IDROP-001→006 complete.
+IDROP-001 ✅ drop.service.ts — listDropsForUser, getDropDetail (profile blurring), earlyAccessDrop (idempotent), unlockDropEarly (incremental cost)
+IDROP-002 ✅ pairing.service.ts — generatePairingsForDrop: pgvector cosine → match score → random fallback; asymmetric; idempotent via existingSet
+IDROP-003 ✅ Gateway: 4 drop routes (GET /drops, GET /drops/:dropId, POST early-access, POST unlock) + 32 controller tests
+IDROP-004 ✅ Admin: 6 routes (GET list, GET detail, POST propose, PATCH approve, PATCH members, PATCH schedule) + 25 controller tests + 18 service tests
+IDROP-005 ✅ DiamondReason.INTRO_EARLY_VIEW + INTRO_EARLY_UNLOCK already in enum from prior session; wired into service
+IDROP-006 ✅ Seeder: early_access_drop + unlock_drop actions added to activity.simulator.ts
+See "Key files from Phase 8d (IntroductionDrop)" section below.
+
+Phase 8e ✅ Admin API + Analytics ALL DONE (1,492 tests, 99 suites).
+apps/gateway/src/routes/admin/ + 12 new admin controllers: ADMIN-001→017 complete.
+ADMIN-002 ✅ users-admin.controller.ts — listUsers, getUserDetail, suspendUser, unsuspendUser, banUser, wipeSeededData (16 tests)
+ADMIN-003 ✅ feature-flags-admin.controller.ts — list, get, create, update, delete
+ADMIN-004 ✅ verification-admin.controller.ts — list, get, approve, reject
+ADMIN-005 ✅ audit-log.controller.ts — listAuditLogs (paginated, filterable)
+ADMIN-006 ✅ flags.controller.ts — existing moderation queue (from Phase 5)
+ADMIN-007 ✅ analytics-admin.controller.ts — getKpi, getCohortRetention
+ADMIN-008 ✅ events-admin.controller.ts — list, get, create, update, archive
+ADMIN-009 ✅ prompts-admin.controller.ts — list, get, create, update
+ADMIN-010 ✅ groups-mgmt.controller.ts — list, get, create, update, archive
+ADMIN-011 ✅ introductions-admin.controller.ts — existing drop management (from Phase 8d)
+ADMIN-012 ✅ ai-proposals.controller.ts — proposeDrops, generatePreConnections
+ADMIN-013 ✅ groups-admin.controller.ts — existing proposal management (from Phase 8c)
+ADMIN-014 ✅ system-config.controller.ts — list, get, upsert, create, remove
+ADMIN-015 ✅ seeder-monitoring.controller.ts — getStatus, flush
+ADMIN-016 ✅ ai-monitoring.controller.ts — getStatus, listEmbeddings, recomputeOne, recomputeAllStale
+ADMIN-017 ✅ analytics-admin.controller.ts — getGroupAnalytics, getDropAnalytics, getAiAnalytics, getDiamondAnalytics
+See "Key files from Phase 8e (Admin API + Analytics)" section below.
+
+── PHASE 8 SERIES — ALL COMPLETE ✅ ─────────────────────────────────────────
+All Phase 8a → 8e work complete as of 2026-06-01. 1,492 tests, 99 suites.
+
+Phase 9 ✅ Habits / Consistency Hub ALL DONE (1,546 tests, 101 suites).
+HABIT-001/002/003 ✅ done Phase 7b (list habits, log/delete, reflection note, streak)
+HABIT-004 ✅ GET /api/v1/habits/streaks — all habits + thisWeekDots (7-bool Mon–Sun)
+HABIT-005 ✅ GET /api/v1/habits/weekly-reflection — rule-based insight, Redis cached 7 days
+HABIT-006 ✅ PUT /api/v1/habits/summary-visibility — toggle Profile.habitSummaryVisible
+HABIT-007 ✅ GET /api/v1/habits/:habitKey/history?weeks=8 — per-habit weekly chart data
+HABIT-008 ✅ Habit consistency → optional matching dims 10+11 (backwards-compatible)
+Schema change: habitSummaryVisible Boolean @default(false) on Profile — run prisma db push locally.
+
+KEY DECISIONS (Phase 9 — 2026-06-01):
+- Phase 9 uses existing HabitKey enum (10 preset habits). No new UUID-based Habit model.
+- thisWeekDots: 7-element boolean array, Mon=index0 … Sun=index6.
+- Weekly reflection: Redis-cached 7 days per user (key: habit:weekly-reflection:{userId}).
+- HABIT-008: habitConsistency + habitOverlap optional on ScoreBreakdown. When both users have habit data: 9 core weights ×0.95, habits 0.05 total (3% + 2%). Fully backwards-compatible.
+- libs/habits/package.json: @abroad-matrimony/cache added to deps.
+- Route ordering: /streaks + /weekly-reflection + /summary-visibility BEFORE /:habitKey/* in habits router.
+
+Key files from Phase 9 (HABIT-004→008):
+- libs/habits/src/index.ts — getAllHabitsWithStreaks(), getHabitHistory(), getWeeklyReflection(), updateSummaryVisibility(), getHabitConsistencyRate(), getActiveHabitKeys(); DTOs: HabitWithStreakDto, WeeklyHabitHistoryDto, WeeklyReflectionDto; helpers: getWeekMonday(), buildWeekDots()
+- libs/habits/src/__tests__/habits.service.test.ts — 31 tests (was 13)
+- libs/habits/package.json — @abroad-matrimony/cache added to deps
+- libs/shared/src/types/index.ts — ScoreBreakdown extended: optional habitConsistency? + habitOverlap?
+- libs/matching/src/scoring.service.ts — HABIT_WEIGHTS { habitConsistency: 0.03, habitOverlap: 0.02 }; UserScoringData has optional habitConsistencyRate? + activeHabitKeys?; computeMatchScore() includes habit path when both users have data; scoreHabitConsistency() + scoreHabitOverlap() added
+- libs/matching/src/match-score.service.ts — getUserScoringData() fetches habitLog in parallel (5th query), computes habitConsistencyRate + activeHabitKeys
+- libs/matching/src/__tests__/scoring.service.test.ts — 7 new HABIT-008 tests
+- libs/matching/src/__tests__/match-score.service.test.ts — mockHabitLogFindMany added
+- libs/db/prisma/schema.prisma — Profile: habitSummaryVisible Boolean @default(false) ⚠️ run prisma db push
+- apps/gateway/src/constants/habits.constants.ts — PROFILE_NOT_FOUND, VISIBILITY_UPDATED
+- apps/gateway/src/schemas/habits/habits.schema.ts — habitHistoryQuerySchema, summaryVisibilitySchema
+- apps/gateway/src/controllers/habits/habits.controller.ts — getAllStreaks, getHistory, getWeeklyReflection, updateVisibility handlers
+- apps/gateway/src/routes/habits/index.ts — 4 new routes; static before parameterized
+- apps/gateway/src/controllers/habits/__tests__/habits.controller.test.ts — 4 new suites, 14 new tests
+- docs/api/openapi.yaml — 5 new habit paths (streaks, weekly-reflection, summary-visibility, history, reflection note)
+- docs/api/postman-collection.json — 5 new requests in Habits folder
+
+Phase 10 ✅ Introductions (Weekly Drop) ALL DONE (see test count update below).
+INTRO-001 ✅ BullMQ weekly drop cron — Sunday 09:00 UTC, one drop per active REGIONAL group
+INTRO-002 ✅ GET /api/v1/introductions — already done Phase 7b
+INTRO-003 ✅ GET /api/v1/introductions/:id — intro detail
+INTRO-004 ✅ POST /api/v1/introductions/unlock-early — spend 300 diamonds (idempotent)
+INTRO-005 ✅ generateWhyThisMatch() — pure rule-based dimension card generator
+INTRO-006 ✅ generateWhyThisMatchLLM() — OpenAI gpt-4o-mini, Redis-cached 24h, falls back to rule-based
+INTRO-007 ✅ GET /api/v1/profiles/:id/match-context — score + cards + why-this-match, Redis-cached 1h
+
+KEY DECISIONS (Phase 10 — 2026-06-01):
+- INTRO-004 spends 300 diamonds (EARLY_UNLOCK_DIAMOND_COST constant), marks viewedEarlyAt on all current-week intros.
+- Weekly drops auto-approved (status SCHEDULED, no admin needed). Differs from admin-proposed drops (DRAFT flow).
+- WHY_MATCH cache key: am:why:{smaller-uuid}:{larger-uuid} (canonical pair order). TTL 24h.
+- MATCH_CONTEXT cache key: am:ctx:{viewerUserId}:{profileUserId}. TTL 1h.
+- DIMENSION_LABELS: 11 dimensions mapped to human-readable strings in libs/introductions/src/why-this-match.service.ts.
+- generateWhyThisMatch picks top-3 from HIGHLIGHT_DIMENSIONS first (settlementIntent, faithAlignment, etc).
+- LLM path: dynamic import('@abroad-matrimony/ai') — compiles/runs even when libs/ai absent.
+- Weekly drop cron started in apps/gateway/src/server.ts alongside other BullMQ workers.
+
+Key files from Phase 10:
+- libs/introductions/src/why-this-match.service.ts — DIMENSION_LABELS, DimensionCard, WhyThisMatchDto, generateWhyThisMatch(), generateWhyThisMatchLLM()
+- libs/introductions/src/weekly-drop.service.ts — createWeeklyGroupDrops(): one IntroductionDrop per active REGIONAL group; getThisSundayAt9()
+- libs/introductions/src/weekly-drop.job.ts — createWeeklyDropWorker(redisUrl): BullMQ Worker, cron 0 9 * * 0; triggerWeeklyDropNow()
+- libs/introductions/src/index.ts — getIntroductionDetail(), earlyUnlockWeeklyIntros(), EarlyUnlockInsufficientDiamondsError, EARLY_UNLOCK_DIAMOND_COST; barrel exports for Phase 10 services
+- libs/introductions/src/__tests__/why-this-match.service.test.ts — 14 tests
+- libs/introductions/src/__tests__/weekly-drop.service.test.ts — 6 tests
+- libs/introductions/package.json — @abroad-matrimony/cache + bullmq added to deps
+- libs/shared/src/constants/index.ts — QUEUE_NAMES.WEEKLY_INTROS; CACHE_KEYS.WHY_MATCH() + MATCH_CONTEXT(); CACHE_TTL.WHY_MATCH_SECONDS + MATCH_CONTEXT_SECONDS
+- apps/gateway/src/controllers/introductions/introductions.controller.ts — getDetail, unlockEarly, getMatchContext handlers; @abroad-matrimony/matching + cache imports
+- apps/gateway/src/routes/introductions/index.ts — POST /unlock-early + GET /:introId routes added
+- apps/gateway/src/routes/profiles/index.ts — GET /:id/match-context added
+- apps/gateway/src/controllers/introductions/__tests__/introductions.controller.test.ts — +32 new tests (getDetail, unlockEarly, matchContext suites)
+- apps/gateway/src/constants/introductions.constants.ts — EARLY_UNLOCK_ERRORS, EARLY_UNLOCK_MESSAGES, MATCH_CONTEXT_ERRORS
+- apps/gateway/src/server.ts — createWeeklyDropWorker() started; await weeklyDropWorker.close() in shutdown
+- apps/gateway/package.json — @abroad-matrimony/matching added to deps
+- docs/api/openapi.yaml — 3 new paths: /introductions/unlock-early, /introductions/{introId}, /profiles/{id}/match-context
+- docs/api/postman-collection.json — 3 new requests: Get Introduction Detail, Unlock Early, Get Match Context
+
+Phase 11 ✅ Gatherings / Events ALL DONE (1,593 tests, 101 suites).
+EVENT-001 ✅ Admin create/update/archive events — done Phase 8e
+EVENT-002 ✅ GET /api/v1/events — listEvents() now includes whyInvited text + ?limit + ?upcoming filters
+EVENT-003/004/005 ✅ Get event / RSVP / cancel RSVP — done Phase 7b
+EVENT-006 ✅ GET /api/v1/events/calendar — this week's milestones (INTRO_DROP, CHECK_IN, PROMPT_*, EVENT)
+EVENT-007 ✅ POST /admin/events/:eventId/process-attendance — co-attendance pairs → score recompute
+
+KEY DECISIONS (Phase 11 — 2026-06-01):
+- listEvents() signature: was (userId, tag?) → now (userId, options?: { tag?, limit?, upcoming? }).
+- generateWhyInvited() pure function: group-member check first, then low-completion nudge, then tag-based text.
+- getEventCalendar() queries weeklyPrompt + event, always includes INTRO_DROP + CHECK_IN (next Sunday 09:00 UTC).
+- EVENT-007: getCoAttendancePairs() returns unique canonical pairs; admin endpoint enqueues one global recompute.
+- GET /api/v1/events/calendar registered as static route BEFORE /:eventId in events router.
+
+Key files from Phase 11:
+- libs/gatherings/src/index.ts — generateWhyInvited(), ListEventsOptions, updated listEvents() + getEvent(); getEventCalendar(); getCoAttendancePairs(); CalendarMilestoneDto; whyInvited on EventDto
+- libs/gatherings/src/__tests__/gatherings.service.test.ts — 37 tests (was 18, +19 new)
+- apps/gateway/src/schemas/events/events.schema.ts — limit? + upcoming? added to listEventsQuerySchema
+- apps/gateway/src/constants/events.constants.ts — CALENDAR_RETRIEVED, ATTENDANCE_PROCESSED
+- apps/gateway/src/controllers/events/events.controller.ts — updated list(), added calendar(), processAttendance()
+- apps/gateway/src/routes/events/index.ts — GET /calendar added (static, before /:eventId)
+- apps/gateway/src/routes/admin/index.ts — POST /admin/events/:eventId/process-attendance added
+- apps/gateway/src/controllers/events/__tests__/events.controller.test.ts — 24 tests (was 13, +11 new)
+- docs/api/openapi.yaml — 2 new paths: /api/v1/events/calendar + /admin/events/{eventId}/process-attendance
+- docs/api/postman-collection.json — 2 new requests: Get Event Calendar + Process Event Attendance
+
+Phase 12 ✅ Weekly Prompts ALL DONE (1,618 tests, 101 suites).
+PROMPT-001 ✅ Admin: POST /admin/prompts + GET /admin/prompts + PATCH /admin/prompts/:id — done Phase 8e
+PROMPT-002 ✅ GET /api/v1/prompts/current — 404 when null (controller null→throw fix)
+PROMPT-003 ✅ POST /api/v1/prompts/current/response — submit text/voice to current prompt
+PROMPT-004 ✅ GET /api/v1/prompts/current/responses — paginated community responses for current prompt
+PROMPT-005 ✅ POST /api/v1/prompts/responses/:id/resonate — done Phase 7b
+PROMPT-006 ✅ DELETE /api/v1/prompts/responses/:id/resonate — done Phase 7b
+PROMPT-007 ✅ Prompt resonance → matching dimension 12 (promptResonance optional in ScoreBreakdown)
+
+KEY DECISIONS (Phase 12 — 2026-06-02):
+- PROMPT-002: getCurrent controller now throws PromptNotFoundError when service returns null → 404 (was 200 with null).
+- Static routes /current, /current/response, /current/responses registered BEFORE /:promptId/... in router.
+- PROMPT-007: scorePromptResonance(): mutual=1.0, one-way=0.5, none=0.0. Weight=0.02.
+- Score scaling: neither=1.00, habits-only=0.95, prompt-only=0.98, both=0.93. Core formula unified.
+- getUserScoringData() has 6th parallel query: prisma.promptResonate.findMany({ include: { response: { select: { userId } } } }).
+- ScoreBreakdown: added promptResonance? (optional, alongside habitConsistency? + habitOverlap?).
+- openapi.yaml ScoreBreakdown updated: habitConsistency + habitOverlap + promptResonance moved from "v2" to "optional v1".
+
+Key files from Phase 12:
+- libs/shared/src/types/index.ts — ScoreBreakdown: added promptResonance?: number
+- libs/matching/src/scoring.service.ts — PROMPT_RESONANCE_WEIGHT=0.02; promptResonatedUserIds? in UserScoringData; scorePromptResonance(); computeMatchScore() unified formula
+- libs/matching/src/match-score.service.ts — 6th parallel query: promptResonate.findMany() with response.userId; promptResonatedUserIds Set built from results
+- libs/matching/src/__tests__/scoring.service.test.ts — 7 new PROMPT-007 test cases
+- libs/matching/src/__tests__/match-score.service.test.ts — mockPromptResonateFindMany added; 2 new PROMPT-007 getUserScoringData tests
+- apps/gateway/src/controllers/prompts/prompts.controller.ts — getCurrent throws PromptNotFoundError when null; respondToCurrent + getCurrentResponses handlers added
+- apps/gateway/src/routes/prompts/index.ts — static /current + /current/response + /current/responses BEFORE /:promptId routes
+- apps/gateway/src/schemas/prompts/prompts.schema.ts — currentResponseSchema + currentResponsesQuerySchema + types
+- apps/gateway/src/controllers/prompts/__tests__/prompts.controller.test.ts — +17 tests (GET /current, POST /current/response, GET /current/responses suites; null→404 fix verified)
+- docs/api/openapi.yaml — 2 new paths (/current/response, /current/responses); ScoreBreakdown updated; .redocly-ignore regenerated (147 suppressed)
+- docs/api/postman-collection.json — 2 new requests in Weekly Prompts folder
+
+Phase 13 ✅ Saved Profiles ALL DONE (2026-06-02).
+SAVE-001 ✅ POST /api/v1/saved (body: savedUserId, label?, notes?)
+SAVE-002 ✅ GET /api/v1/saved?label=...
+SAVE-003 ✅ DELETE /api/v1/saved/:savedUserId
+SAVE-004 ✅ PATCH /api/v1/saved/:savedUserId (label + notes)
+SAVE-005 ✅ POST /api/v1/saved/:savedUserId/note (dedicated note endpoint)
+SAVE-006 ✅ GET /api/v1/saved/compare?ids=a,b (2–3 profiles, all must be saved, returns realLifeAnswers)
+
+Phase 14 ✅ Signals Dashboard ALL DONE (2026-06-02).
+SIGNAL-001 ✅ POST /api/v1/profiles/:id/view — explicit view logging, 1h dedup, ViewSelfError→400
+SIGNAL-002 ✅ GET /api/v1/signals/week — 4 metrics (views, connections, resonates, introPool) with WoW delta
+SIGNAL-003 ✅ GET /api/v1/signals/action-queue — priority items: RESPOND_TO_INTRO(1), ACCEPT_CONNECTION(2), COMPLETE_PROFILE(3)
+SIGNAL-004 ✅ GET /api/v1/signals/momentum — 7 daily view counts, oldest→newest
+Schema change: ProfileView model added — run prisma db push locally.
+New lib: libs/signals (logProfileView, getWeeklyMetrics, getActionQueue, getMomentumData)
+
+Phase 15 ✅ Trust Center ALL DONE (2026-06-02).
+TRUST-001/002 ✅ GET /api/v1/trust — 6-layer trust score (max 100), score persisted to Profile.trustScore on each call
+TRUST-003 ✅ PUT /api/v1/profile/privacy-controls — showPhotosBeforeMutual, showBioBeforeMutual, showAnswersBeforeMutual (partial-merge Json field)
+TRUST-004 ✅ POST /api/v1/profile/pause-visibility + DELETE — explicit pause/resume (not toggle)
+TRUST-005 ✅ Block/unblock/report done Phase 7b at /trust/block, /trust/blocks, /trust/report
+TRUST-006-008 ✅ Already done Phase 7b
+TRUST-009 ✅ GET /api/v1/profile/access-levels — PUBLIC/TRUSTED/FAMILY static defs
+Schema change: Profile.privacySettings Json? added — run prisma db push locally.
+
+Phase 16 ✅ Algorithm v2 + Match Tuning ALL DONE (2026-06-02). 1,178 tests, 52 suites all green.
+ALG-001/002/003 ✅ done HABIT-008/PROMPT-007 (habitConsistency, habitOverlap, promptResonance)
+ALG-004 ✅ familyInvolvement dim (Jaccard PARENTS_INVOLVEMENT + FAMILY_STRUCTURE, weight 0.03)
+ALG-005 ✅ Q2 familyImportance 1–5 UI maps to familyInvolvement multiplier
+ALG-006 ✅ eventCoAttendance dim (shared GOING RSVPs, weight 0.02)
+ALG-007 ✅ communicationStyle dim (both voice intro: 1.0, one: 0.5, neither: 0.0, weight 0.02)
+ALG-008 ✅ profileViewMomentum dim (avg(views/10 capped), weight 0.01)
+ALG-009 ✅ trustLayerDepth dim (avg trustScore/100, weight 0.02)
+ALG-010 ✅ ScoreBreakdown now 18 optional fields; DiscoveryItemDto has personalizedScore
+ALG-011 ✅ GET/POST /api/v1/profile/match-tuning — settlementImportance + familyImportance (1–5)
+ALG-012 ✅ GET /api/v1/profile/match-tuning/impact — preview rank changes on top 20 stored pairs
+ALG-013 ✅ enqueueScoreRecompute fire-and-forget after every tuning save
+Tuning NOW WIRED: applyTuningToBreakdown() in discover feed; personalizedScore re-sorts within page.
+importanceToMultiplier: 1→0.5, 2→0.75, 3→1.0, 4→1.75, 5→2.5. Stored in MatchTuning model.
+
+KEY DECISIONS (Phases 13–16, 2026-06-02):
+- Phase 13: POST /api/v1/saved uses body not path param. compare() validates all IDs are saved. ProfileNotSavedError → 404.
+- Phase 14: ProfileView is explicit (client fires POST), not automatic. 1h dedup. libs/signals is a new standalone lib.
+- Phase 15: Trust score from 6 achievable layers (no 3rd-party). Json? for privacySettings. Explicit pause/resume not toggle.
+- Phase 16: All 5 v2 dims are opt-in (both users must have data). Tuning applied at query time (not compute time). Core scales down proportionally when optional dims present. Min coreScale = 0.83 when all optional dims active.
+
+⚠️ PRISMA DB PUSH PENDING (must run locally):
+  - ProfileView model (Phase 14)
+  - Profile.privacySettings Json? (Phase 15)
+  Both added to libs/db/prisma/schema.prisma.
+
+Next phase: Phase 5b — Connections + Verification (CONN-001–004, VER-001–003).
+Service layers already built (libs/connections, libs/verification). Gateway wiring only.
+
+⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
+before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot reach Supabase).
+
+Phase 8 work order (ALL COMPLETE ✅):
+  1. DB-MIGRATION-001 — ✅ DONE — schema migration (pgvector, new models)
+  2. Phase 8a (SEED-001→009) — ✅ DONE (2026-05-29) — 1,091 tests, 77 suites — apps/seeder autonomous data seeder, port 3100
+  3. Phase 8b (AI-001→007) — ✅ DONE (2026-05-29) — 1,223 tests, 89 suites — libs/ai: OpenAI completions + embeddings + Whisper + BullMQ wiring
+  4. Phase 8c (GRP-R-001→007) — ✅ DONE (2026-05-30) — 1,312 tests, 93 suites — Groups revamp: 4-type taxonomy + social feed + proposals + admin + seeder groups
+  5. Phase 8d (IDROP-001→006) — ✅ DONE (2026-05-30) — 1,407 tests, 97 suites — IntroductionDrop: multi-drop, AI-curated pairings, early access + unlock via diamonds, admin endpoints
+  6. Phase 8e (ADMIN-001→017) — ✅ DONE (2026-06-01) — 1,492 tests, 99 suites — Admin API full build: users, feature flags, verification, audit log, KPI, events, prompts, groups CRUD, AI proposals/monitoring, system config, seeder monitoring, extended analytics
 
 ⚠️ IMPORTANT: Run `npm install --legacy-peer-deps` if you haven't — `stripe` and `razorpay` were added to root package.json in Phase 7.
 
@@ -763,12 +1227,194 @@ Prisma changes (applied): IMAGE in MessageType, mediaUrl/flagCount/isHidden on M
 
 BUG-007: requireAdminRole missing from auth mocks — when adding new admin routes, add requireAdminRole stub to ALL jest.mock('@abroad-matrimony/auth') blocks in gateway tests.
 
-KEY DECISIONS:
+KEY DECISIONS (Phases 1–7b):
 - USER_REGISTERED CloudEvent fires in AUTH-002 (not AUTH-001). See BUG-001 in bugs.md.
 - Diamond ledger is append-only (ADR-006). No UPDATEs.
 - All money in integer paise/cents (ADR-007). Never floats.
 - Stripe/Razorpay adapters use dynamic require() inside factory — never top-level import (ADR-012).
 - express.raw() before express.json() for webhook paths (ADR-011).
+
+KEY DECISIONS (Phase 8 — all locked 2026-05-29):
+- DB-MIGRATION-001 MUST complete before any Phase 8 implementation. Run prisma db push locally.
+- apps/seeder: independent NX app port 3100, NEVER runs in production (hard NODE_ENV guard).
+- SEEDER_SECRET: gateway middleware bypass sets req.user from token payload; no-op in production (ADR-014).
+- isSeeded flag: Boolean @default(false) on User/Profile/Group/GroupPost — enables clean flush.
+- 500 profiles: UK 35%, Germany 20%, Australia 20%, Canada 15%, India 10%.
+- Drip cadence: 3–5 new profiles at random offset within 3–4 hour window (organic feel).
+- Groups: single Group model with type enum REGIONAL|CULTURAL|PROFESSIONAL|INTEREST (ADR-015).
+- REGIONAL country-level groups: auto-join on registration. All others: suggested → manual join.
+- Suggested groups at onboarding, max 20 (configurable via SystemConfig table).
+- All member lists visible in all group types; initiating conversation from group costs diamonds.
+- Social feed: posts + flat comments + likes. No video, no nested threads.
+- INTEREST groups: member proposes → admin approves (hybrid). Group hierarchy via parentGroupId.
+- IntroductionDrop (themed pool) → Introduction (curated 1:1 per recipient). No weekly cap (ADR-016).
+- AI picks 3–5 best matches from pool per recipient. Flow: AI DRAFT → admin approve → SCHEDULED → LIVE.
+- Early access: VIEW costs earlyAccessCost diamonds (blurred); UNLOCK costs unlockCost (full profile).
+- New ledger reasons: INTRO_EARLY_VIEW, INTRO_EARLY_UNLOCK, GROUP_CONVERSATION_INITIATION.
+- Event pre-connections: auto-SCHEDULED IntroductionDrop, 72h before event, no admin approval needed.
+- libs/ai: gpt-4o-mini (completions), text-embedding-3-small (1536-dim), Whisper (voice) (ADR-017).
+- ProfileEmbedding: summary (150w), traitTags (8–12), vibeScores (5 dims 1–10), pgvector embedding.
+- All AI paths are no-ops when OPENAI_API_KEY absent (isAiConfigured() guard in libs/ai).
+- BullMQ profile intelligence job fires 60s debounce after any profile signal update.
+- Quiet window: 22:00–07:00 in recipient's local timezone; notifications deferred not dropped.
+- SystemConfig table: key-value store for admin-configurable settings (e.g. SUGGESTED_GROUPS_MAX=20).
+- Phase 8e Admin scope expanded (2026-05-29): 17 tasks (ADMIN-001→017). ALL COMPLETE (2026-06-01).
+- Admin decision: routes in apps/gateway (not separate apps/admin-api) — gateway already has all middleware/lib integrations.
+- req.admin (NOT req.adminUser): set by requireAdminRole middleware, declared in apps/gateway/src/types/express.d.ts.
+- SystemConfig error classes: SystemConfigDeleteProtectedError + SystemConfigValidationError (NOT SystemConfigProtectedError/SystemConfigKeyInvalidError).
+- Seeder mock path from __tests__/: '../../../services/seeder-monitoring.service.js'.
+- New libs/analytics lib requires entries in: jest.preset.js + tsconfig.base.json + apps/gateway/jest.config.ts.
+
+Key files from Phase 8a (Seeder — SEED-001→009):
+- apps/seeder/src/server.ts — entry point, production guard (NODE_ENV=production → process.exit(1))
+- apps/seeder/src/app.ts — Express app: /health (no auth), /seed (requireSeederKey), 404, error handler
+- apps/seeder/src/lib/seeder-env.ts — getSeederEnv() (seeder-only vars, no Zod gateway schema dep)
+- apps/seeder/src/lib/seeder-logger.ts — createChildLogger({ module: 'seeder' })
+- apps/seeder/src/lib/seeder-state.ts — in-memory state: running/dripPaused/lastRunAt/lastDripAt/totalProfilesCreated
+- apps/seeder/src/lib/seeder-token.ts — buildSeederToken(secret, payload) — mirrors gateway format
+- apps/seeder/src/lib/gateway-client.ts — getGatewayClient() axios singleton + asUser(userId, role, deviceId)
+- apps/seeder/src/data/names.data.ts — 12 cultural background name banks; randomName(background, gender)
+- apps/seeder/src/data/real-life-answers.data.ts — all 12 question keys × 5 persona types; getRandomAnswer()
+- apps/seeder/src/data/story-prompts.data.ts — 3 prompt keys × 5 variants; getRandomStoryAnswer()
+- apps/seeder/src/factories/profile.factory.ts — createSeededProfile(): direct Prisma user create + gateway API calls for profile/answers/prompts/groups
+- apps/seeder/src/services/photo.service.ts — warmPhotoCache() + pickPhotoUrl(gender); S3 ListObjects, CloudFront preferred
+- apps/seeder/src/services/group-join.service.ts — autoJoinGroups(profile): Prisma transaction, GroupMembership + memberCount++
+- apps/seeder/src/services/activity.simulator.ts — runActivitySimulation(): 6 action types, 70% intro accept rate
+- apps/seeder/src/services/flush.service.ts — flushAllSeededData(): 17 deleteMany in Prisma $transaction (dependency order)
+- apps/seeder/src/services/status.service.ts — getSeederStatus(): isSeeded counts + in-memory state
+- apps/seeder/src/jobs/drip.job.ts — BullMQ seeder:drip; scheduleDripJob/triggerImmediateDrip/startDripWorker/closeDripWorker
+- apps/seeder/src/jobs/activity.job.ts — BullMQ seeder:activity repeatable every 2h
+- apps/seeder/src/jobs/match-recompute.job.ts — BullMQ seeder:match-recompute after each drip
+- apps/seeder/src/middleware/seeder-key.middleware.ts — requireSeederKey: X-Seeder-Key header check
+- apps/seeder/src/controllers/seed.controller.ts — seedController: getStatus/triggerRun/flush/pause/resume
+- apps/seeder/src/routes/seed.routes.ts — all seeder control routes behind requireSeederKey
+- apps/seeder/src/__tests__/seed.controller.test.ts — 13 supertest integration tests
+- apps/seeder/package.json + tsconfig.json + jest.config.ts — NX app scaffold
+- apps/gateway/src/middleware/seeder-auth.middleware.ts — SEED-004/ADR-014: seederAuthMiddleware + buildSeederToken; 11 tests
+- apps/gateway/src/app.ts — seederAuthMiddleware mounted after express.json(), before routes
+- libs/config/src/env.ts — SEEDER_SECRET (optional), OPENAI_API_KEY (optional), AI_MODEL, EMBEDDING_MODEL added
+
+Key files from Phase 8b (AI — AI-001→007):
+- libs/ai/package.json — @abroad-matrimony/ai lib scaffold; deps: openai ^6.39.1, @aws-sdk/client-s3, bullmq, @abroad-matrimony/config/db/logger/shared
+- libs/ai/src/types/ai.types.ts — VibeScores, ContactWindow, ProfileEmbeddingDto, IntroductionDropDraftDto, ProfileIntelligenceJobData
+- libs/ai/src/client.ts — isAiConfigured(), getAiClient() OpenAI singleton, _resetAiClient(), AiNotConfiguredError
+- libs/ai/src/profile-intelligence.service.ts — generateProfileIntelligence(userId): queries prisma.user (not Profile), response_format json_object, upserts ProfileEmbedding with JSON cast for vibeScores/contactWindow
+- libs/ai/src/whisper.service.ts — transcribeVoiceIntro(userId, s3Key): downloads via GetObjectCommand (not StorageAdapter), calls whisper-1, updates voiceIntroTranscript, enqueues intelligence job; returns '' on any error
+- libs/ai/src/intro-grouping.service.ts — proposeIntroductionDrops(region): queries prisma.user with currentCountry filter; min 10 profiles; handles GPT response as array or { groups: [...] }; creates DRAFT IntroductionDrops
+- libs/ai/src/event-preconnect.service.ts — generateEventPreConnections(eventId): uses prisma.eventRsvp (not eventAttendee) + prisma.userBlock (not block); event.title + event.startAt; MIN_PAIRS=4, PRE_CONNECT_HOURS=72
+- libs/ai/src/quiet-window.ts — getContactWindow(userId), isWithinWindow(window, now), msUntilWindowOpens(window, now); Intl.DateTimeFormat for local hour; fail-open for unknown timezone
+- libs/ai/src/enqueue-intelligence.ts — enqueueProfileIntelligence(userId, redisUrl): stable jobId 'pi:${userId}', 60s delay, removes existing job first to reset debounce
+- libs/ai/src/ai.worker.ts — createAiWorker(redisUrl): BullMQ Worker, concurrency 2; processProfileIntelligence(); triggerProfileIntelligenceNow()
+- libs/ai/src/index.ts — barrel exports for all services, client, quiet-window, worker, types
+- libs/ai/jest.config.ts — displayName: 'ai', preset: ../../jest.preset.js
+- libs/ai/src/__tests__/client.test.ts — 11 tests
+- libs/ai/src/__tests__/profile-intelligence.service.test.ts — 8 tests
+- libs/ai/src/__tests__/whisper.service.test.ts — 7 tests
+- libs/ai/src/__tests__/intro-grouping.service.test.ts — 7 tests
+- libs/ai/src/__tests__/event-preconnect.service.test.ts — 8 tests
+- libs/ai/src/__tests__/quiet-window.test.ts — 10 tests
+- libs/notification/src/notification.worker.ts — quiet window check for PUSH: dynamic import('@abroad-matrimony/ai'); re-queues with delay on QUIET_WINDOW_DEFER (not failed)
+- libs/notification/src/types/notification.types.ts — PushPayload.userId?: string added for quiet window lookup
+- libs/profile/src/extensions.service.ts — saveVoiceIntro() fires transcribeVoiceIntro() as void (fire-and-forget) after saving S3 key
+- libs/profile/package.json — @abroad-matrimony/ai + @abroad-matrimony/config + @abroad-matrimony/storage added to deps
+- apps/gateway/src/server.ts — AI worker started conditionally (isAiConfigured() guard); aiWorker.close() in shutdown
+- libs/shared/src/constants/index.ts — QUEUE_NAMES.PROFILE_INTELLIGENCE + JOB_TYPES.PROFILE_INTELLIGENCE_UPDATE added
+- jest.preset.js — @abroad-matrimony/ai moduleNameMapper entry added
+- tsconfig.base.json — @abroad-matrimony/ai path alias added
+
+Key files from Phase 8c (Groups Revamp — GRP-R-001→007):
+- libs/groups/src/index.ts — FULLY REWRITTEN: joinGroup(userId, groupId, joinedVia?), leaveGroup(userId, groupId), autoJoinRegionalCountryGroup(userId, country), listSuggestedGroups(userId, limit), getSuggestedGroupsForOnboarding(userId), getGroupMembers(groupId, page, limit) → PaginatedGroupMembersResult; AlreadyInGroupError, NotInGroupError (new); AlreadyGroupMemberError, NotGroupMemberError kept as @deprecated aliases
+- libs/groups/src/feed.service.ts — CREATED: createPost(), listPosts(), deletePost(userId, postId, isAdmin?), likePost(), unlikePost() idempotent, addComment(), listComments(), pinPost(), unpinPost(); PostNotFoundError, PostForbiddenError
+- libs/groups/src/proposal.service.ts — CREATED: proposeGroup(), getGroupProposals(status?), approveGroupProposal() — creates Group + auto-joins proposer in $transaction, rejectGroupProposal(); GroupProposalNotFoundError, AlreadyProposedError, ProposalNotPendingError
+- libs/groups/src/__tests__/groups.service.test.ts — REWRITTEN (new tests for autoJoinRegionalCountryGroup, listSuggestedGroups, getSuggestedGroupsForOnboarding)
+- libs/groups/src/__tests__/feed.service.test.ts — CREATED (pinPost, unpinPost, likePost idempotency, member validation)
+- libs/groups/src/__tests__/proposal.service.test.ts — CREATED (proposal create, approve creates group, ProposalNotPendingError guard)
+- apps/gateway/src/controllers/groups/groups.controller.ts — REWRITTEN: mapGroupError handles 11 error classes; new handlers: suggested, onboardingSuggestions, getFeed, createPost, deletePost, likePost, unlikePost, addComment, listComments, proposeGroup, approveProposal, rejectProposal
+- apps/gateway/src/routes/groups/index.ts — REWRITTEN: static routes (/suggested, /onboarding-suggestions, /proposals) BEFORE /:groupId; 16 total routes
+- apps/gateway/src/schemas/groups/groups.schema.ts — REWRITTEN: added groupAndPostParamSchema, paginationQuerySchema, createPostSchema, addCommentSchema, proposeGroupSchema, suggestedGroupsQuerySchema
+- apps/gateway/src/constants/groups.constants.ts — UPDATED: POST_NOT_FOUND, POST_FORBIDDEN, PROPOSAL_NOT_FOUND, ALREADY_PROPOSED, PROPOSAL_NOT_PENDING errors; POST_CREATED, POST_DELETED, LIKED, UNLIKED, COMMENT_ADDED, PINNED, UNPINNED, PROPOSAL_CREATED, PROPOSAL_APPROVED, PROPOSAL_REJECTED messages
+- apps/gateway/src/controllers/groups/__tests__/groups.controller.test.ts — REWRITTEN: all 11 error classes in mock; getGroupMembers returns PaginatedGroupMembersResult; test suites for all new endpoints
+- apps/gateway/src/controllers/admin/groups-admin.controller.ts — CREATED (GRP-R-006): listProposals, approveProposal, rejectProposal, pinPost, unpinPost; MODERATOR+ required
+- apps/gateway/src/routes/admin/index.ts — UPDATED: 5 new admin group routes; inline schemas for proposalId/groupAndPost/rejectBody/status
+- apps/gateway/src/controllers/admin/__tests__/groups-admin.controller.test.ts — CREATED (17 tests)
+- apps/seeder/src/data/groups.data.ts — CREATED (GRP-R-007): 21 system groups (5 REGIONAL, 6 CULTURAL, 5 PROFESSIONAL, 5 INTEREST)
+- apps/seeder/src/services/group-seed.service.ts — CREATED: seedSystemGroups() idempotent (findFirst by name), isSeeded:false, returns {created, existing, total}
+- apps/seeder/src/controllers/seed.controller.ts — UPDATED: triggerRun calls seedSystemGroups() first; new seedGroups handler
+- apps/seeder/src/routes/seed.routes.ts — UPDATED: POST /seed/groups route added
+- apps/seeder/src/__tests__/seed.controller.test.ts — UPDATED: mockSeedGroups added; /seed/run tests updated; /seed/groups tests added
+- apps/seeder/src/__tests__/group-seed.service.test.ts — CREATED (6 tests: create-all, idempotent, mixed, partial-failure, type-coverage, isSeeded:false)
+
+Key files from Phase 8d (IntroductionDrop — IDROP-001→006):
+- libs/introductions/src/drop.service.ts — listDropsForUser(userId), getDropDetail(dropId, userId), earlyAccessDrop(userId, dropId), unlockDropEarly(userId, dropId); error classes: IntroductionDropNotFoundError, DropNotLiveError, InsufficientDiamondsForDropError, AlreadyUnlockedError
+- libs/introductions/src/pairing.service.ts — generatePairingsForDrop(dropId): pgvector cosine similarity (AI path) → match score fallback → random shuffle; skips same-gender/blocked/already-introduced pairs; updates drop status to SCHEDULED
+- libs/introductions/src/drop-admin.service.ts — listAllDrops(opts?), getDropAdmin(dropId), approveDrop(dropId) fire-and-forget pairing gen, updateDropMembers(dropId, pool), scheduleDropRelease(dropId, date), proposeNewDrop(body); error classes: DropNotDraftError, DropNotEditableError, DropMemberPoolTooSmallError; EDITABLE_STATUSES=['DRAFT','PENDING_APPROVAL','SCHEDULED']
+- libs/introductions/src/__tests__/drop.service.test.ts — 17 tests
+- libs/introductions/src/__tests__/pairing.service.test.ts — 10 tests
+- libs/introductions/src/__tests__/drop-admin.service.test.ts — 18 tests
+- libs/introductions/src/index.ts — barrel: added drop.service, pairing.service, drop-admin.service exports
+- libs/introductions/package.json — @abroad-matrimony/payment added to deps
+- apps/gateway/src/constants/introductions.constants.ts — added DROP_ERRORS, DROP_MESSAGES
+- apps/gateway/src/constants/introductions-admin.constants.ts — CREATED: INTRO_ADMIN_ERRORS, INTRO_ADMIN_MESSAGES
+- apps/gateway/src/schemas/introductions/introductions.schema.ts — added dropIdParamSchema
+- apps/gateway/src/controllers/introductions/introductions.controller.ts — added listDrops, getDropDetail, earlyAccess, unlock handlers + mapDropError()
+- apps/gateway/src/routes/introductions/index.ts — 4 drop routes (static, before /:introId/*)
+- apps/gateway/src/controllers/introductions/__tests__/introductions.controller.test.ts — 32 tests
+- apps/gateway/src/controllers/admin/introductions-admin.controller.ts — CREATED: listDrops, getDropDetail, proposeDrop, approveDrop, updateMembers, scheduleDrop handlers + mapDropAdminError()
+- apps/gateway/src/routes/admin/index.ts — 6 admin drop routes added (MODERATOR role, inline Zod schemas)
+- apps/gateway/src/controllers/admin/__tests__/introductions-admin.controller.test.ts — CREATED (25 tests)
+- apps/seeder/src/services/activity.simulator.ts — added early_access_drop + unlock_drop actions (IDROP-006)
+- docs/api/openapi.yaml — 4 user drop endpoints + 6 admin drop endpoints + 5 admin group endpoints added; dropIdPath parameter + Admin—Groups/Admin—Introductions tags added
+- docs/api/postman-collection.json — 4 user drop requests + 6 admin drop requests + 5 admin group requests added
+
+Key files from Phase 8e (Admin API + Analytics — ADMIN-001→017):
+- apps/gateway/src/routes/admin/index.ts — COMPLETELY REWRITTEN: all 55+ admin routes across all ADMIN tasks; inline Zod schemas; static routes before parameterised
+- apps/gateway/src/controllers/admin/users-admin.controller.ts — listUsers, getUserDetail, suspendUser, unsuspendUser, banUser, wipeSeededData; uses req.admin!.id (not req.adminUser!)
+- apps/gateway/src/controllers/admin/feature-flags-admin.controller.ts — list, get, create, update, remove; imports from @abroad-matrimony/config
+- apps/gateway/src/controllers/admin/verification-admin.controller.ts — list, get, approve, reject; imports from @abroad-matrimony/verification
+- apps/gateway/src/controllers/admin/audit-log.controller.ts — listAuditLogs from @abroad-matrimony/auth
+- apps/gateway/src/controllers/admin/analytics-admin.controller.ts — getKpi, getCohortRetention, getGroupAnalytics, getDropAnalytics, getAiAnalytics, getDiamondAnalytics; imports from @abroad-matrimony/analytics
+- apps/gateway/src/controllers/admin/events-admin.controller.ts — list, get, create, update, archive; imports from @abroad-matrimony/gatherings
+- apps/gateway/src/controllers/admin/prompts-admin.controller.ts — list, get, create, update; imports from @abroad-matrimony/prompts
+- apps/gateway/src/controllers/admin/groups-mgmt.controller.ts — list, get, create, update, archive; imports from @abroad-matrimony/groups
+- apps/gateway/src/controllers/admin/ai-proposals.controller.ts — proposeDrops, generatePreConnections; imports from @abroad-matrimony/ai
+- apps/gateway/src/controllers/admin/system-config.controller.ts — list, get, upsert, create, remove; error classes: SystemConfigDeleteProtectedError + SystemConfigValidationError (not SystemConfigProtectedError!)
+- apps/gateway/src/controllers/admin/seeder-monitoring.controller.ts — getStatus, flush; imports from ../../services/seeder-monitoring.service.js
+- apps/gateway/src/controllers/admin/ai-monitoring.controller.ts — getStatus, listEmbeddings, recomputeOne, recomputeAllStale; imports from @abroad-matrimony/ai
+- apps/gateway/src/controllers/admin/__tests__/users-admin.controller.test.ts — 16 tests
+- apps/gateway/src/controllers/admin/__tests__/phase8e-admin.controller.test.ts — 69 tests (covers ADMIN-003→016)
+- libs/auth/src/user-admin.service.ts — listUsers, getUserAdminDetail, suspendUser, unsuspendUser, banUser, wipeSeededUser; error classes: UserNotFoundError, UserAlreadySuspendedError, UserNotSuspendedError
+- libs/auth/src/audit-log-admin.service.ts — listAuditLogs; type: AuditLogQuery, AuditLogEntryDto
+- libs/verification/src/verification-admin.service.ts — listVerifications, getVerificationAdmin, approveVerification, rejectVerification; error classes: VerificationRequestNotFoundError, VerificationAlreadyReviewedError
+- libs/gatherings/src/event-admin.service.ts — listAdminEvents, getAdminEvent, createEvent, updateEvent, archiveEvent; error classes: EventAdminNotFoundError, EventAlreadyArchivedError
+- libs/prompts/src/prompt-admin.service.ts — listAdminPrompts, getAdminPrompt, createPrompt, updatePrompt; error classes: PromptAdminNotFoundError, PromptAlreadyExistsError
+- libs/groups/src/group-admin.service.ts — listAdminGroups, getAdminGroup, createAdminGroup, updateAdminGroup, archiveAdminGroup; error classes: GroupAdminNotFoundError, GroupAlreadyArchivedError
+- libs/ai/src/ai-monitoring.service.ts — getEmbeddingStatus, listEmbeddings, recomputeEmbedding, recomputeAllStaleEmbeddings; error class: UserEmbeddingNotFoundError
+- libs/analytics/src/kpi.service.ts — getKpiDashboard, getCohortRetention
+- libs/analytics/src/extended.service.ts — getGroupAnalytics, getDropAnalytics, getAiAnalytics, getDiamondAnalytics
+- libs/analytics/src/index.ts + libs/analytics/jest.config.ts — new @abroad-matrimony/analytics lib
+- jest.preset.js — @abroad-matrimony/analytics moduleNameMapper entry added
+- tsconfig.base.json — @abroad-matrimony/analytics path alias added
+- apps/gateway/jest.config.ts — all 16+ lib mappings added (was missing most libs)
+- docs/api/openapi.yaml — 52 admin paths total; 5,869 lines; 9 new tags added (ADMIN-003→017 endpoints)
+- docs/api/postman-collection.json — 42 new requests in 10 new folders for all Phase 8e endpoints
+- scripts/update-postman-phase8e.js — one-time Postman update script
+
+CRITICAL NOTES for Phase 8e:
+- req.admin (NOT req.adminUser) — set by requireAdminRole middleware (apps/gateway/src/types/express.d.ts)
+- SystemConfig error classes: SystemConfigDeleteProtectedError + SystemConfigValidationError (NOT SystemConfigProtectedError/SystemConfigKeyInvalidError)
+- Seeder mock path from __tests__/: '../../../services/seeder-monitoring.service.js' (3 levels up)
+- Run tests with: npx jest --projects apps/gateway (root-level npx jest uses Babel which breaks TypeScript)
+- New analytics lib requires entries in: jest.preset.js + tsconfig.base.json + apps/gateway/jest.config.ts
+
+NEW ENV VARS (Phase 8 — add to libs/config/src/env.ts + .env.example):
+- SEEDER_SECRET: random secret token for gateway auth bypass (seeder + gateway both need it) ✅ added
+- GATEWAY_URL: seeder's target for HTTP calls (default http://localhost:3000) ✅ added to seeder-env.ts
+- SEEDER_PORT: seeder app port (default 3100) ✅ added to seeder-env.ts
+- SEEDER_PHOTO_S3_PREFIX: S3 prefix for seeder photos (default seeder/profile-photos) ✅ added to seeder-env.ts
+- SEEDER_INITIAL_COUNT: total profiles to seed on first run (default 500) ✅ added to seeder-env.ts
+- OPENAI_API_KEY: OpenAI API key (optional — AI no-ops if absent) ✅ added to libs/config/src/env.ts
+- AI_MODEL: OpenAI completions model (default gpt-4o-mini) ✅ added to libs/config/src/env.ts
+- EMBEDDING_MODEL: OpenAI embedding model (default text-embedding-3-small) ✅ added to libs/config/src/env.ts
 
 SonarCloud: SONAR_TOKEN in GitHub Secrets. Repo is public.
 

@@ -33,6 +33,8 @@ export enum ConnectionStatus {
   DECLINED = 'DECLINED',
   EXPIRED = 'EXPIRED',
   CANCELLED = 'CANCELLED',
+  PASSED = 'PASSED',
+  WITHDRAWN = 'WITHDRAWN',
 }
 
 export enum GroupStatus {
@@ -116,6 +118,11 @@ export enum DiamondReason {
   REFUND = 'REFUND',
   FEATURE_UNLOCK = 'FEATURE_UNLOCK',
   EXPIRY = 'EXPIRY',
+  // IDROP-005 — introduction drop early access spend reasons
+  INTRO_EARLY_VIEW = 'INTRO_EARLY_VIEW',
+  INTRO_EARLY_UNLOCK = 'INTRO_EARLY_UNLOCK',
+  // Phase 8c — group conversation initiation spend reason
+  GROUP_CONVERSATION_INITIATION = 'GROUP_CONVERSATION_INITIATION',
 }
 
 export enum EventStatus {
@@ -152,4 +159,51 @@ export enum StoryPromptKey {
   PARENTS_LOVE = 'PARENTS_LOVE',
   DEAL_BREAKER = 'DEAL_BREAKER',
   TYPICAL_SUNDAY = 'TYPICAL_SUNDAY',
+}
+
+export enum GroupAccessType {
+  OPEN = 'OPEN',
+  INVITE_ONLY = 'INVITE_ONLY',
+  CREDIT_GATED = 'CREDIT_GATED',
+}
+
+export enum IntroductionStatus {
+  PENDING = 'PENDING',
+  ACCEPTED = 'ACCEPTED',
+  DECLINED = 'DECLINED',
+  EXPIRED = 'EXPIRED',
+  MATCHED = 'MATCHED',
+}
+
+export enum EventTag {
+  SOCIAL = 'SOCIAL',
+  SPIRITUAL = 'SPIRITUAL',
+  PROFESSIONAL = 'PROFESSIONAL',
+  ADVENTURE = 'ADVENTURE',
+  EDUCATIONAL = 'EDUCATIONAL',
+  CULTURAL = 'CULTURAL',
+}
+
+export enum SavedProfileLabel {
+  INTERESTED = 'INTERESTED',
+  MAYBE = 'MAYBE',
+  NOT_NOW = 'NOT_NOW',
+}
+
+export enum HabitKey {
+  HYDRATION = 'HYDRATION',
+  SLEEP = 'SLEEP',
+  EXERCISE = 'EXERCISE',
+  MINDFULNESS = 'MINDFULNESS',
+  PRAYER = 'PRAYER',
+  GRATITUDE = 'GRATITUDE',
+  READING = 'READING',
+  JOURNALING = 'JOURNALING',
+  NO_ALCOHOL = 'NO_ALCOHOL',
+  NO_SMOKING = 'NO_SMOKING',
+}
+
+export enum PromptResponseType {
+  TEXT = 'TEXT',
+  AUDIO = 'AUDIO',
 }

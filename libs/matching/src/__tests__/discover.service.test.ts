@@ -4,24 +4,27 @@ import { ALGORITHM_VERSION } from '../match-score.service.js';
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 
-const mockMatchScoreFindMany  = jest.fn();
-const mockUserFindMany        = jest.fn();
-const mockConnectionFindMany  = jest.fn();
-const mockProfileFindMany     = jest.fn();
-const mockMediaFindMany       = jest.fn();
+const mockMatchScoreFindMany   = jest.fn();
+const mockUserFindMany         = jest.fn();
+const mockConnectionFindMany   = jest.fn();
+const mockProfileFindMany      = jest.fn();
+const mockMediaFindMany        = jest.fn();
+const mockMatchTuningFindUnique = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    matchScore:  { findMany: (...a: any[]) => mockMatchScoreFindMany(...a) },
+    matchScore:   { findMany:   (...a: any[]) => mockMatchScoreFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    user:        { findMany: (...a: any[]) => mockUserFindMany(...a) },
+    user:         { findMany:   (...a: any[]) => mockUserFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    connection:  { findMany: (...a: any[]) => mockConnectionFindMany(...a) },
+    connection:   { findMany:   (...a: any[]) => mockConnectionFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    profile:     { findMany: (...a: any[]) => mockProfileFindMany(...a) },
+    profile:      { findMany:   (...a: any[]) => mockProfileFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    media:       { findMany: (...a: any[]) => mockMediaFindMany(...a) },
+    media:        { findMany:   (...a: any[]) => mockMediaFindMany(...a) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    matchTuning:  { findUnique: (...a: any[]) => mockMatchTuningFindUnique(...a) },
   },
   PrismaClient: jest.fn(),
   Prisma: {},
@@ -82,6 +85,8 @@ function setHappyPath(): void {
   mockMediaFindMany.mockResolvedValue([
     { userId: USER_A, url: 'https://cdn/a.jpg', order: 1 },
   ]);
+  // No tuning by default — returns empty weights
+  mockMatchTuningFindUnique.mockResolvedValue(null);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -109,10 +114,37 @@ describe('getDiscoveryFeed()', () => {
     expect(userBItem).toBeDefined();
   });
 
-  it('includes totalScore and scoreBreakdown in each item', async () => {
+  it('includes totalScore, personalizedScore and scoreBreakdown in each item', async () => {
     const feed = await getDiscoveryFeed(ME);
     expect(feed.items[0].totalScore).toBe(0.9);
     expect(feed.items[0].scoreBreakdown).toMatchObject({ verification: 1 });
+    // No tuning active → personalizedScore equals totalScore
+    expect(feed.items[0].personalizedScore).toBe(0.9);
+  });
+
+  it('personalizedScore equals totalScore when no tuning is set', async () => {
+    mockMatchTuningFindUnique.mockResolvedValue(null); // no tuning
+    const feed = await getDiscoveryFeed(ME);
+    for (const item of feed.items) {
+      expect(item.personalizedScore).toBe(item.totalScore);
+    }
+  });
+
+  it('personalizedScore differs from totalScore when tuning weights are active', async () => {
+    // Set heavy settlementIntent weight — changes personalised ranking
+    mockMatchTuningFindUnique.mockResolvedValueOnce({
+      userId: ME,
+      weights: { settlementIntent: 3.0 },
+      updatedAt: new Date(),
+    });
+
+    const feed = await getDiscoveryFeed(ME);
+
+    // All items must have a valid personalizedScore in [0, 1]
+    for (const item of feed.items) {
+      expect(item.personalizedScore).toBeGreaterThanOrEqual(0.0);
+      expect(item.personalizedScore).toBeLessThanOrEqual(1.0);
+    }
   });
 
   it('attaches the first photo URL when available', async () => {

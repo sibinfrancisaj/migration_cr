@@ -41,7 +41,17 @@
       "@abroad-matrimony/connections": ["libs/connections/src/index.ts"],
       "@abroad-matrimony/groups": ["libs/groups/src/index.ts"],
       "@abroad-matrimony/firebase": ["libs/firebase/src/index.ts"],
-      "@abroad-matrimony/messaging": ["libs/messaging/src/index.ts"]
+      "@abroad-matrimony/messaging": ["libs/messaging/src/index.ts"],
+      "@abroad-matrimony/verification": ["libs/verification/src/index.ts"],
+      "@abroad-matrimony/habits": ["libs/habits/src/index.ts"],
+      "@abroad-matrimony/introductions": ["libs/introductions/src/index.ts"],
+      "@abroad-matrimony/gatherings": ["libs/gatherings/src/index.ts"],
+      "@abroad-matrimony/prompts": ["libs/prompts/src/index.ts"],
+      "@abroad-matrimony/saved-profiles": ["libs/saved-profiles/src/index.ts"],
+      "@abroad-matrimony/trust": ["libs/trust/src/index.ts"],
+      "@abroad-matrimony/ai": ["libs/ai/src/index.ts"],
+      "@abroad-matrimony/analytics": ["libs/analytics/src/index.ts"],
+      "@abroad-matrimony/signals": ["libs/signals/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

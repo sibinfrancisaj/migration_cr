@@ -1,25 +1,28 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
 }
 
 // ─── Auth & Identity ─────────────────────────────────────────────────────────
 
 model User {
-  id              String   @id @default(uuid())
-  phone           String   @unique
-  email           String?  @unique
-  role            UserRole @default(USER)
-  isPhoneVerified Boolean  @default(false)
-  isEmailVerified Boolean  @default(false)
+  id              String    @id @default(uuid())
+  phone           String    @unique
+  email           String?   @unique
+  role            UserRole  @default(USER)
+  isPhoneVerified Boolean   @default(false)
+  isEmailVerified Boolean   @default(false)
+  isSeeded        Boolean   @default(false)
   deletedAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   profile              Profile?
   devices              Device[]
@@ -28,24 +31,43 @@ model User {
   storyPromptAnswers   StoryPromptAnswer[]
   media                Media[]
   groupMemberships     GroupMember[]
-  connectionsSent      Connection[]       @relation("ConnectionSender")
-  connectionsReceived  Connection[]       @relation("ConnectionReceiver")
-  matchesAsA           Match[]            @relation("MatchUserA")
-  matchesAsB           Match[]            @relation("MatchUserB")
+  connectionsSent      Connection[]          @relation("ConnectionSender")
+  connectionsReceived  Connection[]          @relation("ConnectionReceiver")
+  matchesAsA           Match[]               @relation("MatchUserA")
+  matchesAsB           Match[]               @relation("MatchUserB")
   checkIns             CheckIn[]
   verificationRequests VerificationRequest[]
   memberships          Membership[]
   diamondLedger        DiamondLedger[]
   paymentIntents       PaymentIntent[]
   notifications        Notification[]
-  flagsReported        Flag[]             @relation("FlagReporter")
-  flagsReceived        Flag[]             @relation("FlagTarget")
+  flagsReported        Flag[]                @relation("FlagReporter")
+  flagsReceived        Flag[]                @relation("FlagTarget")
   eventRsvps           EventRsvp[]
   messagesSent         Message[]
+  savedProfiles        SavedProfile[]        @relation("SavedByUser")
+  savedByUsers         SavedProfile[]        @relation("SavedUser")
+  blocksGiven          UserBlock[]           @relation("BlockSender")
+  blocksReceived       UserBlock[]           @relation("BlockReceived")
+  habitLogs            HabitLog[]
+  promptResponses      PromptResponse[]
+  promptResonates      PromptResonate[]
+  introductionsAsA     Introduction[]        @relation("IntroUserA")
+  introductionsAsB     Introduction[]        @relation("IntroUserB")
+  matchTuning          MatchTuning?
+  emailMagicLinks      EmailMagicLink[]
+  profileEmbedding     ProfileEmbedding?
+  groupPosts           GroupPost[]
+  groupPostComments    GroupPostComment[]
+  groupPostLikes       GroupPostLike[]
+  groupProposals       GroupProposal[]
+  profileViewsGiven    ProfileView[]         @relation("ProfileViewsGiven")
+  profileViewsReceived ProfileView[]         @relation("ProfileViewsReceived")
 
   @@index([phone])
   @@index([email])
   @@index([role])
+  @@index([isSeeded])
   @@index([createdAt])
   @@map("users")
 }
@@ -74,15 +96,15 @@ model Device {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   deviceId  String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([tokenHash])
@@ -101,9 +123,11 @@ model AdminUser {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  auditLogs     AuditLog[]
-  verificationReviews VerificationRequest[] @relation("VerificationReviewer")
-  flagReviews   Flag[]     @relation("FlagModerator")
+  auditLogs            AuditLog[]
+  verificationReviews  VerificationRequest[] @relation("VerificationReviewer")
+  flagReviews          Flag[]                @relation("FlagModerator")
+  groupProposalReviews GroupProposal[]       @relation("GroupProposalReviewer")
+  introDropApprovals   IntroductionDrop[]    @relation("IntroDropApprover")
 
   @@index([email])
   @@map("admin_users")
@@ -112,25 +136,33 @@ model AdminUser {
 // ─── Profile & Content ───────────────────────────────────────────────────────
 
 model Profile {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
-  name               String
-  dateOfBirth        DateTime
-  gender             Gender
-  currentCity        String
-  currentCountry     String
-  settlementIntent   String
-  bio                String?
-  completionScore    Int      @default(0)
-  verificationStatus VerificationStatus @default(PENDING)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  name                 String
+  dateOfBirth          DateTime
+  gender               Gender
+  currentCity          String
+  currentCountry       String
+  settlementIntent     String
+  bio                  String?
+  completionScore      Int                @default(0)
+  verificationStatus   VerificationStatus @default(PENDING)
+  isPaused             Boolean            @default(false)
+  trustScore           Int                @default(0)
+  isSeeded             Boolean            @default(false)
+  voiceIntroTranscript String?
+  habitSummaryVisible  Boolean            @default(false)
+  privacySettings      Json?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([currentCountry])
   @@index([verificationStatus])
+  @@index([isPaused])
+  @@index([isSeeded])
   @@map("profiles")
 }
 
@@ -149,13 +181,13 @@ model RealLifeAnswer {
 }
 
 model StoryPromptAnswer {
-  id        String          @id @default(uuid())
+  id        String         @id @default(uuid())
   userId    String
   promptKey StoryPromptKey
   answer    String
-  updatedAt DateTime        @updatedAt
+  updatedAt DateTime       @updatedAt
 
-  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, promptKey])
   @@index([userId])
@@ -179,37 +211,115 @@ model Media {
   @@map("media")
 }
 
+// ─── Saved Profiles & Blocking ───────────────────────────────────────────────
+
+model SavedProfile {
+  id          String            @id @default(uuid())
+  userId      String
+  savedUserId String
+  label       SavedProfileLabel @default(INTERESTED)
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user        User              @relation("SavedByUser", fields: [userId], references: [id], onDelete: Cascade)
+  savedUser   User              @relation("SavedUser", fields: [savedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, savedUserId])
+  @@index([userId])
+  @@index([savedUserId])
+  @@map("saved_profiles")
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  blocker   User     @relation("BlockSender", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked   User     @relation("BlockReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("user_blocks")
+}
+
+model ProfileView {
+  id        String   @id @default(uuid())
+  viewerId  String
+  viewedId  String
+  viewedAt  DateTime @default(now())
+
+  viewer    User     @relation("ProfileViewsGiven",    fields: [viewerId], references: [id], onDelete: Cascade)
+  viewed    User     @relation("ProfileViewsReceived", fields: [viewedId], references: [id], onDelete: Cascade)
+
+  @@index([viewedId, viewedAt])
+  @@index([viewerId, viewedAt])
+  @@map("profile_views")
+}
+
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
 model Group {
-  id            String      @id @default(uuid())
-  name          String
-  region        String
-  status        GroupStatus @default(FORMING)
-  launchDate    DateTime
-  introDayOfWeek Int        @default(0)
-  capacity      Int         @default(20)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id             String          @id @default(uuid())
+  name           String
+  type           GroupType       @default(REGIONAL)
+  scope          GroupScope      @default(COUNTRY)
+  region         String
+  country        String?
+  city           String?
+  parentGroupId  String?
+  description    String?
+  coverImageUrl  String?
+  professionTag  String?
+  culturalTag    String?
+  status         GroupStatus     @default(FORMING)
+  accessType     GroupAccessType @default(OPEN)
+  isActive       Boolean         @default(true)
+  isSeeded       Boolean         @default(false)
+  memberCount    Int             @default(0)
+  launchDate     DateTime
+  introDayOfWeek Int             @default(0)
+  capacity       Int             @default(20)
+  maxMembers     Int             @default(20)
+  creditCost     Int             @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
+  parentGroup   Group?        @relation("GroupHierarchy", fields: [parentGroupId], references: [id])
+  childGroups   Group[]       @relation("GroupHierarchy")
   members       GroupMember[]
   events        Event[]
   introDrops    IntroDropLog[]
+  introductions Introduction[]
+  posts         GroupPost[]
 
   @@index([status])
+  @@index([type])
+  @@index([scope])
   @@index([region])
+  @@index([country])
+  @@index([parentGroupId])
+  @@index([isActive])
+  @@index([isSeeded])
   @@map("groups")
 }
 
 model GroupMember {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   userId    String
   groupId   String
-  status    String   @default("ACTIVE")
-  joinedAt  DateTime @default(now())
+  role      String    @default("MEMBER")
+  status    String    @default("ACTIVE")
+  joinedVia JoinedVia @default(MANUAL)
+  joinedAt  DateTime  @default(now())
+  expiresAt DateTime?
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([userId, groupId])
   @@index([groupId])
@@ -218,34 +328,206 @@ model GroupMember {
 }
 
 model IntroDropLog {
-  id          String   @id @default(uuid())
-  groupId     String
-  weekKey     String
-  droppedAt   DateTime @default(now())
-  pairCount   Int      @default(0)
+  id        String   @id @default(uuid())
+  groupId   String
+  weekKey   String
+  droppedAt DateTime @default(now())
+  pairCount Int      @default(0)
 
-  group       Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, weekKey])
   @@map("intro_drop_logs")
 }
 
+// ─── Group Social Feed ────────────────────────────────────────────────────────
+
+model GroupPost {
+  id            String             @id @default(uuid())
+  groupId       String
+  authorId      String
+  text          String?
+  imageUrl      String?
+  linkUrl       String?
+  linkTitle     String?
+  linkPreview   String?
+  isPinned      Boolean            @default(false)
+  likesCount    Int                @default(0)
+  commentsCount Int                @default(0)
+  isSeeded      Boolean            @default(false)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  group         Group              @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author        User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments      GroupPostComment[]
+  likes         GroupPostLike[]
+
+  @@index([groupId])
+  @@index([authorId])
+  @@index([createdAt])
+  @@index([isSeeded])
+  @@map("group_posts")
+}
+
+model GroupPostComment {
+  id        String    @id @default(uuid())
+  postId    String
+  authorId  String
+  text      String
+  createdAt DateTime  @default(now())
+
+  post      GroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([authorId])
+  @@map("group_post_comments")
+}
+
+model GroupPostLike {
+  postId    String
+  userId    String
+  createdAt DateTime  @default(now())
+
+  post      GroupPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([postId, userId])
+  @@index([postId])
+  @@map("group_post_likes")
+}
+
+// ─── Group Proposals ─────────────────────────────────────────────────────────
+
+model GroupProposal {
+  id                String              @id @default(uuid())
+  proposedByUserId  String
+  name              String
+  description       String
+  type              GroupType
+  country           String?
+  rationale         String
+  status            GroupProposalStatus @default(PENDING)
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  proposedBy        User                @relation(fields: [proposedByUserId], references: [id], onDelete: Cascade)
+  reviewedBy        AdminUser?          @relation("GroupProposalReviewer", fields: [reviewedByAdminId], references: [id])
+
+  @@index([proposedByUserId])
+  @@index([status])
+  @@map("group_proposals")
+}
+
+// ─── Introduction Drops ───────────────────────────────────────────────────────
+
+model IntroductionDrop {
+  id                String                 @id @default(uuid())
+  name              String
+  criteria          Json
+  memberPool        String[]               @default([])
+  releaseAt         DateTime?
+  expiresAt         DateTime?
+  status            IntroductionDropStatus @default(DRAFT)
+  proposedByAI      Boolean                @default(false)
+  approvedByAdminId String?
+  approvedAt        DateTime?
+  weekKey           String?
+  earlyAccessCost   Int                    @default(10)
+  unlockCost        Int                    @default(25)
+  isSeeded          Boolean                @default(false)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  approvedBy        AdminUser?             @relation("IntroDropApprover", fields: [approvedByAdminId], references: [id])
+  introductions     Introduction[]
+
+  @@index([status])
+  @@index([releaseAt])
+  @@index([isSeeded])
+  @@map("introduction_drops")
+}
+
+// ─── Introductions ────────────────────────────────────────────────────────────
+
+model Introduction {
+  id              String             @id @default(uuid())
+  groupId         String?
+  weekKey         String?
+  dropId          String?
+  userAId         String
+  userBId         String
+  status          IntroductionStatus @default(PENDING)
+  expiresAt       DateTime
+  acceptedByA     Boolean            @default(false)
+  acceptedByB     Boolean            @default(false)
+  viewedEarlyAt   DateTime?
+  unlockedEarlyAt DateTime?
+  message         String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  group           Group?             @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  userA           User               @relation("IntroUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB           User               @relation("IntroUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  drop            IntroductionDrop?  @relation(fields: [dropId], references: [id], onDelete: SetNull)
+
+  @@index([userAId])
+  @@index([userBId])
+  @@index([weekKey])
+  @@index([dropId])
+  @@index([status])
+  @@map("introductions")
+}
+
+// ─── AI Profile Intelligence ──────────────────────────────────────────────────
+
+model ProfileEmbedding {
+  userId                   String   @id
+  summary                  String?
+  traitTags                String[] @default([])
+  vibeScores               Json?
+  compatibilityNotes       String?
+  embedding                Unsupported("vector(1536)")?
+  recommendedContactWindow Json?
+  updatedAt                DateTime @updatedAt
+
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profile_embeddings")
+}
+
 // ─── Matching ────────────────────────────────────────────────────────────────
 
 model MatchScore {
-  id          String   @id @default(uuid())
-  userAId     String
-  userBId     String
-  totalScore  Float
-  breakdown   Json
-  algorithmV  String   @default("v1")
-  computedAt  DateTime @default(now())
+  id         String   @id @default(uuid())
+  userAId    String
+  userBId    String
+  totalScore Float
+  breakdown  Json
+  algorithmV String   @default("v1")
+  computedAt DateTime @default(now())
 
   @@unique([userAId, userBId, algorithmV])
   @@index([userAId])
   @@index([userBId])
   @@index([totalScore])
   @@map("match_scores")
+}
+
+model MatchTuning {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  weights   Json
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("match_tuning")
 }
 
 model Connection {
@@ -270,15 +552,15 @@ model Connection {
 }
 
 model Match {
-  id           String       @id @default(uuid())
+  id           String        @id @default(uuid())
   userAId      String
   userBId      String
-  connectionId String       @unique
-  matchedAt    DateTime     @default(now())
+  connectionId String        @unique
+  matchedAt    DateTime      @default(now())
 
-  userA        User         @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
-  userB        User         @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
-  connection   Connection   @relation(fields: [connectionId], references: [id])
+  userA        User          @relation("MatchUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB        User          @relation("MatchUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  connection   Connection    @relation(fields: [connectionId], references: [id])
   conversation Conversation?
 
   @@unique([userAId, userBId])
@@ -303,17 +585,17 @@ model Conversation {
 }
 
 model Message {
-  id              String      @id @default(uuid())
+  id              String       @id @default(uuid())
   conversationId  String
   senderId        String
-  type            MessageType @default(TEXT)
-  content         String      @default("")
+  type            MessageType  @default(TEXT)
+  content         String       @default("")
   mediaUrl        String?
   durationSeconds Int?
-  flagCount       Int         @default(0)
-  isHidden        Boolean     @default(false)
+  flagCount       Int          @default(0)
+  isHidden        Boolean      @default(false)
   readAt          DateTime?
-  createdAt       DateTime    @default(now())
+  createdAt       DateTime     @default(now())
 
   conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender          User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
@@ -331,6 +613,8 @@ model CheckIn {
   userId      String
   weekKey     String
   answers     Json
+  mood        Int?
+  notes       String?
   submittedAt DateTime @default(now())
 
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -341,25 +625,108 @@ model CheckIn {
   @@map("check_ins")
 }
 
-model Event {
-  id          String      @id @default(uuid())
-  groupId     String
-  title       String
-  description String?
-  status      EventStatus @default(UPCOMING)
-  startAt     DateTime
-  endAt       DateTime?
-  location    String?
-  capacity    Int?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+// ─── Habits ──────────────────────────────────────────────────────────────────
 
-  group       Group       @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  rsvps       EventRsvp[]
+model HabitLog {
+  id         String   @id @default(uuid())
+  userId     String
+  habitKey   HabitKey
+  logDate    DateTime @db.Date
+  completed  Boolean  @default(true)
+  notes      String?
+  reflection String?
+  createdAt  DateTime @default(now())
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, habitKey, logDate])
+  @@index([userId])
+  @@index([habitKey])
+  @@index([logDate])
+  @@map("habit_logs")
+}
+
+// ─── Weekly Prompts ──────────────────────────────────────────────────────────
+
+model WeeklyPrompt {
+  id          String           @id @default(uuid())
+  weekKey     String           @unique
+  question    String
+  theme       String?
+  publishedAt DateTime
+  expiresAt   DateTime
+  createdAt   DateTime         @default(now())
+
+  responses   PromptResponse[]
+
+  @@index([weekKey])
+  @@index([publishedAt])
+  @@map("weekly_prompts")
+}
+
+model PromptResponse {
+  id            String             @id @default(uuid())
+  userId        String
+  promptId      String
+  text          String
+  type          PromptResponseType @default(TEXT)
+  mediaUrl      String?
+  resonateCount Int                @default(0)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prompt        WeeklyPrompt       @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  resonates     PromptResonate[]
+
+  @@unique([userId, promptId])
+  @@index([userId])
+  @@index([promptId])
+  @@index([createdAt])
+  @@map("prompt_responses")
+}
+
+model PromptResonate {
+  id         String         @id @default(uuid())
+  userId     String
+  responseId String
+  createdAt  DateTime       @default(now())
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  response   PromptResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, responseId])
+  @@index([userId])
+  @@index([responseId])
+  @@map("prompt_resonates")
+}
+
+// ─── Events / Gatherings ──────────────────────────────────────────────────────
+
+model Event {
+  id           String      @id @default(uuid())
+  groupId      String?
+  title        String
+  description  String?
+  status       EventStatus @default(UPCOMING)
+  tag          EventTag?
+  creditCost   Int         @default(0)
+  onlineUrl    String?
+  isStandalone Boolean     @default(false)
+  startAt      DateTime
+  endAt        DateTime?
+  location     String?
+  capacity     Int?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  group        Group?      @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  rsvps        EventRsvp[]
 
   @@index([groupId])
   @@index([startAt])
   @@index([status])
+  @@index([tag])
   @@map("events")
 }
 
@@ -381,19 +748,19 @@ model EventRsvp {
 // ─── Verification ────────────────────────────────────────────────────────────
 
 model VerificationRequest {
-  id            String             @id @default(uuid())
-  userId        String
-  idDocType     String
-  idDocS3Key    String
-  selfieS3Key   String
-  status        VerificationStatus @default(PENDING)
-  reviewerId    String?
-  reviewNote    String?
-  submittedAt   DateTime           @default(now())
-  reviewedAt    DateTime?
+  id          String             @id @default(uuid())
+  userId      String
+  idDocType   String
+  idDocS3Key  String
+  selfieS3Key String
+  status      VerificationStatus @default(PENDING)
+  reviewerId  String?
+  reviewNote  String?
+  submittedAt DateTime           @default(now())
+  reviewedAt  DateTime?
 
-  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  reviewer      AdminUser?         @relation("VerificationReviewer", fields: [reviewerId], references: [id])
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewer    AdminUser?         @relation("VerificationReviewer", fields: [reviewerId], references: [id])
 
   @@index([userId])
   @@index([status])
@@ -404,19 +771,19 @@ model VerificationRequest {
 // ─── Payments ────────────────────────────────────────────────────────────────
 
 model Membership {
-  id                String           @id @default(uuid())
-  userId            String
-  plan              MembershipPlan
-  provider          PaymentProvider
-  providerSubId     String?          @unique
-  status            MembershipStatus @default(ACTIVE)
+  id                 String           @id @default(uuid())
+  userId             String
+  plan               MembershipPlan
+  provider           PaymentProvider
+  providerSubId      String?          @unique
+  status             MembershipStatus @default(ACTIVE)
   currentPeriodStart DateTime?
-  expiresAt         DateTime?
-  cancelledAt       DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  expiresAt          DateTime?
+  cancelledAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
-  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
@@ -424,18 +791,18 @@ model Membership {
 }
 
 model PaymentIntent {
-  id                String        @id @default(uuid())
+  id                String          @id @default(uuid())
   userId            String
   provider          PaymentProvider
-  providerPaymentId String        @unique
+  providerPaymentId String          @unique
   amountPaise       Int
-  currency          String        @default("INR")
-  status            PaymentStatus @default(PENDING)
+  currency          String          @default("INR")
+  status            PaymentStatus   @default(PENDING)
   metadata          Json?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
@@ -443,19 +810,38 @@ model PaymentIntent {
 }
 
 model DiamondLedger {
-  id           String       @id @default(uuid())
+  id           String        @id @default(uuid())
   userId       String
   delta        Int
   reason       DiamondReason
   balanceAfter Int
   metadata     Json?
-  createdAt    DateTime     @default(now())
+  createdAt    DateTime      @default(now())
 
-  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([createdAt])
   @@map("diamond_ledger")
+}
+
+// ─── Auth — Email Magic Links ─────────────────────────────────────────────────
+
+model EmailMagicLink {
+  id        String    @id @default(uuid())
+  userId    String
+  email     String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("email_magic_links")
 }
 
 // ─── Platform ────────────────────────────────────────────────────────────────
@@ -474,6 +860,15 @@ model FeatureFlag {
 
   @@index([key])
   @@map("feature_flags")
+}
+
+model SystemConfig {
+  key         String   @id
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_config")
 }
 
 model Notification {
@@ -545,15 +940,15 @@ model AuditLog {
 }
 
 model EventLog {
-  id          String   @id @default(uuid())
-  cloudEventId String  @unique
-  source      String
-  type        String
-  subject     String?
-  payload     Json
-  status      String   @default("PENDING")
-  publishedAt DateTime?
-  createdAt   DateTime @default(now())
+  id           String    @id @default(uuid())
+  cloudEventId String    @unique
+  source       String
+  type         String
+  subject      String?
+  payload      Json
+  status       String    @default("PENDING")
+  publishedAt  DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([type])
   @@index([status])
@@ -598,6 +993,20 @@ enum ConnectionStatus {
   DECLINED
   EXPIRED
   CANCELLED
+  PASSED
+  WITHDRAWN
+}
+
+enum GroupType {
+  REGIONAL
+  CULTURAL
+  PROFESSIONAL
+  INTEREST
+}
+
+enum GroupScope {
+  COUNTRY
+  GLOBAL
 }
 
 enum GroupStatus {
@@ -605,6 +1014,42 @@ enum GroupStatus {
   ACTIVE
   COMPLETED
   ARCHIVED
+}
+
+enum GroupAccessType {
+  OPEN
+  INVITE_ONLY
+  CREDIT_GATED
+}
+
+enum GroupProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum JoinedVia {
+  AUTO
+  ONBOARDING
+  HOME_FEED
+  SEARCH
+  MANUAL
+}
+
+enum IntroductionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  MATCHED
+}
+
+enum IntroductionDropStatus {
+  DRAFT
+  PENDING_APPROVAL
+  SCHEDULED
+  LIVE
+  EXPIRED
 }
 
 enum MessageType {
@@ -682,6 +1127,9 @@ enum DiamondReason {
   REFUND
   FEATURE_UNLOCK
   EXPIRY
+  INTRO_EARLY_VIEW
+  INTRO_EARLY_UNLOCK
+  GROUP_CONVERSATION_INITIATION
 }
 
 enum EventStatus {
@@ -691,12 +1139,45 @@ enum EventStatus {
   CANCELLED
 }
 
+enum EventTag {
+  SOCIAL
+  SPIRITUAL
+  PROFESSIONAL
+  ADVENTURE
+  EDUCATIONAL
+  CULTURAL
+}
+
 enum MediaType {
   PHOTO
   VOICE_INTRO
   VIDEO_INTRO
   ID_DOCUMENT
   SELFIE
+}
+
+enum SavedProfileLabel {
+  INTERESTED
+  MAYBE
+  NOT_NOW
+}
+
+enum HabitKey {
+  HYDRATION
+  SLEEP
+  EXERCISE
+  MINDFULNESS
+  PRAYER
+  GRATITUDE
+  READING
+  JOURNALING
+  NO_ALCOHOL
+  NO_SMOKING
+}
+
+enum PromptResponseType {
+  TEXT
+  AUDIO
 }
 
 enum RealLifeQuestionKey {

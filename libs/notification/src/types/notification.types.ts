@@ -34,6 +34,11 @@ export interface PushPayload {
   body: string;
   /** Arbitrary key-value pairs surfaced to the app via `data` field. */
   data?: Record<string, string>;
+  /**
+   * User ID of the recipient — used for quiet window checking (AI-006).
+   * Optional: if absent, quiet window check is skipped and notification is delivered immediately.
+   */
+  userId?: string;
 }
 
 // ── Discriminated union used as the BullMQ job payload ───────────────────────

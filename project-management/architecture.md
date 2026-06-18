@@ -13,10 +13,14 @@
                         │            ABROAD MATRIMONY                  │
                         │                                              │
   Mobile / Web  ──────► │  apps/gateway        (port 3000)            │
-  Client App           │  Public REST API                             │
+  Client App            │  Public REST API                            │
                         │                                              │
   Admin Browser ──────► │  apps/admin-api      (port 3001)            │
-                        │  Admin REST API  [NOT YET BUILT]            │
+                        │  Admin REST API  [PHASE 8e — 17 tasks]      │
+                        │                                              │
+  Dev/Staging   ──────► │  apps/seeder         (port 3100)            │
+  Only                  │  Automated Data Seeder [PHASE 8a]           │
+                        │  ⚠️  Never runs in production               │
                         └──────┬──────────────────────────────────────┘
                                │
               ┌────────────────┼────────────────────────┐
@@ -25,15 +29,17 @@
         ┌──────────┐    ┌──────────┐           ┌──────────────┐
         │ Supabase │    │  Redis   │           │ BullMQ       │
         │ Postgres │    │  Cache + │           │ Workers      │
-        │   (DB)   │    │  Queue   │           │ [future]     │
-        └──────────┘    └──────────┘           └──────────────┘
-              │
-   ┌──────────┼──────────────────────────────────────┐
-   │          │          External Services            │
-   ▼          ▼          ▼          ▼          ▼      │
-Twilio    Brevo     Firebase    AWS S3    Stripe/    │
-Verify    Email      Push       Media    Razorpay    │
-  OTP    300/day   Notif.      Store    Payments    │
+        │ +pgvector│    │  Queue   │           │ (matching,   │
+        │   (DB)   │    │          │           │  notif, AI,  │
+        └──────────┘    └──────────┘           │  seeder)     │
+              │                                └──────────────┘
+   ┌──────────┼───────────────────────────────────────────────┐
+   │          │               External Services               │
+   ▼          ▼          ▼          ▼          ▼       ▼      │
+Twilio    Brevo     Firebase    AWS S3    Stripe/  OpenAI    │
+Verify    Email      Push       Media    Razorpay  (gpt-4o-  │
+  OTP    300/day   Notif.      Store    Payments   mini +    │
+                                                  Whisper)   │
 ```
 
 ---
@@ -100,11 +106,24 @@ apps/gateway/src/
 | `db` | Prisma client singleton | `getPrismaClient()` |
 | `cache` | Redis helpers | `cacheGet/Set/Del/IncrBy/Expire/Exists`, `getRedisClient()` |
 | `event-bus` | CloudEvents + WAL publish | `publish()`, `initEventBus()`, `shutdownEventBus()` |
-| `auth` | OTP, JWT, RBAC *(Phase 2)* | `sendOtp()`, `verifyOtp()`, `issueTokenPair()`, `requireAuth`, `requireRole()` |
-| `matching` | Scoring algorithm *(Phase 4)* | `computeScore()` |
-| `notification` | Multi-channel dispatch *(Phase 6)* | `sendEmail()`, `sendSms()`, `sendPush()` |
-| `payment` | Stripe + Razorpay *(Phase 7)* | `createCheckout()`, `handleWebhook()` |
-| `storage` | S3 upload *(Phase 3)* | `uploadFile()`, `getSignedUrl()` |
+| `auth` | OTP, JWT, RBAC, magic link, trusted device *(Phase 2+6b)* | `sendOtp()`, `issueTokenPair()`, `requireAuth`, `requireRole()`, `sendMagicLink()`, `trustedDeviceLoginService()` |
+| `matching` | Scoring algorithm + discovery + tuning *(Phase 4)* | `computeScore()`, `getDiscoveryFeed()`, `getMatchTuning()`, `setMatchTuning()` |
+| `notification` | Multi-channel dispatch *(Phase 6)* | `enqueueNotification()`, `createNotificationWorker()` |
+| `payment` | Stripe + Razorpay + diamond ledger *(Phase 7)* | `createMembershipCheckout()`, `spendDiamonds()`, `getDiamondBalance()` |
+| `storage` | S3 upload + CloudFront *(Phase 3)* | `uploadFile()`, `getSignedUrl()`, `getPublicUrl()` |
+| `messaging` | Firestore messaging + FCM *(Phase 5)* | `listConversations()`, `sendMessage()`, `createFirebaseToken()`, `flagMessage()` |
+| `firebase` | Firebase Admin SDK singleton *(Phase 5)* | `initFirebase()`, `getFirestoreDb()`, `getFirebaseAuth()`, `isFirebaseConfigured()` |
+| `connections` | Connection request flow *(Phase 7b stub)* | `sendConnectionRequest()`, `acceptConnection()`, `declineConnection()` |
+| `groups` | Group membership + social feed *(Phase 7b stub → Phase 8c full revamp)* | `joinGroup()`, `leaveGroup()`, `listSuggestedGroups()`, `createPost()` |
+| `gatherings` | Events + RSVP *(Phase 7b)* | `listEvents()`, `rsvpToEvent()`, `cancelRsvp()`, `getEventAttendees()` |
+| `verification` | ID doc verification + trust score *(Phase 7b)* | `submitVerification()`, `getTrustScore()`, `getVerificationUploadUrl()` |
+| `habits` | Habit logging + streak computation *(Phase 7b)* | `logHabit()`, `getHabitStreak()`, `computeStreaks()` |
+| `introductions` | Weekly intro drops → IntroductionDrop *(Phase 7b stub → Phase 8d revamp)* | `listDropsForUser()`, `acceptIntroduction()`, `earlyAccessDrop()` |
+| `prompts` | Weekly prompts + resonate *(Phase 7b)* | `getCurrentPrompt()`, `respondToPrompt()`, `resonateResponse()` |
+| `saved-profiles` | Profile shortlist *(Phase 7b)* | `listSavedProfiles()`, `saveProfile()`, `updateSavedProfile()` |
+| `trust` | Block/unblock/report/signals *(Phase 7b)* | `blockUser()`, `reportUser()`, `getSignals()` |
+| `profile` | Profile + extensions + voice intro *(Phase 3+7b)* | `createProfile()`, `toggleProfilePause()`, `saveVoiceIntro()` |
+| `ai` | OpenAI intelligence layer *(Phase 8b — NEW)* | `generateProfileIntelligence()`, `proposeIntroductionDrops()`, `transcribeVoiceIntro()`, `generateEventPreConnections()` |
 
 ---
 
@@ -221,16 +240,60 @@ libs/config/feature-flags.ts
 ### Table groups
 
 ```
-Identity          users, devices, refresh_tokens, admin_users
-Profile           profiles, real_life_answers, story_prompt_answers, media
-Groups            groups, group_members, intro_drop_logs
+Identity          users (+ isSeeded), devices, refresh_tokens, admin_users
+Profile           profiles (+ isSeeded, voiceIntroTranscript), real_life_answers,
+                  story_prompt_answers, media
+AI Intelligence   profile_embeddings (pgvector — userId, summary, traitTags,
+                  vibeScores, embedding vector(1536), recommendedContactWindow)
+Groups            groups (+ type, scope, parentGroupId, memberCount, isSeeded),
+                  group_memberships (+ joinedVia),
+                  group_posts (+ isSeeded), group_post_comments, group_post_likes,
+                  group_proposals
 Matching          match_scores, connections, matches
-Messaging         conversations, messages
-Engagement        check_ins, events, event_rsvps
+Introductions     introduction_drops (NEW — themed batches with AI metadata),
+                  introductions (+ dropId, viewedEarlyAt, unlockedEarlyAt)
+Messaging         conversations, messages, flags
+Engagement        habits, habit_logs, check_ins, events, event_rsvps,
+                  weekly_prompts, prompt_responses, prompt_resonates,
+                  saved_profiles, blocks, reports
 Verification      verification_requests
 Payments          memberships, payment_intents, diamond_ledger
-Platform          feature_flags, notifications, flags, audit_logs, event_logs
+Platform          feature_flags, system_config (NEW — key-value admin settings),
+                  notifications, audit_logs, event_logs
 ```
+
+### New models added in DB-MIGRATION-001 (Phase 8 prerequisite)
+
+| Model | Purpose | Key fields |
+|-------|---------|------------|
+| `ProfileEmbedding` | AI personality analysis + vector | `userId PK`, `summary`, `traitTags String[]`, `vibeScores Json`, `embedding vector(1536)`, `recommendedContactWindow Json?` |
+| `IntroductionDrop` | Themed intro batch | `name`, `criteria Json`, `memberPool String[]`, `releaseAt`, `status`, `proposedByAI`, `earlyAccessCost`, `unlockCost` |
+| `GroupPost` | Group social feed post | `groupId`, `authorId`, `text?`, `imageUrl?`, `linkUrl?`, `isPinned`, `likesCount`, `isSeeded` |
+| `GroupPostComment` | Flat comment on post | `postId`, `authorId`, `text` |
+| `GroupPostLike` | Like reaction | composite PK `[postId, userId]` |
+| `GroupProposal` | Member-proposed interest group | `proposedByUserId`, `name`, `status (PENDING\|APPROVED\|REJECTED)` |
+| `SystemConfig` | Admin-configurable platform settings | `key String PK`, `value String`, e.g. `SUGGESTED_GROUPS_MAX: "20"` |
+
+### New columns added in DB-MIGRATION-001
+
+| Table | Column | Type | Purpose |
+|-------|--------|------|---------|
+| `users` | `isSeeded` | `Boolean @default(false)` | Marks synthetic seeder users |
+| `profiles` | `isSeeded` | `Boolean @default(false)` | Marks synthetic seeder profiles |
+| `profiles` | `voiceIntroTranscript` | `String?` | Whisper-transcribed voice intro text |
+| `groups` | `type` | `GroupType` enum | REGIONAL/CULTURAL/PROFESSIONAL/INTEREST |
+| `groups` | `scope` | `GroupScope` enum | COUNTRY/GLOBAL |
+| `groups` | `parentGroupId` | `String?` | Hierarchy (city → country) |
+| `groups` | `country` | `String?` | For REGIONAL groups |
+| `groups` | `city` | `String?` | For city-level REGIONAL groups |
+| `groups` | `professionTag` | `String?` | For PROFESSIONAL groups |
+| `groups` | `culturalTag` | `String?` | For CULTURAL groups |
+| `groups` | `memberCount` | `Int @default(0)` | Denormalized for performance |
+| `groups` | `isSeeded` | `Boolean @default(false)` | Marks system/seeder-created groups |
+| `group_memberships` | `joinedVia` | `JoinedVia` enum | AUTO/ONBOARDING/HOME_FEED/SEARCH/MANUAL |
+| `introductions` | `dropId` | `String?` | FK to `IntroductionDrop` |
+| `introductions` | `viewedEarlyAt` | `DateTime?` | Stamped on diamond VIEW spend |
+| `introductions` | `unlockedEarlyAt` | `DateTime?` | Stamped on diamond UNLOCK spend |
 
 ### Index strategy
 Every FK has an index. Additional indexes:
@@ -313,6 +376,150 @@ Every FK has an index. Additional indexes:
 **Problem:** User row doesn't exist yet at that point. If AUTH-002 verify fails, the event is false. Downstream consumers (analytics, welcome email) would act on a non-existent user.
 **Decision:** Fire `USER_REGISTERED` in AUTH-002 immediately after `prisma.user.upsert()` confirms `wasCreated === true`.
 **Consequences:** Cleaner event semantics. No false events. Slightly later analytics signal (at verify, not at request) — acceptable trade-off.
+
+---
+
+### ADR-013 · Automated Data Seeding Service (`apps/seeder`)
+**Date:** 2026-05-29 | **Status:** Accepted
+
+**Context:** The platform has complex matching logic, weekly intro drops, group membership, and AI-driven features. Testing all of these requires a large, realistic, continuously-updated user base — not a one-time DB seed.
+
+**Decision:** Create `apps/seeder` as an independent NX application (alongside `apps/gateway`) with:
+- Its own Express HTTP server (port 3100) for the control API
+- BullMQ workers for scheduled drip + activity simulation
+- Hard environment guard: refuses to start if `NODE_ENV === production`
+- `isSeeded: Boolean` flag on `User`, `Profile`, `Group`, `GroupPost` — enables clean flush at any time
+- `SEEDER_SECRET` token for gateway auth bypass (never enabled in production)
+
+**Consequences:** Dev/staging always has 500+ realistic profiles with match scores, group memberships, and activity history. Manual and automated testing is meaningful from day one. The `SEEDER_SECRET` middleware must be strictly guarded from production deployment — enforced by env check.
+
+---
+
+### ADR-014 · SEEDER_SECRET Gateway Auth Bypass
+**Date:** 2026-05-29 | **Status:** Accepted
+
+**Context:** The seeder needs to perform actions as synthetic users (create profiles, join groups, send connections). Going through the full OTP + device auth flow for 500+ synthetic users would require real phone numbers and complicate test infrastructure.
+
+**Decision:** A new gateway middleware checks `Authorization: Bearer <token>` before `requireAuth`. If the token equals the `SEEDER_SECRET` env var, it decodes a simple `{ userId, role }` payload from the token and sets `req.user` directly, bypassing JWT verification entirely. If `NODE_ENV === production`, this middleware is a no-op.
+
+**Consequences:** Clean test infrastructure with no fake phone numbers. Security risk is mitigated by: (1) production no-op, (2) `SEEDER_SECRET` never in production `.env`, (3) token is a shared secret (not a signed JWT). Seeder can impersonate any synthetic user.
+
+---
+
+### ADR-015 · Four-Type Group Taxonomy
+**Date:** 2026-05-29 | **Status:** Accepted
+
+**Context:** The original `Group` model was a simple stub. As the platform grows, groups serve four distinct purposes with different join rules, visibility, and capabilities. A single undifferentiated model creates confusion and wrong defaults.
+
+**Decision:** Single `Group` model with `type: GroupType` enum (`REGIONAL | CULTURAL | PROFESSIONAL | INTEREST`) and `scope: GroupScope` enum (`COUNTRY | GLOBAL`):
+
+| Type | Auto-join | Member visible | Social feed | Events | Intro pool |
+|------|-----------|----------------|-------------|--------|------------|
+| REGIONAL (country) | ✅ on register | ✅ | ✅ Full | ✅ | ✅ Fallback |
+| REGIONAL (city) | ❌ suggested | ✅ | ✅ Full | ✅ | ✅ Primary |
+| CULTURAL | ❌ suggested | ✅ | ✅ Posts | ❌ | ✅ High-signal |
+| PROFESSIONAL | ❌ suggested | ✅ | ✅ Posts | ✅ | ✅ Primary |
+| INTEREST | ❌ manual | ✅ | ✅ Full | ✅ | ✅ Event connect |
+
+All group types: member list visible to all members; initiating a direct conversation from a group costs diamonds.
+
+**Consequences:** Type-driven behaviour reduces conditional logic throughout the codebase. `scope: GLOBAL` is DB-provisioned but not surfaced in UI yet — enables future global professional channels. Group hierarchy uses `parentGroupId` (flat with self-reference — Option A).
+
+---
+
+### ADR-016 · IntroductionDrop Model — Replacing WeekKey Cap
+**Date:** 2026-05-29 | **Status:** Accepted
+
+**Context:** The original introduction system was capped at ~1 introduction per user per week via `weekKey`. This prevents multi-themed drops (IT professionals + new joiners + event-based) from coexisting and limits the platform's ability to serve diverse matching contexts.
+
+**Decision:** Introduce `IntroductionDrop` model as the "themed category" layer above individual `Introduction` pairings:
+- `IntroductionDrop`: name, criteria (JSON), memberPool (String[] of candidate userIds), releaseAt, status, AI-proposal metadata, early-access cost in diamonds
+- `Introduction`: gains `dropId FK`, `viewedEarlyAt`, `unlockedEarlyAt`
+- No weekly cap — a user can be in multiple drops simultaneously
+- AI picks 3–5 best matches from the drop's pool for each individual recipient (personalised, not same for everyone)
+- Early access tiered: spend diamonds to VIEW intro cards early (still locked) → spend more to UNLOCK full profile early
+
+**Consequences:** Intro count per user is bounded by AI curation quality, not a hard DB cap. Admin workflow: AI proposes DRAFT drops → admin approves → pairing generation runs. Monetisation: two diamond spend touchpoints per drop (view + unlock). Event-based pre-connection drops are auto-approved (no admin bottleneck for time-sensitive events).
+
+---
+
+### ADR-017 · AI Integration — OpenAI + pgvector for Profile Intelligence
+**Date:** 2026-05-29 | **Status:** Accepted
+
+**Context:** Demographic-only matching (age, profession, caste) is necessary but insufficient. Indian diaspora matrimony requires understanding cultural values, communication style, life pace, and personality vibe — dimensions that don't fit in structured DB fields.
+
+**Decision:** `libs/ai` wraps three OpenAI APIs:
+1. **gpt-4o-mini (completions)** — generates semantic profile summary, trait tags, vibe scores (warmth/ambition/tradition/socialEnergy/openness 1–10), and AI intro drop group proposals
+2. **text-embedding-3-small (embeddings)** — generates 1536-dim vector for each profile summary; stored in `ProfileEmbedding.embedding` via Supabase pgvector
+3. **Whisper (transcription)** — transcribes voice introductions; text feeds back into profile intelligence
+
+pgvector cosine similarity is used to: (1) refine AI-proposed intro groups (flag outliers), (2) rank candidates within a drop's pool for each recipient.
+
+AI is always optional: `isAiConfigured()` returns false when `OPENAI_API_KEY` is absent → all AI paths become no-ops; system falls back to match score ranking.
+
+**Consequences:** Profile intelligence runs asynchronously via BullMQ (never on the request path). 60-second debounce prevents redundant recomputes on rapid updates. Cost: gpt-4o-mini is ~15× cheaper than gpt-4o; text-embedding-3-small is ~5× cheaper than ada-002. Expected cost per profile update: < $0.001.
+
+---
+
+### ADR-018 · ProfileView Model for Explicit View Logging
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The Signals Dashboard (Phase 14) requires per-user daily and weekly profile view counts for momentum charts, weekly metrics, and action-queue "complete your profile" nudges. The existing `Profile` model has no view tracking.
+
+**Decision:** New `ProfileView` model: `{ id, viewerId, viewedId, viewedAt }`. Composite indexes on `[viewedId, viewedAt]` and `[viewerId, viewedAt]` for efficient time-range counts.
+
+View logging is **explicit**: Flutter client calls `POST /api/v1/profiles/:id/view` when a user genuinely views a profile card. This avoids counting admin fetches, bot traffic, or repeat refreshes. Service-layer deduplication: same viewer/viewed pair within 1 hour → no new row (prevents spam).
+
+**Consequences:** Slightly more client complexity (client must fire the POST), but better signal quality. The 1-hour deduplication window is configurable as a constant. `ProfileView` table grows at O(DAU × avg_views_per_session) — at 10k DAU with 5 views/session: ~50k rows/day, manageable. Old rows can be pruned after 90 days.
+
+---
+
+### ADR-019 · Trust Score — 6-Layer Composite (Phase 15)
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The original trust spec referenced third-party work/education verification services. These are out of scope for MVP. A trust score is still needed to signal profile credibility to other users.
+
+**Decision:** 6 layers, all achievable without third-party services:
+
+| Layer | Points | Data source |
+|-------|--------|-------------|
+| PHONE_VERIFIED | 20 | `User.isPhoneVerified` |
+| PROFILE_COMPLETE | 20 | `Profile.completionScore >= 80` |
+| PHOTO_UPLOADED | 15 | `Media.count(userId) > 0` |
+| ID_VERIFIED | 25 | `Profile.verificationStatus == APPROVED` (admin-reviewed) |
+| EMAIL_VERIFIED | 10 | `User.isEmailVerified` |
+| VOICE_INTRO | 10 | `Profile.voiceIntroTranscript != null` |
+
+Score is computed and persisted to `Profile.trustScore` on every `GET /api/v1/trust` call (not on a background job) — keeps the displayed score always fresh.
+
+Privacy settings stored as `Profile.privacySettings Json?` (partial-merge semantics) rather than individual columns — avoids repeated schema migrations as visibility controls evolve.
+
+**Consequences:** Work/education verification can be added as future layers (25 pts each) without changing the score structure. The `Profile.trustScore` column serves as a denormalized cache used in ALG-009 (trust layer depth matching dimension).
+
+---
+
+### ADR-020 · Algorithm v2 — Optional Dimensions + Tuning Application (Phase 16)
+**Date:** 2026-06-02 | **Status:** Accepted
+
+**Context:** The Phase 4 scoring engine has 9 core dimensions. Phases 9, 12, and 16 add habits, prompt resonance, and 5 new v2 dimensions. The `MatchTuning` model (Phase 7b) stored per-user dimension weight multipliers but they were never applied to the discover feed.
+
+**Decision:**
+
+**Dimension architecture:** All new dimensions are **opt-in** — they only contribute to the score when *both* users have the relevant data. When a new dimension is present, a corresponding fraction of the total weight allocation is reserved and the core 9 dimensions scale down proportionally. This keeps `totalScore ∈ [0, 1]` and maintains full backward compatibility.
+
+Weight budget by phase:
+```
+Core (9 dims):     1.00  (baseline)
+HABIT-008:        -0.05  → coreScale 0.95
+PROMPT-007:       -0.02  → coreScale 0.93
+v2 dims (max 5):  -0.10  → coreScale min 0.83
+```
+
+**Tuning application:** `MatchTuning` weights are now applied at **query time** (in `getDiscoveryFeed`), not at score-compute time. `applyTuningToBreakdown(breakdown, weights)` takes a stored `ScoreBreakdown` and computes a personalised total by applying dimension multipliers and renormalising to sum-to-1. The canonical `totalScore` in the DB is unchanged — only the `personalizedScore` field in `DiscoveryItemDto` reflects tuning.
+
+**Simplified tuning UI (ALG-011):** `POST /api/v1/profile/match-tuning` accepts `{ settlementImportance, familyImportance }` (1–5 ratings). Importance ratings map to multipliers: 1→0.5, 2→0.75, 3→1.0, 4→1.75, 5→2.5. Stored in the existing `MatchTuning` model under `settlementIntent` and `familyInvolvement` keys.
+
+**Consequences:** Personalized re-ranking is within-page only (the DB cursor pagination is still ordered by `totalScore`). Full global re-ranking would require applying tuning at the DB query layer (e.g. stored function) — deferred to a future phase. Tuning changes trigger a background BullMQ full rescore job (ALG-013) to update the stored `totalScore` with new dimension data over time.
 
 ---
 

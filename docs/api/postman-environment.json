@@ -1,0 +1,62 @@
+{
+  "id": "abroad-matrimony-local",
+  "name": "Abroad Matrimony — Local",
+  "values": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "admin_url",
+      "value": "http://localhost:3000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "Populated automatically by Verify OTP or Trusted Device Login test scripts"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "secret",
+      "enabled": true,
+      "description": "Populated automatically by Admin Login test script"
+    },
+    {
+      "key": "conv_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Conversation UUID — copy from List Conversations response"
+    },
+    {
+      "key": "msg_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Message UUID — copy from Get Messages response"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "User UUID — copy from Verify OTP response"
+    },
+    {
+      "key": "flag_id",
+      "value": "",
+      "type": "default",
+      "enabled": true,
+      "description": "Flag UUID — copy from List Flags response"
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "description": "Local development environment for Abroad Matrimony API.\n\nHow to use:\n1. Import this file: Environments → Import\n2. Select 'Abroad Matrimony — Local' as the active environment\n3. Run Admin Login to populate admin_token\n4. Run Request OTP → Verify OTP to populate access_token\n5. Copy UUIDs from responses into conv_id, msg_id, user_id, flag_id as needed"
+}

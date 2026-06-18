@@ -64,6 +64,15 @@ export {
 } from './admin-auth.service.js';
 export type { AdminLoginInput, AdminLoginResult } from './admin-auth.service.js';
 
+// Email magic link
+export {
+  sendMagicLink,
+  verifyMagicLink,
+  MagicLinkUserNotFoundError,
+  MagicLinkInvalidError,
+} from './email-magic-link.service.js';
+export type { SendMagicLinkResult } from './email-magic-link.service.js';
+
 // Trusted device bypass
 export {
   trustedDeviceLoginService,
@@ -71,3 +80,21 @@ export {
   DeviceNotTrustedError,
 } from './trusted-device.service.js';
 export type { TrustedDeviceLoginInput } from './trusted-device.service.js';
+
+// User admin (ADMIN-002)
+export {
+  listUsers,
+  getUserAdminDetail,
+  suspendUser,
+  unsuspendUser,
+  banUser,
+  wipeSeededUser,
+  UserNotFoundError,
+  UserAlreadySuspendedError,
+  UserNotSuspendedError,
+} from './user-admin.service.js';
+export type { UserSearchParams, UserAdminSummaryDto, UserAdminDetailDto } from './user-admin.service.js';
+
+// Audit log admin (ADMIN-005)
+export { listAuditLogs } from './audit-log-admin.service.js';
+export type { AuditLogQuery, AuditLogEntryDto } from './audit-log-admin.service.js';

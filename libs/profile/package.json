@@ -4,8 +4,11 @@
   "private": true,
   "main": "src/index.ts",
   "dependencies": {
+    "@abroad-matrimony/ai": "*",
+    "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/logger": "*",
-    "@abroad-matrimony/shared": "*"
+    "@abroad-matrimony/shared": "*",
+    "@abroad-matrimony/storage": "*"
   }
 }

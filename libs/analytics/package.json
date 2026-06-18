@@ -1,0 +1,12 @@
+{
+  "name": "@abroad-matrimony/analytics",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/db":     "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*"
+  }
+}

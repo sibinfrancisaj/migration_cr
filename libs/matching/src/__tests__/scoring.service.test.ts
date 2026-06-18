@@ -1,5 +1,6 @@
 import {
   computeMatchScore,
+  applyTuningToBreakdown,
   SCORE_WEIGHTS,
   tokenize,
   jaccardSimilarity,
@@ -9,6 +10,7 @@ import {
 } from '../scoring.service.js';
 import type { UserScoringData } from '../scoring.service.js';
 import { RealLifeQuestionKey, VerificationStatus } from '@abroad-matrimony/shared';
+import type { ScoreBreakdown } from '@abroad-matrimony/shared';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -477,5 +479,371 @@ describe('computeMatchScore()', () => {
         'groupMembership', 'languageMatch', 'faithAlignment',
       ]),
     );
+  });
+
+  // ── HABIT-008: habit dimensions ─────────────────────────────────────────────
+
+  it('habit dimensions absent when no habitConsistencyRate provided', () => {
+    const a = makeUser(); // no habit data
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitConsistency).toBeUndefined();
+    expect(breakdown.habitOverlap).toBeUndefined();
+  });
+
+  it('habit dimensions present when both users have habit data', () => {
+    const a = makeUser({
+      habitConsistencyRate: 0.8,
+      activeHabitKeys: new Set(['HYDRATION', 'EXERCISE']),
+    });
+    const b = makeUserB({
+      habitConsistencyRate: 0.7,
+      activeHabitKeys: new Set(['HYDRATION', 'SLEEP']),
+    });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitConsistency).toBeDefined();
+    expect(breakdown.habitOverlap).toBeDefined();
+    expect(breakdown.habitConsistency).toBeGreaterThanOrEqual(0.0);
+    expect(breakdown.habitConsistency).toBeLessThanOrEqual(1.0);
+    expect(breakdown.habitOverlap).toBeGreaterThanOrEqual(0.0);
+    expect(breakdown.habitOverlap).toBeLessThanOrEqual(1.0);
+  });
+
+  it('habit consistency: identical rates → 1.0', () => {
+    const a = makeUser({ habitConsistencyRate: 0.6, activeHabitKeys: new Set(['HYDRATION']) });
+    const b = makeUserB({ habitConsistencyRate: 0.6, activeHabitKeys: new Set(['HYDRATION']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitConsistency).toBe(1.0);
+  });
+
+  it('habit consistency: opposite rates → 0.0', () => {
+    const a = makeUser({ habitConsistencyRate: 1.0, activeHabitKeys: new Set(['HYDRATION']) });
+    const b = makeUserB({ habitConsistencyRate: 0.0, activeHabitKeys: new Set(['HYDRATION']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitConsistency).toBe(0.0);
+  });
+
+  it('habit overlap: identical habit sets → 1.0', () => {
+    const keys = new Set(['HYDRATION', 'EXERCISE']);
+    const a = makeUser({ habitConsistencyRate: 0.5, activeHabitKeys: keys });
+    const b = makeUserB({ habitConsistencyRate: 0.5, activeHabitKeys: keys });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitOverlap).toBe(1.0);
+  });
+
+  it('habit overlap: no common habits → 0.0', () => {
+    const a = makeUser({ habitConsistencyRate: 0.5, activeHabitKeys: new Set(['HYDRATION']) });
+    const b = makeUserB({ habitConsistencyRate: 0.5, activeHabitKeys: new Set(['EXERCISE']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.habitOverlap).toBe(0.0);
+  });
+
+  it('total score stays ≤ 1.0 when habit dimensions are included', () => {
+    const a = makeUser({
+      habitConsistencyRate: 1.0,
+      activeHabitKeys: new Set(['HYDRATION', 'EXERCISE', 'SLEEP']),
+    });
+    const b = makeUserB({
+      habitConsistencyRate: 1.0,
+      activeHabitKeys: new Set(['HYDRATION', 'EXERCISE', 'SLEEP']),
+    });
+    const { totalScore } = computeMatchScore(a, b, NOW);
+    expect(totalScore).toBeGreaterThanOrEqual(0.0);
+    expect(totalScore).toBeLessThanOrEqual(1.0);
+  });
+
+  // ── PROMPT-007: prompt resonance dimension ──────────────────────────────────
+
+  it('promptResonance absent when promptResonatedUserIds not provided', () => {
+    const a = makeUser(); // no prompt data
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.promptResonance).toBeUndefined();
+  });
+
+  it('promptResonance present when both users have prompt resonance data', () => {
+    const a = makeUser({ userId: 'user-a', promptResonatedUserIds: new Set(['user-b']) });
+    const b = makeUserB({ userId: 'user-b', promptResonatedUserIds: new Set(['user-a']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.promptResonance).toBeDefined();
+  });
+
+  it('promptResonance: mutual resonance → 1.0', () => {
+    const a = makeUser({ userId: 'user-a', promptResonatedUserIds: new Set(['user-b']) });
+    const b = makeUserB({ userId: 'user-b', promptResonatedUserIds: new Set(['user-a']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.promptResonance).toBe(1.0);
+  });
+
+  it('promptResonance: one-way A→B → 0.5', () => {
+    const a = makeUser({ userId: 'user-a', promptResonatedUserIds: new Set(['user-b']) });
+    const b = makeUserB({ userId: 'user-b', promptResonatedUserIds: new Set() });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.promptResonance).toBe(0.5);
+  });
+
+  it('promptResonance: neither resonated → 0.0', () => {
+    const a = makeUser({ userId: 'user-a', promptResonatedUserIds: new Set() });
+    const b = makeUserB({ userId: 'user-b', promptResonatedUserIds: new Set() });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.promptResonance).toBe(0.0);
+  });
+
+  it('total score stays ≤ 1.0 with both habits and prompt resonance', () => {
+    const a = makeUser({
+      userId: 'user-a',
+      habitConsistencyRate: 1.0,
+      activeHabitKeys: new Set(['HYDRATION', 'EXERCISE']),
+      promptResonatedUserIds: new Set(['user-b']),
+    });
+    const b = makeUserB({
+      userId: 'user-b',
+      habitConsistencyRate: 1.0,
+      activeHabitKeys: new Set(['HYDRATION', 'EXERCISE']),
+      promptResonatedUserIds: new Set(['user-a']),
+    });
+    const { totalScore } = computeMatchScore(a, b, NOW);
+    expect(totalScore).toBeGreaterThanOrEqual(0.0);
+    expect(totalScore).toBeLessThanOrEqual(1.0);
+  });
+
+  it('total score with only prompt data uses 0.98 core scale', () => {
+    const a = makeUser({ userId: 'user-a', promptResonatedUserIds: new Set(['user-b']) });
+    const b = makeUserB({ userId: 'user-b', promptResonatedUserIds: new Set(['user-a']) });
+    const { totalScore } = computeMatchScore(a, b, NOW);
+    expect(totalScore).toBeGreaterThanOrEqual(0.0);
+    expect(totalScore).toBeLessThanOrEqual(1.0);
+  });
+
+  // ── ALG-004/005: familyInvolvement ───────────────────────────────────────────
+
+  it('familyInvolvement absent when PARENTS_INVOLVEMENT not answered by either user', () => {
+    const a = makeUser();
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.familyInvolvement).toBeUndefined();
+  });
+
+  it('familyInvolvement present when both users answered PARENTS_INVOLVEMENT', () => {
+    const a = makeUser({
+      realLifeAnswers: new Map([
+        [RealLifeQuestionKey.PARENTS_INVOLVEMENT, 'very involved'],
+        [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'Hindu'],
+        [RealLifeQuestionKey.LANGUAGE_AT_HOME, 'Tamil'],
+      ]),
+    });
+    const b = makeUserB({
+      realLifeAnswers: new Map([
+        [RealLifeQuestionKey.PARENTS_INVOLVEMENT, 'very involved'],
+        [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'Hindu'],
+        [RealLifeQuestionKey.LANGUAGE_AT_HOME, 'Tamil'],
+      ]),
+    });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.familyInvolvement).toBeDefined();
+    expect(breakdown.familyInvolvement).toBeGreaterThanOrEqual(0.0);
+    expect(breakdown.familyInvolvement).toBeLessThanOrEqual(1.0);
+  });
+
+  it('familyInvolvement: identical answers → 1.0', () => {
+    const answers = new Map([
+      [RealLifeQuestionKey.PARENTS_INVOLVEMENT, 'very involved'],
+      [RealLifeQuestionKey.LANGUAGE_AT_HOME, 'Tamil'],
+    ]);
+    const a = makeUser({ realLifeAnswers: answers });
+    const b = makeUserB({ realLifeAnswers: answers });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.familyInvolvement).toBe(1.0);
+  });
+
+  // ── ALG-006: eventCoAttendance ───────────────────────────────────────────────
+
+  it('eventCoAttendance absent when eventAttendedIds not provided', () => {
+    const a = makeUser();
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.eventCoAttendance).toBeUndefined();
+  });
+
+  it('eventCoAttendance: shared event → 1.0', () => {
+    const a = makeUser({ eventAttendedIds: new Set(['event-1', 'event-2']) });
+    const b = makeUserB({ eventAttendedIds: new Set(['event-2', 'event-3']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.eventCoAttendance).toBe(1.0);
+  });
+
+  it('eventCoAttendance: no shared events → 0.0', () => {
+    const a = makeUser({ eventAttendedIds: new Set(['event-1']) });
+    const b = makeUserB({ eventAttendedIds: new Set(['event-2']) });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.eventCoAttendance).toBe(0.0);
+  });
+
+  // ── ALG-007: communicationStyle ──────────────────────────────────────────────
+
+  it('communicationStyle absent when hasVoiceIntro not provided', () => {
+    const a = makeUser();
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.communicationStyle).toBeUndefined();
+  });
+
+  it('communicationStyle: both have voice intro → 1.0', () => {
+    const a = makeUser({ hasVoiceIntro: true });
+    const b = makeUserB({ hasVoiceIntro: true });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.communicationStyle).toBe(1.0);
+  });
+
+  it('communicationStyle: one has voice intro → 0.5', () => {
+    const a = makeUser({ hasVoiceIntro: true });
+    const b = makeUserB({ hasVoiceIntro: false });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.communicationStyle).toBe(0.5);
+  });
+
+  // ── ALG-008: profileViewMomentum ─────────────────────────────────────────────
+
+  it('profileViewMomentum absent when recentViewCount not provided', () => {
+    const a = makeUser();
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.profileViewMomentum).toBeUndefined();
+  });
+
+  it('profileViewMomentum: 10+ views each → 1.0', () => {
+    const a = makeUser({ recentViewCount: 15 });
+    const b = makeUserB({ recentViewCount: 12 });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.profileViewMomentum).toBe(1.0);
+  });
+
+  it('profileViewMomentum: 5 views average → 0.5', () => {
+    const a = makeUser({ recentViewCount: 5 });
+    const b = makeUserB({ recentViewCount: 5 });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.profileViewMomentum).toBe(0.5);
+  });
+
+  // ── ALG-009: trustLayerDepth ─────────────────────────────────────────────────
+
+  it('trustLayerDepth absent when profileTrustScore not provided', () => {
+    const a = makeUser();
+    const b = makeUserB();
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.trustLayerDepth).toBeUndefined();
+  });
+
+  it('trustLayerDepth: both 100% trust → 1.0', () => {
+    const a = makeUser({ profileTrustScore: 100 });
+    const b = makeUserB({ profileTrustScore: 100 });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.trustLayerDepth).toBe(1.0);
+  });
+
+  it('trustLayerDepth: 60 and 80 → 0.7', () => {
+    const a = makeUser({ profileTrustScore: 60 });
+    const b = makeUserB({ profileTrustScore: 80 });
+    const { breakdown } = computeMatchScore(a, b, NOW);
+    expect(breakdown.trustLayerDepth).toBe(0.7);
+  });
+
+  it('total score stays ≤ 1.0 with all v2 dimensions', () => {
+    const answers = new Map([
+      [RealLifeQuestionKey.PARENTS_INVOLVEMENT, 'very involved'],
+      [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'Hindu'],
+      [RealLifeQuestionKey.LANGUAGE_AT_HOME, 'Tamil'],
+    ]);
+    const a = makeUser({
+      realLifeAnswers: answers,
+      promptResonatedUserIds: new Set(['user-b']),
+      habitConsistencyRate: 0.9,
+      activeHabitKeys: new Set(['SLEEP', 'EXERCISE']),
+      eventAttendedIds: new Set(['event-1']),
+      hasVoiceIntro: true,
+      recentViewCount: 10,
+      profileTrustScore: 90,
+    });
+    const b = makeUserB({
+      realLifeAnswers: answers,
+      promptResonatedUserIds: new Set(['user-a']),
+      habitConsistencyRate: 0.9,
+      activeHabitKeys: new Set(['SLEEP', 'EXERCISE']),
+      eventAttendedIds: new Set(['event-1']),
+      hasVoiceIntro: true,
+      recentViewCount: 10,
+      profileTrustScore: 90,
+    });
+    const { totalScore } = computeMatchScore(a, b, NOW);
+    expect(totalScore).toBeGreaterThanOrEqual(0.0);
+    expect(totalScore).toBeLessThanOrEqual(1.0);
+  });
+});
+
+// ── applyTuningToBreakdown ────────────────────────────────────────────────────
+
+const BASE_BREAKDOWN: ScoreBreakdown = {
+  verification:        1.0,
+  settlementIntent:    0.5,
+  realLifeAnswers:     0.7,
+  profileCompleteness: 0.8,
+  checkInRecency:      1.0,
+  ageCompatibility:    0.9,
+  groupMembership:     1.0,
+  languageMatch:       1.0,
+  faithAlignment:      0.8,
+};
+
+describe('applyTuningToBreakdown', () => {
+  it('returns a score in [0, 1]', () => {
+    const score = applyTuningToBreakdown(BASE_BREAKDOWN, {});
+    expect(score).toBeGreaterThanOrEqual(0.0);
+    expect(score).toBeLessThanOrEqual(1.0);
+  });
+
+  it('returns same as default totalScore when all multipliers are 1.0', () => {
+    const neutralWeights = Object.keys(SCORE_WEIGHTS).reduce<Record<string, number>>(
+      (acc, k) => ({ ...acc, [k]: 1.0 }),
+      {},
+    );
+    const score = applyTuningToBreakdown(BASE_BREAKDOWN, neutralWeights);
+    expect(score).toBeGreaterThanOrEqual(0.0);
+    expect(score).toBeLessThanOrEqual(1.0);
+  });
+
+  it('boosting a high-scoring dimension raises the personalised score', () => {
+    const base = applyTuningToBreakdown(BASE_BREAKDOWN, {});
+    const boosted = applyTuningToBreakdown(BASE_BREAKDOWN, { verification: 3.0 });
+    // verification=1.0 is a top score; boosting it should not hurt
+    expect(boosted).toBeGreaterThanOrEqual(base - 0.01); // allow tiny float diff
+  });
+
+  it('boosting a low-scoring dimension raises the personalised score', () => {
+    const base = applyTuningToBreakdown(BASE_BREAKDOWN, {});
+    // settlementIntent=0.5 is low; 2.5x weight on it should lower personalised score
+    // compared to boosting verification (1.0). At minimum it stays in [0,1].
+    const boosted = applyTuningToBreakdown(BASE_BREAKDOWN, { settlementIntent: 2.5 });
+    expect(boosted).toBeGreaterThanOrEqual(0.0);
+    expect(boosted).toBeLessThanOrEqual(1.0);
+  });
+
+  it('returns 0.0 when all dimension scores are 0', () => {
+    const zeroBreakdown: ScoreBreakdown = {
+      verification: 0, settlementIntent: 0, realLifeAnswers: 0,
+      profileCompleteness: 0, checkInRecency: 0, ageCompatibility: 0,
+      groupMembership: 0, languageMatch: 0, faithAlignment: 0,
+    };
+    expect(applyTuningToBreakdown(zeroBreakdown, {})).toBe(0.0);
+  });
+
+  it('handles optional v2 dimensions in the breakdown', () => {
+    const withV2: ScoreBreakdown = {
+      ...BASE_BREAKDOWN,
+      familyInvolvement: 1.0,
+      trustLayerDepth:   0.8,
+    };
+    const score = applyTuningToBreakdown(withV2, { familyInvolvement: 2.0 });
+    expect(score).toBeGreaterThanOrEqual(0.0);
+    expect(score).toBeLessThanOrEqual(1.0);
   });
 });

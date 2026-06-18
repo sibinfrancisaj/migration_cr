@@ -16,6 +16,8 @@
 | BUG-006 | Test       | P4    | MATCH-004 | @abroad-matrimony/groups and /connections not resolvable in tests | 🟢 Fixed | 2026-05-28 |
 | BUG-007 | Test       | P5    | MSG-003  | requireAdminRole missing from auth mocks after admin route added  | 🟢 Fixed | 2026-05-28 |
 | BUG-008 | Test       | P6b   | AUTH-TD  | otp-verify.service.test.ts missing @abroad-matrimony/config mock after TRUSTED_DEVICE_TTL_DAYS added | 🟢 Fixed | 2026-05-28 |
+| BUG-009 | Tech Debt  | API   | API-SPEC | openapi.yaml uses `nullable: true` (OAS 3.0 syntax) throughout; OAS 3.1 requires `type: [T, "null"]` | ⚪ Won't Fix | 2026-05-29 |
+| BUG-010 | Test       | P7b   | DB-MIG-001 | Non-hex UUID fixtures in controller tests cause Zod `z.string().uuid()` to reject valid-seeming IDs | 🟢 Fixed | 2026-05-29 |
 
 ---
 
@@ -160,6 +162,51 @@ Any time a service file adds a new `getEnv()` call, add (or update) the `@abroad
 ---
 
 ## Template for new issues
+
+### BUG-009 — Tech Debt: `nullable: true` is OAS 3.0 syntax, not valid in OAS 3.1
+**Type:** Tech Debt  
+**Phase:** API Documentation  
+**Task:** API-SPEC  
+**Reported:** 2026-05-29  
+**Status:** ⚪ Won't Fix (suppressed via .redocly-ignore)
+
+**Problem:**  
+`docs/api/openapi.yaml` declares `openapi: 3.1.0` but uses `nullable: true` throughout (both original content and new additions). In OpenAPI 3.1.0 (which aligns with JSON Schema Draft 2020-12), `nullable` is not a valid keyword. The correct OAS 3.1 pattern is `type: [string, "null"]` or `oneOf: [{type: string}, {type: "null"}]`.
+
+Redocly lint reports 95 `struct` errors and 5 `security-defined` errors, all suppressed via `.redocly-ignore`.
+
+**Decision:**  
+Won't fix in the current sprint — it would require touching 95+ field definitions throughout the entire spec. The API functions correctly; this is purely a validator warning.
+
+**Future fix:**  
+When upgrading the spec, do a bulk find-replace to change all `{ type: X, nullable: true }` to `{ type: [X, "null"] }`. This can be done with a script.
+
+---
+
+### BUG-010 — Non-hex UUID fixtures fail `z.string().uuid()` in controller tests
+**Type:** Test  
+**Phase:** P7b gateway tests / DB-MIGRATION-001 verification  
+**Task:** DB-MIG-001  
+**Reported:** 2026-05-29  
+**Status:** 🟢 Fixed
+
+**Problem:**  
+`z.string().uuid()` in Zod validates against the regex `[0-9a-f]{8}-[0-9a-f]{4}-...`. UUID fixture constants that used repeated non-hex letters (`p`, `r`, `g`) in test files caused `validateParams` to return 400 even for valid-looking test requests, making all non-validation test cases fail.
+
+Affected test files and IDs:
+- `prompts.controller.test.ts`: `PROMPT_ID = 'pppppppp-...'` (p not hex), `RESPONSE_ID = 'rrrrrrrr-...'` (r not hex)
+- `groups.controller.test.ts`: `GROUP_ID = 'gggggggg-...'` (g not hex)
+- Also: `type: 'IMAGE'` in prompts respond test — IMAGE is not a valid `PromptResponseType` (only TEXT/AUDIO)
+
+**Fix:**  
+- `PROMPT_ID` → `aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa`
+- `RESPONSE_ID` → `bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb`
+- `GROUP_ID` → `cccccccc-cccc-cccc-cccc-cccccccccccc`
+- `type: 'IMAGE'` → `type: 'AUDIO'` with matching DTO and URL
+
+**Lesson:** UUID test fixtures must use only hex characters (0-9, a-f). Valid hex options: `aaaa`, `bbbb`, `cccc`, `dddd`, `eeee`, `ffff`, `0000`, `1111`, etc. Characters like `g`, `h`, `i`, `j`, `k`, `n`, `o`, `p`, `q`, `r`, `s`, `t`, `u`, `v`, `w`, `x`, `y`, `z` are NOT hex.
+
+---
 
 ```
 ### BUG-XXX — <title>

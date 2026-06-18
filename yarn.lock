@@ -77,11 +77,36 @@
     express-rate-limit "^7.4.0"
     helmet "^8.0.0"
 
+"@abroad-matrimony/gatherings@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\gatherings":
+  version "1.0.0"
+  resolved "file:libs/gatherings"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
 "@abroad-matrimony/groups@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\groups":
   version "1.0.0"
   resolved "file:libs/groups"
   dependencies:
     "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/habits@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\habits":
+  version "1.0.0"
+  resolved "file:libs/habits"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/introductions@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\introductions":
+  version "1.0.0"
+  resolved "file:libs/introductions"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
 
 "@abroad-matrimony/logger@*", "@abroad-matrimony/logger@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\logger":
@@ -114,6 +139,7 @@
     "@abroad-matrimony/firebase" "*"
     "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
+    "@abroad-matrimony/storage" "*"
     firebase-admin "*"
 
 "@abroad-matrimony/notification@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\notification":
@@ -148,6 +174,35 @@
     "@abroad-matrimony/logger" "*"
     "@abroad-matrimony/shared" "*"
 
+"@abroad-matrimony/prompts@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\prompts":
+  version "1.0.0"
+  resolved "file:libs/prompts"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/saved-profiles@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\saved-profiles":
+  version "1.0.0"
+  resolved "file:libs/saved-profiles"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/seeder@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\apps\\seeder":
+  version "1.0.0"
+  resolved "file:apps/seeder"
+  dependencies:
+    "@abroad-matrimony/cache" "*"
+    "@abroad-matrimony/config" "*"
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+    axios "^1.6.0"
+    bullmq "^5.0.0"
+    express "^4.18.2"
+
 "@abroad-matrimony/shared@*", "@abroad-matrimony/shared@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\shared":
   version "0.0.1"
   resolved "file:libs/shared"
@@ -159,6 +214,24 @@
     "@abroad-matrimony/config" "*"
     "@abroad-matrimony/logger" "*"
     "@aws-sdk/client-s3" "*"
+    "@aws-sdk/s3-request-presigner" "*"
+
+"@abroad-matrimony/trust@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\trust":
+  version "1.0.0"
+  resolved "file:libs/trust"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+
+"@abroad-matrimony/verification@file:C:\\Users\\sfrancis\\mytest\\migration_cr\\libs\\verification":
+  version "1.0.0"
+  resolved "file:libs/verification"
+  dependencies:
+    "@abroad-matrimony/db" "*"
+    "@abroad-matrimony/logger" "*"
+    "@abroad-matrimony/shared" "*"
+    "@abroad-matrimony/storage" "*"
 
 "@aws-crypto/crc32@5.2.0":
   version "5.2.0"
@@ -5096,7 +5169,17 @@ axios@^0.19.0:
   dependencies:
     follow-redirects "1.5.10"
 
-axios@^1.13.5, axios@^1.6.8, axios@1.16.0:
+axios@^1.13.5, axios@^1.16.1, axios@^1.6.0, axios@^1.6.8:
+  version "1.16.1"
+  resolved "https://registry.npmjs.org/axios/-/axios-1.16.1.tgz"
+  integrity sha512-caYkukvroVPO8KrzuJEb50Hm07KwfBZPEC3VeFHTsqWHvKTsy54hjJz9BS/cdaypROE2rH6xvm9mHX4fgWkr3A==
+  dependencies:
+    follow-redirects "^1.16.0"
+    form-data "^4.0.5"
+    https-proxy-agent "^5.0.1"
+    proxy-from-env "^2.1.0"
+
+axios@1.16.0:
   version "1.16.0"
   resolved "https://registry.npmjs.org/axios/-/axios-1.16.0.tgz"
   integrity sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==
@@ -6522,7 +6605,7 @@ express-rate-limit@^7.4.0:
   resolved "https://registry.npmjs.org/express-rate-limit/-/express-rate-limit-7.5.1.tgz"
   integrity sha512-7iN8iPMDzOMHPUYllBEsQdWVB6fPDMPqwjBaFrgr4Jgr/+okjvzAy+UHlYYL/Vs0OsOrMkwS6PJDkFlJwoxUnw==
 
-express@^4.21.0, express@^4.21.2:
+express@^4.18.2, express@^4.21.0, express@^4.21.2:
   version "4.22.2"
   resolved "https://registry.npmjs.org/express/-/express-4.22.2.tgz"
   integrity sha512-IuL+Elrou2ZvCFHs18/CIzy2Nzvo25nZ1/D2eIZlz7c+QUayAcYoiM2BthCjs+EBHVpjYjcuLDAiCWgeIX3X1Q==
@@ -7370,6 +7453,14 @@ http-server@^14.1.0:
     url-join "^4.0.1"
 
 https-proxy-agent@^5.0.0:
+  version "5.0.1"
+  resolved "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz"
+  integrity sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==
+  dependencies:
+    agent-base "6"
+    debug "4"
+
+https-proxy-agent@^5.0.1:
   version "5.0.1"
   resolved "https://registry.npmjs.org/https-proxy-agent/-/https-proxy-agent-5.0.1.tgz"
   integrity sha512-dFcAjpTQFgoLMzC2VwU+C/CbS7uRL0lWmxDITmqm7C+7F0Odmj6s9l6alZc6AELXhrnggM2CeWSXHGOdX2YtwA==
@@ -9417,6 +9508,11 @@ open@8.4.2:
     is-docker "^2.1.1"
     is-wsl "^2.2.0"
 
+openai@^6.39.1:
+  version "6.39.1"
+  resolved "https://registry.npmjs.org/openai/-/openai-6.39.1.tgz"
+  integrity sha512-z3dO9fEWOXBzlXynVb/xZ/tujzUjFWQWn3C0n0mw6Vo0zJTbEkaN4b2cLWjhJ6haJQx8LlREoafHRl+Gu/Hl+A==
+
 opener@^1.5.1:
   version "1.5.2"
   resolved "https://registry.npmjs.org/opener/-/opener-1.5.2.tgz"
@@ -11003,7 +11099,7 @@ typedarray@^0.0.6:
   resolved "https://registry.npmjs.org/typedarray/-/typedarray-0.0.6.tgz"
   integrity sha512-/aCDEGatGvZ2BIk+HmLf4ifCJFwvKFNb9/JeZPMulfgFracn9QFcAf5GO8B/mweUjSoblS5In0cWhqpfs/5PQA==
 
-typescript@~5.5.4:
+typescript@^5.5.0, typescript@~5.5.4:
   version "5.5.4"
   resolved "https://registry.npmjs.org/typescript/-/typescript-5.5.4.tgz"
   integrity sha512-Mtq29sKDAEYP7aljRgtPOpTvOfbwRWlS6dPRzwjdE+C0R4brX/GUyhHSecbHMFLNBLcJIPt9nl9yG5TZ1weH+Q==

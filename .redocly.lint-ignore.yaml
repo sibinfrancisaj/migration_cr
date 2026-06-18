@@ -1,0 +1,214 @@
+# This file instructs Redocly's linter to ignore the rules contained for specific parts of your API.
+# See https://redocly.com/docs/cli/ for more information.
+docs/api/openapi.yaml:
+  info-license-strict:
+    - '#/info/license'
+  no-server-example.com:
+    - '#/servers/0/url'
+  no-ambiguous-paths:
+    - '#/paths/~1api~1v1~1introductions~1drops~1{dropId}'
+  operation-4xx-response:
+    - '#/paths/~1api~1v1~1health/get/responses'
+  struct:
+    - >-
+      #/paths/~1api~1v1~1auth~1otp~1verify/post/requestBody/content/application~1json/schema/properties/deviceName/nullable
+    - >-
+      #/paths/~1api~1v1~1auth~1otp~1verify/post/requestBody/content/application~1json/schema/properties/platform/nullable
+    - >-
+      #/paths/~1api~1v1~1profile/post/requestBody/content/application~1json/schema/properties/bio/nullable
+    - '#/components/schemas/ProfileDto/properties/bio/nullable'
+    - '#/components/schemas/MediaDto/properties/order/nullable'
+    - >-
+      #/components/schemas/ConversationSummaryDto/properties/otherUser/properties/photoUrl/nullable
+    - >-
+      #/components/schemas/ConversationSummaryDto/properties/lastMessage/nullable
+    - >-
+      #/components/schemas/ConversationSummaryDto/properties/lastMessageAt/nullable
+    - >-
+      #/paths/~1api~1v1~1conversations~1{convId}~1messages/post/requestBody/content/application~1json/schema/properties/durationSeconds/nullable
+    - >-
+      #/paths/~1api~1v1~1messages~1{msgId}~1flag/post/requestBody/content/application~1json/schema/properties/description/nullable
+    - >-
+      #/paths/~1api~1v1~1payment~1stripe~1checkout/post/requestBody/content/application~1json/schema/properties/email/nullable
+    - >-
+      #/paths/~1api~1v1~1payment~1diamonds~1spend/post/requestBody/content/application~1json/schema/properties/reference/nullable
+    - >-
+      #/paths/~1api~1v1~1payment~1diamonds~1purchase/post/requestBody/content/application~1json/schema/properties/email/nullable
+    - >-
+      #/paths/~1admin~1auth~1login/post/requestBody/content/application~1json/schema/properties/totpCode/nullable
+    - >-
+      #/paths/~1admin~1flags~1{flagId}/put/requestBody/content/application~1json/schema/properties/resolution/nullable
+    - >-
+      #/paths/~1admin~1payment~1refund/post/requestBody/content/application~1json/schema/properties/userId/nullable
+    - >-
+      #/paths/~1api~1v1~1auth~1email~1verify/post/requestBody/content/application~1json/schema/properties/fingerprint/nullable
+    - >-
+      #/paths/~1api~1v1~1connections/post/requestBody/content/application~1json/schema/properties/message/nullable
+    - >-
+      #/paths/~1api~1v1~1prompts~1current~1response/post/requestBody/content/application~1json/schema/properties/mediaUrl/nullable
+    - >-
+      #/paths/~1api~1v1~1prompts~1{promptId}~1respond/post/requestBody/content/application~1json/schema/properties/text/nullable
+    - >-
+      #/paths/~1api~1v1~1prompts~1{promptId}~1respond/post/requestBody/content/application~1json/schema/properties/audioUrl/nullable
+    - >-
+      #/paths/~1api~1v1~1prompts~1{promptId}~1respond/post/requestBody/content/application~1json/schema/properties/durationSeconds/nullable
+    - >-
+      #/paths/~1api~1v1~1saved~1{targetUserId}~1note/put/requestBody/content/application~1json/schema/properties/note/nullable
+    - >-
+      #/paths/~1api~1v1~1trust~1{targetUserId}~1report/post/requestBody/content/application~1json/schema/properties/description/nullable
+    - >-
+      #/paths/~1api~1v1~1habits~1check-in/post/requestBody/content/application~1json/schema/properties/mood/nullable
+    - >-
+      #/paths/~1api~1v1~1habits~1check-in/post/requestBody/content/application~1json/schema/properties/notes/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/maxDistanceKm/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/preferredCountries/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/familyStylePreference/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/openToKids/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/ageRangeMin/nullable
+    - >-
+      #/paths/~1api~1v1~1matches~1tuning/put/requestBody/content/application~1json/schema/properties/ageRangeMax/nullable
+    - >-
+      #/paths/~1admin~1users~1{userId}~1role/put/requestBody/content/application~1json/schema/properties/reason/nullable
+    - >-
+      #/paths/~1admin~1users~1{userId}~1suspend/put/requestBody/content/application~1json/schema/properties/reason/nullable
+    - >-
+      #/paths/~1admin~1verification~1{verificationId}~1approve/put/requestBody/content/application~1json/schema/properties/note/nullable
+    - '#/components/schemas/PaginationMeta/properties/cursor/nullable'
+    - '#/components/schemas/PaginationMeta/properties/total/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/habitConsistency/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/habitOverlap/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/promptResonance/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/weeklyRhythm/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/consistencyScore/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/settlementIntentV2/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/familyStyle/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/eventCoAttendance/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/communicationStyle/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/profileMomentum/nullable'
+    - '#/components/schemas/ScoreBreakdown/properties/trustDepth/nullable'
+    - '#/components/schemas/DiscoveryItemDto/properties/photoUrl/nullable'
+    - '#/components/schemas/MessageDto/properties/mediaUrl/nullable'
+    - '#/components/schemas/MessageDto/properties/durationSeconds/nullable'
+    - '#/components/schemas/MessageDto/properties/readAt/nullable'
+    - '#/components/schemas/MembershipDto/properties/providerSubId/nullable'
+    - '#/components/schemas/MembershipDto/properties/expiresAt/nullable'
+    - '#/components/schemas/FlagDto/properties/targetEntityId/nullable'
+    - '#/components/schemas/FlagDto/properties/description/nullable'
+    - '#/components/schemas/FlagDto/properties/moderatorId/nullable'
+    - '#/components/schemas/FlagDto/properties/resolvedAt/nullable'
+    - '#/components/schemas/ConnectionDto/properties/message/nullable'
+    - '#/components/schemas/ConnectionDto/properties/resolvedAt/nullable'
+    - '#/components/schemas/ConnectionDto/properties/otherUser/nullable'
+    - >-
+      #/components/schemas/ConnectionDto/properties/otherUser/properties/photoUrl/nullable
+    - >-
+      #/components/schemas/ConnectionDto/properties/otherUser/properties/age/nullable
+    - >-
+      #/components/schemas/ConnectionDto/properties/otherUser/properties/city/nullable
+    - '#/components/schemas/GroupDto/properties/description/nullable'
+    - '#/components/schemas/GroupDto/properties/expiresAt/nullable'
+    - '#/components/schemas/VerificationLayerDto/properties/completedAt/nullable'
+    - >-
+      #/components/schemas/VerificationStatusDto/properties/rejectionReason/nullable
+    - '#/components/schemas/VerificationStatusDto/properties/submittedAt/nullable'
+    - '#/components/schemas/VerificationStatusDto/properties/reviewedAt/nullable'
+    - '#/components/schemas/HabitStreakDto/properties/lastLoggedAt/nullable'
+    - >-
+      #/components/schemas/IntroductionDto/properties/profile/properties/photoUrl/nullable
+    - '#/components/schemas/IntroductionDto/properties/unlockedAt/nullable'
+    - '#/components/schemas/IntroductionDto/properties/expiresAt/nullable'
+    - '#/components/schemas/EventDto/properties/onlineUrl/nullable'
+    - '#/components/schemas/EventDto/properties/maxRsvp/nullable'
+    - '#/components/schemas/EventDto/properties/whyInvited/nullable'
+    - '#/components/schemas/PromptDto/properties/myResponse/nullable'
+    - >-
+      #/components/schemas/PromptDto/properties/myResponse/properties/text/nullable
+    - >-
+      #/components/schemas/PromptDto/properties/myResponse/properties/audioUrl/nullable
+    - '#/components/schemas/PromptResponseDto/properties/userPhotoUrl/nullable'
+    - '#/components/schemas/PromptResponseDto/properties/text/nullable'
+    - '#/components/schemas/PromptResponseDto/properties/audioUrl/nullable'
+    - '#/components/schemas/PromptResponseDto/properties/durationSeconds/nullable'
+    - '#/components/schemas/SavedProfileDto/properties/note/nullable'
+    - '#/components/schemas/SavedProfileDto/properties/expiresAt/nullable'
+    - '#/components/schemas/SavedProfileDto/properties/profile/nullable'
+    - >-
+      #/components/schemas/SavedProfileDto/properties/profile/properties/photoUrl/nullable
+    - >-
+      #/components/schemas/SavedProfileDto/properties/profile/properties/totalScore/nullable
+    - '#/components/schemas/ActionQueueItemDto/properties/targetUserId/nullable'
+    - '#/components/schemas/ActionQueueItemDto/properties/expiresAt/nullable'
+    - '#/components/schemas/TrustLayerDto/properties/completedAt/nullable'
+    - '#/components/schemas/MatchTuningDto/properties/maxDistanceKm/nullable'
+    - >-
+      #/components/schemas/MatchTuningDto/properties/familyStylePreference/nullable
+    - '#/components/schemas/MatchTuningDto/properties/openToKids/nullable'
+    - '#/components/schemas/MatchTuningDto/properties/ageRangeMin/nullable'
+    - '#/components/schemas/MatchTuningDto/properties/ageRangeMax/nullable'
+    - '#/components/schemas/CreditTransactionDto/properties/description/nullable'
+  no-invalid-media-type-examples:
+    - >-
+      #/paths/~1admin~1flags~1{flagId}/put/requestBody/content/application~1json/schema
+    - >-
+      #/paths/~1admin~1payment~1refund/post/requestBody/content/application~1json/example/userId
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/0
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/1
+    - >-
+      #/paths/~1admin~1introductions~1drops~1propose/post/requestBody/content/application~1json/example/memberPool/2
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/0
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/1
+    - >-
+      #/paths/~1admin~1introductions~1drops~1{dropId}~1members/patch/requestBody/content/application~1json/example/memberPool/2
+    - >-
+      #/paths/~1api~1v1~1auth~1email~1verify/post/requestBody/content/application~1json/example/token
+    - >-
+      #/paths/~1api~1v1~1connections/post/requestBody/content/application~1json/example/recipientId
+    - >-
+      #/paths/~1api~1v1~1saved~1{targetUserId}~1label/put/requestBody/content/application~1json/schema
+  no-invalid-schema-examples:
+    - >-
+      #/paths/~1api~1v1~1auth~1email~1verify/post/requestBody/content/application~1json/schema/properties/token/example
+  no-unused-components:
+    - '#/components/schemas/PaginationMeta'
+    - '#/components/schemas/AdminRole'
+    - '#/components/schemas/PaymentStatus'
+    - '#/components/schemas/TokenPair'
+    - '#/components/schemas/DiscoveryItemDto'
+    - '#/components/schemas/MessageDto'
+    - '#/components/schemas/MembershipDto'
+    - '#/components/schemas/FlagDto'
+    - '#/components/schemas/ConnectionDto'
+    - '#/components/schemas/GroupDto'
+    - '#/components/schemas/VerificationStatusDto'
+    - '#/components/schemas/HabitDto'
+    - '#/components/schemas/HabitStreakDto'
+    - '#/components/schemas/HabitReflectionDto'
+    - '#/components/schemas/IntroductionDto'
+    - '#/components/schemas/EventDto'
+    - '#/components/schemas/PromptDto'
+    - '#/components/schemas/PromptResponseDto'
+    - '#/components/schemas/SavedProfileDto'
+    - '#/components/schemas/SignalsWeekDto'
+    - '#/components/schemas/TrustCenterDto'
+    - '#/components/schemas/MatchTuningDto'
+    - '#/components/schemas/CreditTransactionDto'
+  security-defined:
+    - '#/paths/~1api~1v1~1health/get'
+    - '#/paths/~1api~1v1~1auth~1otp~1request/post'
+    - '#/paths/~1api~1v1~1auth~1otp~1verify/post'
+    - '#/paths/~1api~1v1~1auth~1token~1refresh/post'
+    - '#/paths/~1api~1v1~1auth~1trusted-device/post'
+    - '#/paths/~1api~1v1~1payment~1stripe~1webhook/post'
+    - '#/paths/~1api~1v1~1payment~1razorpay~1webhook/post'
+    - '#/paths/~1admin~1auth~1login/post'
+    - '#/paths/~1api~1v1~1auth~1email~1link/post'
+    - '#/paths/~1api~1v1~1auth~1email~1verify/post'

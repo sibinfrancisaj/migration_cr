@@ -115,9 +115,9 @@ export async function markMembershipPastDue(providerSubId: string): Promise<void
 
 function toMembershipDto(m: {
   id: string;
-  plan: MembershipPlan;
-  status: MembershipStatus;
-  provider: PaymentProvider;
+  plan: string;
+  status: string;
+  provider: string;
   providerSubId?: string | null;
   currentPeriodStart?: Date | null;
   expiresAt?: Date | null;
@@ -125,9 +125,9 @@ function toMembershipDto(m: {
 }): MembershipDto {
   return {
     id: m.id,
-    plan: m.plan,
-    status: m.status,
-    provider: m.provider,
+    plan: m.plan as MembershipPlan,
+    status: m.status as MembershipStatus,
+    provider: m.provider as PaymentProvider,
     providerSubId: m.providerSubId,
     currentPeriodStart: m.currentPeriodStart,
     expiresAt: m.expiresAt,
