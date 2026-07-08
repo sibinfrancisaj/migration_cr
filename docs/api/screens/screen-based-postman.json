@@ -1,0 +1,1476 @@
+{
+  "info": {
+    "name": "Abroad Matrimony — Screen-Based API",
+    "description": "Complete API collection organised by app screen. Each folder = one Flutter screen. Import this collection alongside the environment file `screen-env.json`.\n\nBase URL variable: `{{base_url}}` (default http://localhost:3000)\nAuth token set automatically by the OTP Verify request via the post-response script.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": { "major": 1, "minor": 0, "patch": 0 }
+  },
+  "variable": [
+    { "key": "base_url",      "value": "http://localhost:3000", "type": "string", "description": "API base URL. Change to https://api.abroadmatrimony.com for production." },
+    { "key": "access_token",  "value": "", "type": "string", "description": "Auto-populated by OTP Verify or Token Refresh." },
+    { "key": "refresh_token", "value": "", "type": "string", "description": "Auto-populated by OTP Verify or Token Refresh." },
+    { "key": "user_id",       "value": "", "type": "string", "description": "Auto-populated by OTP Verify." },
+    { "key": "phone",         "value": "+447911123456", "type": "string", "description": "Test phone number in E.164 format." },
+    { "key": "device_id",     "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890", "type": "string", "description": "Stable device fingerprint UUID." }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+  },
+  "item": [
+
+    {
+      "name": "01 — Splash",
+      "description": "App startup — verify the API is reachable before loading the main navigation.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/health",
+            "description": "Called on app launch. Returns 200 + uptime when healthy. No auth required.\n\n**Response fields:**\n- `status` (string): Always \"ok\" when healthy\n- `uptime` (number): Server uptime in seconds\n- `timestamp` (ISO date-time): Server UTC time",
+            "auth": { "type": "noauth" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "02 — Auth · Login Screen",
+      "description": "Phone OTP authentication flow. Call sequence:\n1. Request OTP\n2. Verify OTP → receive tokens\n3. Use refresh token to renew access token\n\nAlternative: trusted-device bypass (skip OTP) or magic link (email).",
+      "item": [
+        {
+          "name": "01 Request OTP",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/otp/request",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Sends a 6-digit OTP to the phone via Twilio Verify.\nRate limit: **5 attempts per phone per 15 minutes**.\n\n**Request fields:**\n- `phone` (string, required): E.164 format e.g. +447911123456\n\n**Response fields:**\n- `data.otpSent` (boolean): true on success"
+          }
+        },
+        {
+          "name": "02 Verify OTP → get tokens",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.collectionVariables.set('access_token', res.data.accessToken);",
+                  "  pm.collectionVariables.set('refresh_token', res.data.refreshToken);",
+                  "  pm.collectionVariables.set('user_id', res.data.user?.id || '');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/otp/verify",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"123456\",\n  \"deviceFingerprint\": \"{{device_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Verifies the OTP. On success creates/retrieves the user row, issues JWT tokens, and registers the device.\n\n**Request fields:**\n- `phone` (string, required): Same E.164 phone from OTP request\n- `code` (string, required): 6-digit OTP received via SMS\n- `deviceFingerprint` (UUID, required): Stable UUID for this device install (stored in Flutter secure storage)\n\n**Response fields:**\n- `data.accessToken` (string): Short-lived JWT. Include as `Authorization: Bearer <token>`. Expires in 15 min\n- `data.refreshToken` (string): 30-day token. Use ONLY with the Token Refresh endpoint\n- `data.expiresIn` (integer): TTL in seconds (always 900)\n- `data.user.id` (UUID): User's unique ID\n- `data.user.role` (string): USER | MODERATOR | ADMIN | SUPERADMIN\n- `data.user.hasProfile` (boolean): false for new users → redirect to onboarding"
+          }
+        },
+        {
+          "name": "03 Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.collectionVariables.set('access_token', res.data.accessToken);",
+                  "  pm.collectionVariables.set('refresh_token', res.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/token/refresh",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\",\n  \"deviceFingerprint\": \"{{device_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Issues a new access + refresh token pair. The previous refresh token is immediately invalidated.\nCall this when the API returns 401 on any request.\n\n**Request fields:**\n- `refreshToken` (string, required): The refresh token from the last auth response\n- `deviceFingerprint` (UUID, required): Same device UUID used during OTP verify\n\n**Errors:**\n- 401: Token expired, already used, or reuse detected (all devices revoked)"
+          }
+        },
+        {
+          "name": "04 Trusted Device Login (skip OTP)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/trusted-device",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"deviceFingerprint\": \"{{device_id}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Try this FIRST on app launch instead of showing the OTP screen. If the device was trusted within `TRUSTED_DEVICE_TTL_DAYS` (default 90 days), returns tokens immediately.\n\n**Request fields:**\n- `phone` (string, required): E.164 phone number\n- `deviceFingerprint` (UUID, required): Device UUID from Flutter secure storage\n\n**On 401:** Device not trusted or TTL expired → fall back to full OTP flow\n**Rate limit:** 10 attempts per phone per hour"
+          }
+        },
+        {
+          "name": "05 Get Firebase Token",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/auth/firebase-token",
+            "description": "Call immediately after OTP verify. Returns a Firebase custom token.\nPass to `FirebaseAuth.signInWithCustomToken()` to enable real-time Firestore listeners (messages) and Realtime DB (presence).\n\n**Response fields:**\n- `data.firebaseToken` (string): Firebase custom token (1 hour TTL)"
+          }
+        },
+        {
+          "name": "06 Logout Current Device",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/logout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Revokes the current device's refresh token. Access token expires naturally after 15 min.\n\n**Request fields:**\n- `refreshToken` (string, required): The refresh token to revoke"
+          }
+        },
+        {
+          "name": "07 Logout All Devices",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/logout/all",
+            "description": "Revokes ALL refresh tokens for this user across every registered device. Use when the user reports suspicious access."
+          }
+        },
+        {
+          "name": "08 Send Magic Link (email)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/magic-link/send",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Alternative login via email. Sends a one-time link that expires in 15 minutes.\n\n**Request fields:**\n- `email` (string, required): User's email address"
+          }
+        },
+        {
+          "name": "09 Verify Magic Link",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/magic-link/verify",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"<token-from-magic-link-url>\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Exchange the token from the magic link URL for JWT tokens.\n\n**Request fields:**\n- `token` (string, required): Token extracted from the magic link URL query parameter"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "03 — Profile Setup · Onboarding",
+      "description": "Multi-step onboarding flow. Sequence:\n1. Create Profile (basic info)\n2. Answer 12 Real-Life Questions\n3. Answer 3 Story Prompts\n4. Upload Photo(s)\n5. Upload Voice Intro (optional)\n\nCall `GET /profile/me` at any time to check completion score.",
+      "item": [
+        {
+          "name": "01 Create Profile",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profile",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Priya Sharma\",\n  \"dateOfBirth\": \"1993-08-15\",\n  \"gender\": \"FEMALE\",\n  \"currentCity\": \"London\",\n  \"currentCountry\": \"United Kingdom\",\n  \"settlementIntent\": \"STAY_HERE\",\n  \"bio\": \"Software engineer who loves hiking and Bollywood classics.\",\n  \"height\": 165,\n  \"education\": \"MSc Computer Science, UCL\",\n  \"occupation\": \"Senior Software Engineer\",\n  \"motherTongue\": \"Hindi\",\n  \"religion\": \"Hindu\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates the user's profile. Call once after the user's first login.\n\n**Request fields:**\n- `fullName` (string, required, max 100): Display name\n- `dateOfBirth` (date, required): YYYY-MM-DD — used to calculate displayed age\n- `gender` (enum, required): MALE | FEMALE | NON_BINARY\n- `currentCity` (string, required, max 100): City of residence\n- `currentCountry` (string, required, max 100): Country — auto-joins REGIONAL group\n- `settlementIntent` (enum, required): STAY_HERE | OPEN_TO_MOVE | RETURN_HOME | UNDECIDED\n- `bio` (string, optional, max 500): Short bio on profile card\n- `height` (integer, optional): Height in centimetres\n- `education` (string, optional, max 200): Degree or field of study\n- `occupation` (string, optional, max 200): Job title / employer\n- `motherTongue` (string, optional): Primary language\n- `religion` (string, optional): Religious background\n- `caste` (string, optional): Community field — stored but not used in algorithm"
+          }
+        },
+        {
+          "name": "02 Answer Real-Life Question",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/profile/real-life/FAITH_IMPORTANCE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"Faith is very important to me. I attend temple weekly and hope my partner shares similar values.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Save or update one real-life question answer. Replace the path param with the question key.\n\n**Path param `questionKey`** — one of:\n- `FAITH_IMPORTANCE`: How important is faith/religion in daily life?\n- `PARENTING_STYLE`: Philosophy on raising children\n- `DIET_PREFERENCE`: Vegetarian / non-vegetarian / vegan etc.\n- `EXERCISE_HABIT`: Fitness and activity level\n- `FAMILY_STRUCTURE`: Joint family vs nuclear\n- `PARENTS_INVOLVEMENT`: How much do parents factor into life decisions?\n- `FINANCIAL_STYLE`: Saver vs spender, financial goals\n- `CONFLICT_RESOLUTION`: Approach to disagreements\n- `LIVING_PREFERENCE`: Urban / suburban / rural\n- `SOCIAL_LIFE`: Introvert vs extrovert, social calendar\n- `CAREER_AMBITION`: Career priority vs personal life\n- `PET_PREFERENCE`: Attitude towards having pets\n\n**Request fields:**\n- `answer` (string, required, max 500): Free-text answer"
+          }
+        },
+        {
+          "name": "03 Answer Story Prompt",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/profile/story/IDEAL_WEEKEND",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": \"My perfect weekend starts with a long run in Hyde Park, followed by cooking a proper Indian lunch at home and watching a classic Bollywood film in the evening.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Save or update one story prompt answer. Replace the path param with the prompt key.\n\n**Path param `promptKey`** — one of:\n- `HIGHLIGHT_MOMENT`: Tell us about a moment that shaped who you are\n- `IDEAL_WEEKEND`: Describe your perfect weekend\n- `LOOKING_FOR`: What are you genuinely looking for in a partner?\n\n**Request fields:**\n- `answer` (string, required, max 1000): Free-text story. Min ~50 chars recommended for quality AI analysis"
+          }
+        },
+        {
+          "name": "04 Upload Profile Photo",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profile/media",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": "/path/to/photo.jpg",
+                  "description": "Image file. JPEG, PNG, or WebP. Max 5 MB."
+                }
+              ]
+            },
+            "description": "Upload a profile photo. Uses `multipart/form-data`.\n\n**Form fields:**\n- `photo` (file, required): Image file. Accepted: JPEG, PNG, WebP. Max size: 5 MB\n\n**Limits:** Max 6 photos per user\n\n**Response fields:**\n- `data.photoUrl` (string): CloudFront CDN URL of the uploaded photo\n- `data.photoCount` (integer): Total photos on profile after upload"
+          }
+        },
+        {
+          "name": "05 Get Voice Intro Upload URL",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile/voice-intro/upload-url",
+            "description": "Step 1 of voice intro upload. Get a presigned S3 URL, then PUT the audio file directly to S3.\n\n**Response fields:**\n- `data.uploadUrl` (string): S3 presigned PUT URL (valid 15 min)\n- `data.s3Key` (string): S3 key to pass to the Save Voice Intro endpoint after upload"
+          }
+        },
+        {
+          "name": "06 Save Voice Intro (after S3 upload)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profile/voice-intro",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"s3Key\": \"voice-intros/user-uuid/voice-abc123.m4a\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Step 2 of voice intro upload. Call after successfully uploading the audio to S3.\nTriggers Whisper transcription and AI profile intelligence update asynchronously.\n\n**Request fields:**\n- `s3Key` (string, required): The S3 key returned by the Get Upload URL endpoint"
+          }
+        },
+        {
+          "name": "07 Get My Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile/me",
+            "description": "Returns the authenticated user's full profile including completion score (0–100), all answered questions, story prompts, and photo URLs.\n\n**Response fields:**\n- `data.completionScore` (integer): 0–100 — used in COMPLETE_PROFILE action queue item\n- `data.realLifeAnswers` (object): Map of questionKey → answer\n- `data.storyPrompts` (object): Map of promptKey → answer\n- `data.photos` (array): CloudFront photo URLs\n- `data.trustScore` (integer): Cached trust score\n- `data.isPaused` (boolean): Whether profile is paused from discovery\n- `data.isVerified` (boolean): Admin-approved ID verification status"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "04 — Home · Discovery Feed",
+      "description": "Main screen. Cursor-paginated list of ranked potential matches. Use `nextCursor` from the response as `cursor` in the next request.",
+      "item": [
+        {
+          "name": "Get Discovery Feed (first page)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/discover?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "discover"],
+              "query": [
+                { "key": "limit", "value": "20", "description": "Profiles per page. Range 1–100." },
+                { "key": "cursor", "value": "", "description": "Omit for first page. Use nextCursor from previous response.", "disabled": true }
+              ]
+            },
+            "description": "Returns a ranked, cursor-paginated list of potential matches personalised with the user's tuning weights.\n\n**Query params:**\n- `cursor` (string, optional): Pagination cursor from previous response\n- `limit` (integer, optional, 1–100, default 20): Results per page\n\n**Response fields:**\n- `data.items[]` (array): Discovery profiles\n  - `.userId` (UUID): Profile owner's UUID\n  - `.fullName` (string): Display name\n  - `.age` (integer): Calculated age\n  - `.currentCity` (string): City of residence\n  - `.currentCountry` (string): Country\n  - `.thumbnailUrl` (string|null): First photo URL\n  - `.totalScore` (float 0–1): Raw compatibility score\n  - `.personalizedScore` (float 0–1): Score after tuning weights — feed sorted by this\n  - `.scoreBreakdown` (object): 18-dimension breakdown\n  - `.completionScore` (integer): Profile completeness of the match\n  - `.isVerified` (boolean): ID verification status\n- `data.nextCursor` (string|null): Pass as `cursor` in next request. Null = last page\n- `data.total` (integer): Total eligible profiles in the pool"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "05 — Profile Detail · Match View",
+      "description": "Screens shown when the user taps a profile card from discovery or introductions.",
+      "item": [
+        {
+          "name": "Get Public Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profiles/{{user_id}}",
+            "description": "Returns the public view of another user's profile.\nPrivacy controls are enforced — bio, photos, or answers may be redacted if not mutually connected.\n\n**Path param:** `id` — UUID of the user to view\n\n**Response fields:**\n- `data.photos` (array): Empty if `showPhotosBeforeMutual = false` and not connected\n- `data.bio` (string|null): Null if `showBioBeforeMutual = false` and not connected\n- `data.realLifeAnswers` (object|null): Null if `showAnswersBeforeMutual = false`\n- `data.isVerified` (boolean): Admin-approved verification status\n- `data.trustScore` (integer): Public trust score"
+          }
+        },
+        {
+          "name": "Log Profile View",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profiles/{{user_id}}/view",
+            "description": "Records that the authenticated user viewed this profile. Call when the profile detail screen opens.\nDeduplicated with a 1-hour window — same viewer-profile pair only logs once per hour.\nContributes to `profileViewMomentum` matching dimension and Signals dashboard.\n\n**Errors:**\n- 400: Cannot view your own profile (ViewSelfError)"
+          }
+        },
+        {
+          "name": "Get Match Context",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profiles/{{user_id}}/match-context",
+            "description": "Returns compatibility breakdown (18 dimensions) + why-this-match highlight cards.\n\n**Response fields:**\n- `data.totalScore` (float): Raw compatibility score (0–1)\n- `data.personalizedScore` (float): Score after tuning\n- `data.breakdown` (object): 18-dimension `ScoreBreakdown` object\n- `data.whyThisMatch.cards[]` (array, max 3):\n  - `.dimension` (string): Dimension key\n  - `.label` (string): Human-readable name e.g. \"Settlement Plans\"\n  - `.score` (float): Score for this dimension\n  - `.highlight` (string): One-sentence explanation\n- `data.whyThisMatch.narrative` (string|null): LLM paragraph (Redis-cached 24h)"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "06 — Introductions · Drop Screen",
+      "description": "Weekly curated introduction drops. Multiple themed drops can be live simultaneously.",
+      "item": [
+        {
+          "name": "List Introduction Drops",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/introductions/drops",
+            "description": "Returns all LIVE drops visible to the user with early-access and unlock state.\n\n**Response fields per drop:**\n- `id` (UUID): Drop identifier\n- `title` (string): Theme name\n- `releaseAt` (ISO date-time): When profiles become public\n- `earlyAccessCost` (integer): Diamonds to VIEW before release\n- `unlockCost` (integer): Diamonds to UNLOCK full profile\n- `introductionCount` (integer): Your assigned introductions in this drop\n- `hasEarlyAccess` (boolean): Already paid for early access?\n- `isUnlocked` (boolean): Already unlocked?\n- `status`: DRAFT | PENDING_APPROVAL | SCHEDULED | LIVE | EXPIRED"
+          }
+        },
+        {
+          "name": "Get Drop Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/introductions/drops/DROP_ID_HERE",
+            "description": "Returns drop metadata + assigned introductions (profiles may be blurred until early-access is purchased).\n\n**Path param:** `dropId` — Drop UUID"
+          }
+        },
+        {
+          "name": "Buy Early Access (view blurred profiles)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/introductions/drops/DROP_ID_HERE/early-access",
+            "description": "Spend `earlyAccessCost` diamonds to VIEW profiles in this drop before the release date.\nIdempotent — safe to call multiple times.\n\n**Errors:**\n- 402: Insufficient diamonds\n- 409: Already have early access"
+          }
+        },
+        {
+          "name": "Unlock Drop (full profile reveal)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/introductions/drops/DROP_ID_HERE/unlock",
+            "description": "Spend `unlockCost` diamonds to fully reveal an introduction's profile in this drop.\nRequires early access first.\n\n**Errors:**\n- 402: Insufficient diamonds"
+          }
+        },
+        {
+          "name": "Get Introduction Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/introductions/INTRO_ID_HERE",
+            "description": "Returns full detail of one introduction: profile summary, score breakdown, and why-this-match card."
+          }
+        },
+        {
+          "name": "Unlock All Current-Week Intros Early (300 diamonds)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/introductions/unlock-early",
+            "description": "Spend 300 diamonds (`EARLY_UNLOCK_DIAMOND_COST`) to unlock all current-week introductions.\nIdempotent — does not charge twice.\n\n**Errors:**\n- 402: Insufficient diamonds (EarlyUnlockInsufficientDiamondsError)"
+          }
+        },
+        {
+          "name": "List Current Introductions (legacy)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/introductions",
+            "description": "Returns introductions from the current week's drops (legacy endpoint). Use the Drops endpoints above for full drop management."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "07 — Groups · Community",
+      "description": "Four group types: REGIONAL (auto-join), CULTURAL, PROFESSIONAL, INTEREST. Social feed with posts, comments, and likes.",
+      "item": [
+        {
+          "name": "List My Groups",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/groups",
+            "description": "Returns all groups the authenticated user has joined."
+          }
+        },
+        {
+          "name": "Get Suggested Groups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/suggested?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "groups", "suggested"],
+              "query": [{ "key": "limit", "value": "10", "description": "Max suggestions." }]
+            },
+            "description": "Groups the user hasn't joined, ranked by country match + member count. Max controlled by SystemConfig.SUGGESTED_GROUPS_MAX (default 20)."
+          }
+        },
+        {
+          "name": "Get Onboarding Group Suggestions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/groups/onboarding-suggestions",
+            "description": "Curated group list for the end-of-onboarding 'Join some groups' screen."
+          }
+        },
+        {
+          "name": "Get Group Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE",
+            "description": "Returns group detail including type, member count, description, and recent activity."
+          }
+        },
+        {
+          "name": "Join Group",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/join",
+            "description": "Join a group. REGIONAL groups are auto-joined on registration — this is for manual joins of CULTURAL/PROFESSIONAL/INTEREST groups.\n\n**Errors:**\n- 409: Already a member (AlreadyInGroupError)"
+          }
+        },
+        {
+          "name": "Leave Group",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/leave",
+            "description": "Leave a group."
+          }
+        },
+        {
+          "name": "Get Group Members",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/members?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "groups", "GROUP_ID_HERE", "members"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Paginated list of group members. All member lists are visible in all group types."
+          }
+        },
+        {
+          "name": "Get Group Feed (posts)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/feed?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "groups", "GROUP_ID_HERE", "feed"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Returns posts sorted by isPinned DESC, createdAt DESC. Includes like count and comment count per post."
+          }
+        },
+        {
+          "name": "Create Post",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/posts",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Anyone else excited about the Diwali gathering next month? Who's planning to go?\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a text post in the group feed.\n\n**Request fields:**\n- `content` (string, required, max 2000): Post text. Plain text only, no HTML"
+          }
+        },
+        {
+          "name": "Like Post",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/posts/POST_ID_HERE/like",
+            "description": "Like a post. Idempotent — calling twice does not create duplicate likes."
+          }
+        },
+        {
+          "name": "Unlike Post",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/posts/POST_ID_HERE/like",
+            "description": "Unlike a post. Idempotent."
+          }
+        },
+        {
+          "name": "Add Comment",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/posts/POST_ID_HERE/comments",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"I'm planning to go! Would love to meet more people from the community.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Add a flat comment to a post. No nested threads.\n\n**Request fields:**\n- `content` (string, required, max 500): Comment text"
+          }
+        },
+        {
+          "name": "List Comments",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/groups/GROUP_ID_HERE/posts/POST_ID_HERE/comments",
+            "description": "Returns all comments on a post. Flat list ordered by createdAt ASC."
+          }
+        },
+        {
+          "name": "Propose Interest Group",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/groups/proposals",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Indian Cricket Fans — UK\",\n  \"description\": \"A group for cricket enthusiasts in the UK diaspora. Match discussions, pub viewings, and live event planning.\",\n  \"tags\": [\"cricket\", \"sports\", \"entertainment\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Propose a new INTEREST group. Goes to admin review queue.\n\n**Request fields:**\n- `name` (string, required, max 100): Proposed group name\n- `description` (string, required, max 500): Purpose and audience\n- `tags` (array of strings, optional): Topic tags\n\nOn admin approval: Group is created and proposer is auto-joined."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "08 — Events · Gatherings",
+      "description": "Community events — listing, calendar view, RSVP. Events feed and calendar shown on home screen.",
+      "item": [
+        {
+          "name": "List Events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/events?upcoming=true&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "events"],
+              "query": [
+                { "key": "upcoming", "value": "true", "description": "true = future events only" },
+                { "key": "limit", "value": "20" },
+                { "key": "tag", "value": "", "description": "Filter by event tag e.g. networking, cultural", "disabled": true }
+              ]
+            },
+            "description": "Returns events with a personalised `whyInvited` reason for each.\n\n**Query params:**\n- `upcoming` (boolean, optional): Filter to future events\n- `limit` (integer, optional, default 20)\n- `tag` (string, optional): Filter by event category tag\n\n**Response fields per event:**\n- `whyInvited` (string): Personalised reason (e.g., 'You're in the London group hosting this event')"
+          }
+        },
+        {
+          "name": "Get Event Calendar (this week)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/events/calendar",
+            "description": "Returns this week's milestone timeline: intro drops, check-ins, prompt deadlines, and events.\n\n**Response fields per milestone:**\n- `type` (enum): INTRO_DROP | CHECK_IN | PROMPT_DEADLINE | EVENT\n- `title` (string): Display title\n- `scheduledAt` (ISO date-time): When it happens\n- `referenceId` (UUID|null): Related entity ID"
+          }
+        },
+        {
+          "name": "Get Event Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/events/EVENT_ID_HERE",
+            "description": "Returns full event detail including description, venue, organisers, and RSVP counts."
+          }
+        },
+        {
+          "name": "RSVP to Event",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/events/EVENT_ID_HERE/rsvp",
+            "description": "Mark as GOING. Co-attendance with another GOING user contributes to the `eventCoAttendance` matching dimension (processed after the event by the admin)."
+          }
+        },
+        {
+          "name": "Cancel RSVP",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/events/EVENT_ID_HERE/rsvp",
+            "description": "Remove GOING status."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "09 — Weekly Prompts",
+      "description": "Community prompt — one active per week set by admin. Users respond and can resonate with others' responses.",
+      "item": [
+        {
+          "name": "Get Current Prompt",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/prompts/current",
+            "description": "Returns the currently active weekly prompt.\n\n**Response fields:**\n- `data.id` (UUID): Prompt ID\n- `data.question` (string): The prompt question\n- `data.activeFrom` (ISO date-time): When this prompt became active\n- `data.activeTo` (ISO date-time): When this prompt expires\n- `data.hasResponded` (boolean): Whether the authenticated user has already responded\n\n**Errors:**\n- 404: No active prompt this week"
+          }
+        },
+        {
+          "name": "Submit Prompt Response",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/prompts/current/response",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TEXT\",\n  \"content\": \"The moment that shaped me most was moving to London alone at 23. It taught me self-reliance and opened my eyes to how vast the world is outside our hometown.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Submit a response to the current prompt. Published to the community feed.\n\n**Request fields:**\n- `type` (enum, required): TEXT | AUDIO\n- `content` (string, required when type=TEXT, max 1000): Written response text\n- `audioS3Key` (string, required when type=AUDIO): S3 key of uploaded audio file\n\nContributes to `promptResonance` matching dimension when another user resonates with your response."
+          }
+        },
+        {
+          "name": "Browse Community Responses",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/prompts/current/responses?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "prompts", "current", "responses"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            },
+            "description": "Returns paginated community responses to the current prompt."
+          }
+        },
+        {
+          "name": "Resonate with a Response",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/prompts/responses/RESPONSE_ID_HERE/resonate",
+            "description": "Mark that this response resonated with you.\n\n**Matching impact:**\n- Mutual resonate (both users resonated with each other's responses): `promptResonance = 1.0`\n- One-way resonate: `promptResonance = 0.5`\n- No resonate: `promptResonance = 0.0`"
+          }
+        },
+        {
+          "name": "Remove Resonance",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/prompts/responses/RESPONSE_ID_HERE/resonate",
+            "description": "Un-resonate with a response."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "10 — Conversations · Chat",
+      "description": "REST fallback for Firestore real-time chat. Flutter listens to Firestore directly for live updates; these endpoints handle history, send, read receipts, media URLs, and flagging.",
+      "item": [
+        {
+          "name": "List Conversations (Inbox)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/conversations",
+            "description": "Returns all conversation threads with last-message preview and unread count.\n\n**Response fields per conversation:**\n- `id` (UUID): Conversation ID\n- `otherUser` (object): Profile summary of the other participant\n- `lastMessage` (object): Preview of the most recent message\n- `unreadCount` (integer): Messages not yet read"
+          }
+        },
+        {
+          "name": "Get Message History",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/CONV_ID_HERE/messages?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "CONV_ID_HERE", "messages"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "before", "value": "", "description": "ISO date-time — fetch messages before this timestamp (reverse pagination)", "disabled": true }
+              ]
+            },
+            "description": "Paginated message history. Primary source is Firestore; use this as fallback.\n\n**Query params:**\n- `limit` (integer, default 50): Messages per page\n- `before` (ISO date-time, optional): Fetch messages before this timestamp\n\n**Response fields per message:**\n- `id` (UUID): Message ID\n- `type` (enum): TEXT | IMAGE | AUDIO\n- `content` (string): Text content (empty for media)\n- `mediaUrl` (string|null): CloudFront URL for IMAGE/AUDIO\n- `durationSeconds` (integer|null): Audio duration for AUDIO messages\n- `senderId` (UUID): Sender's user ID\n- `createdAt` (ISO date-time)"
+          }
+        },
+        {
+          "name": "Send Message",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/conversations/CONV_ID_HERE/messages",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"TEXT\",\n  \"content\": \"Hi! I noticed we both answered the FAITH_IMPORTANCE question in a very similar way. Would love to chat more.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Send a message. For IMAGE or AUDIO, upload to S3 first via the Upload URL endpoint.\n\n**Request fields:**\n- `type` (enum, required): TEXT | IMAGE | AUDIO\n- `content` (string, required for TEXT, max 2000): Message text\n- `mediaUrl` (string, required for IMAGE/AUDIO): CloudFront URL of uploaded file\n- `durationSeconds` (integer, required for AUDIO): Audio length in seconds\n\nTriggers FCM push notification if recipient is offline (respects quiet window 22:00–07:00 local time)."
+          }
+        },
+        {
+          "name": "Get Media Upload URL",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/conversations/CONV_ID_HERE/upload-url?mimeType=image/jpeg",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "conversations", "CONV_ID_HERE", "upload-url"],
+              "query": [{ "key": "mimeType", "value": "image/jpeg", "description": "MIME type of the file to upload e.g. image/jpeg, audio/mp4" }]
+            },
+            "description": "Get a presigned S3 PUT URL for uploading a media file before sending.\n\n**Query params:**\n- `mimeType` (string, required): MIME type of the upload\n\n**Response fields:**\n- `data.uploadUrl` (string): S3 presigned PUT URL (valid 15 min)\n- `data.publicUrl` (string): CloudFront URL to use in the Send Message request"
+          }
+        },
+        {
+          "name": "Mark Conversation as Read",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/conversations/CONV_ID_HERE/read",
+            "description": "REST fallback for updating read receipt. Firestore handles this in real-time normally."
+          }
+        },
+        {
+          "name": "Flag a Message",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/messages/MSG_ID_HERE/flag",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"HARASSMENT\",\n  \"details\": \"User sent repeated unsolicited messages with inappropriate content.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Report a message for moderation.\n\n**Request fields:**\n- `reason` (enum, required): HARASSMENT | SPAM | HATE_SPEECH | INAPPROPRIATE_CONTENT | SCAM | OTHER\n- `details` (string, optional, max 500): Additional context\n\nAfter 3 flags from different users, message is auto-hidden in Firestore."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "11 — Connections",
+      "description": "Send, manage, and list connection requests. Accepting creates a Match record and opens a conversation.",
+      "item": [
+        {
+          "name": "Send Connection Request",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/connections",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetUserId\": \"TARGET_USER_UUID_HERE\",\n  \"message\": \"Your response to the IDEAL_WEEKEND prompt really resonated with me. Would love to connect!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Send a connection request.\n\n**Request fields:**\n- `targetUserId` (UUID, required): The user to connect with\n- `message` (string, optional, max 300): Personal note included with the request"
+          }
+        },
+        {
+          "name": "List Connections",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/connections?status=PENDING",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "connections"],
+              "query": [{ "key": "status", "value": "PENDING", "description": "PENDING | ACCEPTED | DECLINED" }]
+            },
+            "description": "List connections filtered by status.\n\n**Query params:**\n- `status` (enum, optional): PENDING | ACCEPTED | DECLINED"
+          }
+        },
+        {
+          "name": "Accept Connection Request",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/connections/CONNECTION_ID_HERE/accept",
+            "description": "Accept an incoming connection request. Creates a mutual Match record and opens a conversation thread."
+          }
+        },
+        {
+          "name": "Decline Connection Request",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/connections/CONNECTION_ID_HERE/decline",
+            "description": "Decline an incoming connection request. The sender is not notified."
+          }
+        },
+        {
+          "name": "Withdraw Sent Request",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/connections/CONNECTION_ID_HERE",
+            "description": "Withdraw a connection request you sent (only while still PENDING)."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "12 — Habits · Consistency Hub",
+      "description": "10 preset habits. Log completions, view streaks, weekly dots, history charts, and AI reflection.",
+      "item": [
+        {
+          "name": "List All Habits",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/habits",
+            "description": "Returns the catalogue of all 10 habits with the user's current streak.\n\n**Habit keys:** MORNING_ROUTINE, EXERCISE, HEALTHY_EATING, MEDITATION, READING, JOURNALING, LEARNING, FAMILY_TIME, SOCIAL_CONNECTION, GRATITUDE"
+          }
+        },
+        {
+          "name": "All Habits with Streaks + Week Dots",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/habits/streaks",
+            "description": "Returns all habits enriched with streak data and weekly dot pattern.\n\n**Response fields per habit:**\n- `habitKey` (string): Habit identifier\n- `currentStreak` (integer): Consecutive days logged\n- `longestStreak` (integer): All-time best streak\n- `thisWeekDots` (boolean[7]): Mon=index0 → Sun=index6. True = logged that day\n- `loggedToday` (boolean): Whether the user has already logged today"
+          }
+        },
+        {
+          "name": "Log Habit Today",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/habits/EXERCISE/log",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"5km run in the park, felt great!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Log completion of a habit for today. Replace `EXERCISE` in the path with any habit key.\n\n**Path param:** `habitKey` — MORNING_ROUTINE | EXERCISE | HEALTHY_EATING | MEDITATION | READING | JOURNALING | LEARNING | FAMILY_TIME | SOCIAL_CONNECTION | GRATITUDE\n\n**Request fields:**\n- `date` (date, optional): YYYY-MM-DD — defaults to today UTC\n- `note` (string, optional, max 200): Brief note about this session"
+          }
+        },
+        {
+          "name": "Delete Habit Log Entry",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/habits/EXERCISE/log/2026-07-08",
+            "description": "Remove a habit log for a specific date. Recalculates streak automatically.\n\n**Path params:**\n- `habitKey`: Habit identifier\n- `date`: ISO date (YYYY-MM-DD)"
+          }
+        },
+        {
+          "name": "Get Habit Streak",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/habits/EXERCISE/streak",
+            "description": "Get streak data for a single habit."
+          }
+        },
+        {
+          "name": "Get Weekly Habit History (chart data)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/habits/EXERCISE/history?weeks=8",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "habits", "EXERCISE", "history"],
+              "query": [{ "key": "weeks", "value": "8", "description": "Number of past weeks. Default 8, max 52." }]
+            },
+            "description": "Returns per-week completion data for a bar/dot chart.\n\n**Query params:**\n- `weeks` (integer, default 8, max 52): Historical weeks to return"
+          }
+        },
+        {
+          "name": "Get Weekly Reflection (AI insight)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/habits/weekly-reflection",
+            "description": "Returns a rule-based or AI-generated insight about the user's habit patterns this week.\nRedis-cached for 7 days per user.\n\n**Response fields:**\n- `data.insight` (string): The reflection text\n- `data.topHabit` (string|null): The most consistent habit key\n- `data.streakHighlight` (string|null): Notable streak achievement"
+          }
+        },
+        {
+          "name": "Toggle Habit Summary Visibility on Profile",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/habits/summary-visibility",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visible\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Show or hide the habit consistency summary on the public profile card.\n\n**Request fields:**\n- `visible` (boolean, required): true = show on profile, false = hide"
+          }
+        },
+        {
+          "name": "Add Personal Reflection Note",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/habits/reflection",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"habitKey\": \"MEDITATION\",\n  \"note\": \"Completed my 30-day meditation challenge today. Feeling much calmer and more focused.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Save a personal reflection note.\n\n**Request fields:**\n- `habitKey` (string, optional): Link reflection to a specific habit\n- `note` (string, required, max 1000): Reflection text"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "13 — Signals · Dashboard",
+      "description": "Personal activity metrics shown on the dashboard screen.",
+      "item": [
+        {
+          "name": "Get Weekly Metrics (with WoW delta)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/signals/week",
+            "description": "Returns 4 weekly metrics compared to the previous week.\n\n**Response fields per metric (profileViews, connectionRequests, promptResonates, introPoolSize):**\n- `thisWeek` (integer): Count for current week (Mon–Sun UTC)\n- `lastWeek` (integer): Count for previous week\n- `delta` (integer): thisWeek - lastWeek (positive = growth)\n- `deltaPercent` (float|null): Percentage change. Null if lastWeek is 0"
+          }
+        },
+        {
+          "name": "Get Action Queue (priority items)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/signals/action-queue",
+            "description": "Returns prioritised items requiring the user's attention, sorted by urgency:\n1. RESPOND_TO_INTRO — unanswered introduction in current drop\n2. ACCEPT_CONNECTION — pending incoming connection request\n3. COMPLETE_PROFILE — completion score below 80%\n\n**Response fields per item:**\n- `type` (enum): RESPOND_TO_INTRO | ACCEPT_CONNECTION | COMPLETE_PROFILE\n- `title` (string): Display title\n- `description` (string): Action description\n- `referenceId` (UUID|null): Related entity to navigate to\n- `priority` (integer): Sort order (lower = higher priority)"
+          }
+        },
+        {
+          "name": "Get Momentum Chart (7-day views)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/signals/momentum",
+            "description": "Returns daily profile view counts for the past 7 days, oldest first.\nUse for a sparkline chart on the dashboard.\n\n**Response fields:**\n- `data.days` (integer[7]): View counts per day. Index 0 = 7 days ago, index 6 = today."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "14 — Saved Profiles · Shortlist",
+      "description": "Bookmark profiles with labels and notes. Compare up to 3 side by side.",
+      "item": [
+        {
+          "name": "Save a Profile",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/saved",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"savedUserId\": \"TARGET_USER_UUID_HERE\",\n  \"label\": \"FAVOURITE\",\n  \"notes\": \"Really liked her answer on family values. Based in Manchester — might work.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Add a profile to the shortlist.\n\n**Request fields:**\n- `savedUserId` (UUID, required): Profile to save\n- `label` (enum, optional): FAVOURITE | MAYBE | NOT_NOW — default MAYBE\n- `notes` (string, optional, max 500): Private note only you can see"
+          }
+        },
+        {
+          "name": "List Saved Profiles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved?label=FAVOURITE",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "saved"],
+              "query": [{ "key": "label", "value": "FAVOURITE", "description": "FAVOURITE | MAYBE | NOT_NOW — omit for all" }]
+            },
+            "description": "Returns saved profiles filtered by label."
+          }
+        },
+        {
+          "name": "Compare 2–3 Profiles",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/saved/compare?ids=UUID1,UUID2,UUID3",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "saved", "compare"],
+              "query": [{ "key": "ids", "value": "UUID1,UUID2,UUID3", "description": "Comma-separated list of 2–3 user UUIDs. All must be in your saved list." }]
+            },
+            "description": "Side-by-side comparison of real-life answers for 2–3 saved profiles.\n\n**Query params:**\n- `ids` (string, required): Comma-separated UUIDs, 2–3 profiles\n\n**Errors:**\n- 404: One or more UUIDs not in your saved list (ProfileNotSavedError)"
+          }
+        },
+        {
+          "name": "Update Label or Notes",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/api/v1/saved/TARGET_USER_UUID_HERE",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"FAVOURITE\",\n  \"notes\": \"Had a great conversation. Definitely worth pursuing.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Update the label or notes on a saved profile.\n\n**Request fields (all optional — send only what you want to change):**\n- `label` (enum): FAVOURITE | MAYBE | NOT_NOW\n- `notes` (string, max 500)"
+          }
+        },
+        {
+          "name": "Add/Update Note",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/saved/TARGET_USER_UUID_HERE/note",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"She mentioned she's open to moving to London in our introduction chat.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Add or replace the private note on a saved profile.\n\n**Request fields:**\n- `note` (string, required, max 500): New note text (replaces existing)"
+          }
+        },
+        {
+          "name": "Remove from Shortlist",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/saved/TARGET_USER_UUID_HERE",
+            "description": "Remove a profile from the saved shortlist."
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "15 — Trust Centre · Privacy",
+      "description": "Trust score dashboard, privacy settings, pause/resume, block, and report.",
+      "item": [
+        {
+          "name": "Get Trust Dashboard",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/trust",
+            "description": "Returns the composite trust score and all 6 layers.\nScore is persisted to Profile.trustScore on every call.\n\n**Response fields:**\n- `data.score` (integer 0–100): Composite trust score\n- `data.layers[]`: Array of trust layers:\n  - `key`: PHONE | PROFILE_COMPLETE | PHOTO | ID_VERIFIED | EMAIL | VOICE\n  - `points` (integer): Points earned (0 if not earned)\n  - `maxPoints` (integer): Max available from this layer\n  - `earned` (boolean): Whether the user has completed this layer\n  - `description` (string): What to do to earn these points\n- `data.isPaused` (boolean): Profile pause status\n- `data.privacySettings.showPhotosBeforeMutual` (boolean)\n- `data.privacySettings.showBioBeforeMutual` (boolean)\n- `data.privacySettings.showAnswersBeforeMutual` (boolean)"
+          }
+        },
+        {
+          "name": "Update Privacy Controls",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/profile/privacy-controls",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"showPhotosBeforeMutual\": false,\n  \"showBioBeforeMutual\": true,\n  \"showAnswersBeforeMutual\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Partial-merge update — only include fields you want to change.\n\n**Request fields (all optional):**\n- `showPhotosBeforeMutual` (boolean): Show photos before mutual connection? Default true\n- `showBioBeforeMutual` (boolean): Show bio/prompts before mutual connection? Default true\n- `showAnswersBeforeMutual` (boolean): Show real-life answers before connection? Default true"
+          }
+        },
+        {
+          "name": "Pause Profile Visibility",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profile/pause-visibility",
+            "description": "Sets Profile.isPaused = true. Profile disappears from discovery feeds and introduction pools.\nExisting connections and conversations are NOT affected."
+          }
+        },
+        {
+          "name": "Resume Profile Visibility",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/profile/pause-visibility",
+            "description": "Sets Profile.isPaused = false. Profile reappears in discovery feeds."
+          }
+        },
+        {
+          "name": "Get Access Level Definitions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile/access-levels",
+            "description": "Returns static definitions of PUBLIC / TRUSTED / FAMILY access levels and their visible fields. No DB call — pure function."
+          }
+        },
+        {
+          "name": "Block User",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/trust/block",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetUserId\": \"USER_UUID_TO_BLOCK\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Block a user. Blocked users cannot view your profile, send messages, or appear in discovery.\n\n**Request fields:**\n- `targetUserId` (UUID, required): User to block"
+          }
+        },
+        {
+          "name": "Unblock User",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/trust/block/USER_UUID_HERE",
+            "description": "Unblock a previously blocked user."
+          }
+        },
+        {
+          "name": "List Blocked Users",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/trust/blocks",
+            "description": "Returns all users blocked by the authenticated user."
+          }
+        },
+        {
+          "name": "Report User",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/trust/report",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targetUserId\": \"USER_UUID_TO_REPORT\",\n  \"reason\": \"FAKE_PROFILE\",\n  \"details\": \"The profile photos appear to be stock images. The information is inconsistent.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Report a user to the moderation team.\n\n**Request fields:**\n- `targetUserId` (UUID, required): User to report\n- `reason` (enum, required): FAKE_PROFILE | HARASSMENT | SPAM | INAPPROPRIATE_CONTENT | SCAM | OTHER\n- `details` (string, optional, max 1000): Additional context for moderators"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "16 — Payments · Membership & Diamonds",
+      "description": "Founding Member subscription (Stripe global / Razorpay India) and diamond currency.",
+      "item": [
+        {
+          "name": "Get Membership Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/payment/membership",
+            "description": "Returns the user's Founding Member status.\n\n**Response fields:**\n- `data.isActive` (boolean): Whether an active subscription exists\n- `data.plan` (string|null): Plan name\n- `data.currentPeriodEnd` (ISO date-time|null): Renewal date\n- `data.cancelAtPeriodEnd` (boolean): Whether subscription will cancel at renewal"
+          }
+        },
+        {
+          "name": "Create Stripe Checkout (membership)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/payment/stripe/checkout",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Creates a Stripe Checkout session for the Founding Member subscription.\nRedirect user to `checkoutUrl` in a WebView.\n\n**Response fields:**\n- `data.checkoutUrl` (string): Stripe-hosted checkout page URL\n- `data.sessionId` (string): Stripe session ID for tracking"
+          }
+        },
+        {
+          "name": "Create Razorpay Order (India)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/payment/razorpay/order",
+            "description": "Creates a Razorpay order for users in India. Pass `orderId` to the Razorpay Flutter SDK.\n\n**Response fields:**\n- `data.orderId` (string): Razorpay order ID → pass to Flutter SDK\n- `data.amount` (integer): Amount in paise (₹ × 100)\n- `data.currency` (string): Always INR"
+          }
+        },
+        {
+          "name": "Capture Razorpay Payment",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/payment/razorpay/capture",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"razorpayPaymentId\": \"pay_XXXXXXXXXXXX\",\n  \"razorpayOrderId\": \"order_XXXXXXXXXXXX\",\n  \"razorpaySignature\": \"HMAC_SHA256_SIGNATURE_FROM_SDK\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Call after the Razorpay Flutter SDK returns a successful payment callback.\n\n**Request fields:**\n- `razorpayPaymentId` (string, required): From SDK success callback\n- `razorpayOrderId` (string, required): From the create-order step\n- `razorpaySignature` (string, required): HMAC-SHA256 signature from SDK — verified server-side"
+          }
+        },
+        {
+          "name": "Get Diamond Balance",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/payment/diamonds/balance",
+            "description": "Returns current diamond balance and recent transactions.\n\n**Response fields:**\n- `data.balance` (integer): Current diamonds\n- `data.recentTransactions[]`:\n  - `delta` (integer): +credit / -debit\n  - `balanceAfter` (integer): Balance after this transaction\n  - `reason` (string): Ledger reason code\n  - `createdAt` (ISO date-time)"
+          }
+        },
+        {
+          "name": "Purchase Diamond Package",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/payment/diamonds/purchase",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"packageId\": \"POPULAR_150\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a Stripe Checkout session for a diamond package.\n\n**Request fields:**\n- `packageId` (enum, required):\n  - `STARTER_50`: 50 diamonds\n  - `POPULAR_150`: 150 diamonds (most popular)\n  - `VALUE_350`: 350 diamonds\n  - `PREMIUM_750`: 750 diamonds"
+          }
+        },
+        {
+          "name": "Spend Diamonds",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/payment/diamonds/spend",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50,\n  \"reason\": \"INTRO_EARLY_VIEW\",\n  \"referenceId\": \"DROP_UUID_HERE\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Deduct diamonds from balance. Appends a debit row to the append-only ledger.\n\n**Request fields:**\n- `amount` (integer, required, min 1): Diamonds to spend\n- `reason` (enum, required): INTRO_EARLY_VIEW | INTRO_EARLY_UNLOCK | GROUP_CONVERSATION_INITIATION | CUSTOM\n- `referenceId` (UUID, optional): Related entity (drop ID, group ID etc.)\n\n**Errors:**\n- 402: Insufficient diamonds (InsufficientDiamondsError)"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "17 — Verification · Identity",
+      "description": "ID document + selfie verification. Submit → admin review → approved/rejected.",
+      "item": [
+        {
+          "name": "Get Upload URL (ID doc or selfie)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/verification/upload-url?type=ID_DOCUMENT",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "verification", "upload-url"],
+              "query": [{ "key": "type", "value": "ID_DOCUMENT", "description": "ID_DOCUMENT | SELFIE" }]
+            },
+            "description": "Get a presigned S3 PUT URL for uploading the verification document or selfie.\nCall twice — once for `ID_DOCUMENT`, once for `SELFIE`.\n\n**Query params:**\n- `type` (enum, required): ID_DOCUMENT | SELFIE\n\n**Response fields:**\n- `data.uploadUrl` (string): S3 presigned PUT URL (valid 15 min)\n- `data.s3Key` (string): S3 key to pass to Submit Verification"
+          }
+        },
+        {
+          "name": "Submit Verification Request",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/verification/submit",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idDocumentS3Key\": \"verification/user-uuid/passport-abc123.jpg\",\n  \"selfieS3Key\": \"verification/user-uuid/selfie-abc123.jpg\",\n  \"documentType\": \"PASSPORT\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Submit for admin review. Creates a VerificationRequest in PENDING status.\n\n**Request fields:**\n- `idDocumentS3Key` (string, required): S3 key from ID_DOCUMENT upload\n- `selfieS3Key` (string, required): S3 key from SELFIE upload\n- `documentType` (enum, required): PASSPORT | DRIVING_LICENCE | NATIONAL_ID\n\nOn admin approval: +25 trust score points, `isVerified = true` on profile."
+          }
+        },
+        {
+          "name": "Get Verification Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/verification/status",
+            "description": "Poll for verification status.\n\n**Response fields:**\n- `data.status` (enum): NOT_SUBMITTED | PENDING | APPROVED | REJECTED\n- `data.submittedAt` (ISO date-time|null)\n- `data.reviewedAt` (ISO date-time|null)\n- `data.rejectionReason` (string|null): Admin's reason if REJECTED\n- `data.trustScore` (integer): Current trust score"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "18 — Match Tuning · Preferences",
+      "description": "Two-question preference UI that adjusts algorithm weights. Preview rank impact before saving.",
+      "item": [
+        {
+          "name": "Get Current Tuning",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/profile/match-tuning",
+            "description": "Returns current tuning preferences as two 1–5 ratings.\n\n**Response fields:**\n- `data.settlementImportance` (integer 1–5): Current setting. Default 3\n- `data.familyImportance` (integer 1–5): Current setting. Default 3\n- `data.settlementMultiplier` (float): Applied multiplier (1=×0.5, 3=×1.0, 5=×2.5)\n- `data.familyMultiplier` (float): Applied multiplier\n- `data.lastUpdatedAt` (ISO date-time|null): When last saved"
+          }
+        },
+        {
+          "name": "Preview Rank Impact (before saving)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/profile/match-tuning/impact?settlementImportance=5&familyImportance=4",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "profile", "match-tuning", "impact"],
+              "query": [
+                { "key": "settlementImportance", "value": "5", "description": "Proposed value 1–5" },
+                { "key": "familyImportance", "value": "4", "description": "Proposed value 1–5" }
+              ]
+            },
+            "description": "Preview the rank change WITHOUT saving. Applies proposed weights to top 20 stored MatchScore pairs.\n\n**Query params:**\n- `settlementImportance` (integer 1–5, required)\n- `familyImportance` (integer 1–5, required)\n\n**Response fields:**\n- `data.profilesUp` (integer): Profiles that would rank higher\n- `data.profilesDown` (integer): Profiles that would rank lower\n- `data.profilesUnchanged` (integer)\n- `data.topGainers[]`: Profiles gaining the most rank"
+          }
+        },
+        {
+          "name": "Save Tuning Preferences",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/profile/match-tuning",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settlementImportance\": 5,\n  \"familyImportance\": 3\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Save tuning preferences. Enqueues a background score recompute for all stored match pairs.\n\n**Request fields:**\n- `settlementImportance` (integer 1–5, required): How important same-country settlement plans are\n- `familyImportance` (integer 1–5, required): How important family involvement is\n\n**Multiplier scale:** 1=×0.50, 2=×0.75, 3=×1.00, 4=×1.75, 5=×2.50"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "19 — Admin Panel",
+      "description": "Admin-only endpoints. Requires admin JWT from POST /admin/auth/login. Role required varies per endpoint.",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.success && res.data) {",
+                  "  pm.collectionVariables.set('access_token', res.data.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/auth/login",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@abroadmatrimony.com\",\n  \"password\": \"your-admin-password\",\n  \"totp\": \"123456\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Admin login requires email + password (bcrypt) + 6-digit TOTP from authenticator app.\n\n**Request fields:**\n- `email` (string, required): Admin account email\n- `password` (string, required): Admin password\n- `totp` (string, required): 6-digit code from TOTP authenticator app"
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/admin/users?page=1&limit=50&status=ACTIVE",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "50" },
+                { "key": "status", "value": "ACTIVE", "description": "ACTIVE | SUSPENDED | BANNED" },
+                { "key": "search", "value": "", "description": "Filter by phone or name", "disabled": true }
+              ]
+            },
+            "description": "Paginated user list. Requires MODERATOR+ role."
+          }
+        },
+        {
+          "name": "Get User Detail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/users/USER_UUID_HERE",
+            "description": "Full user detail including profile, verification status, device list, payment history."
+          }
+        },
+        {
+          "name": "Suspend User",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/users/USER_UUID_HERE/suspend",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Multiple harassment reports from different users.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Suspend a user. Logs to audit trail.\n\n**Request fields:**\n- `reason` (string, required): Reason logged in audit trail"
+          }
+        },
+        {
+          "name": "Get KPI Dashboard",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/analytics/kpi",
+            "description": "Returns DAU, MAU, new registrations, active memberships, diamond revenue, and retention rates. Requires ADMIN+ role."
+          }
+        },
+        {
+          "name": "List Feature Flags",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/feature-flags",
+            "description": "Returns all feature flags with rollout percentage and allowlists."
+          }
+        },
+        {
+          "name": "Create Feature Flag",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/feature-flags",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"algorithm_v2\",\n  \"enabled\": true,\n  \"rolloutPercent\": 10,\n  \"allowedEnvironments\": [\"production\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create a feature flag.\n\n**Request fields:**\n- `key` (string, required): Flag identifier\n- `enabled` (boolean, required): Global on/off\n- `rolloutPercent` (integer 0–100, optional): Percentage-based rollout\n- `allowedUserIds` (UUID[], optional): Specific users always getting this flag\n- `allowedEnvironments` (string[], optional): Environments where active"
+          }
+        },
+        {
+          "name": "List Verification Queue",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/admin/verification?status=PENDING",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "verification"],
+              "query": [{ "key": "status", "value": "PENDING", "description": "PENDING | APPROVED | REJECTED" }]
+            },
+            "description": "List verification requests filtered by status. Requires MODERATOR+ role."
+          }
+        },
+        {
+          "name": "Approve Verification",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/verification/REQUEST_UUID_HERE/approve",
+            "description": "Approve an ID verification request. Adds 25 trust score points and sets isVerified = true on the profile."
+          }
+        },
+        {
+          "name": "List System Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/admin/system-config",
+            "description": "All key-value system config entries. Examples: SUGGESTED_GROUPS_MAX, INTRO_DIAMOND_COST."
+          }
+        },
+        {
+          "name": "Upsert System Config",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/system-config",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"SUGGESTED_GROUPS_MAX\",\n  \"value\": \"20\",\n  \"description\": \"Maximum number of group suggestions shown during onboarding and in the home feed\",\n  \"isProtected\": false\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Create or update a system config value.\n\n**Request fields:**\n- `key` (string, required): Config key\n- `value` (string, required): String value\n- `description` (string, optional): Human-readable description\n- `isProtected` (boolean, optional): If true, key cannot be deleted"
+          }
+        },
+        {
+          "name": "Propose AI Introduction Drops",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/admin/ai/propose-drops",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"region\": \"United Kingdom\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Trigger AI to propose DRAFT introduction drops for a region.\nRequires OPENAI_API_KEY. Creates IntroductionDrop rows in DRAFT status for admin review.\n\n**Request fields:**\n- `region` (string, required): Country/region to generate drops for"
+          }
+        }
+      ]
+    }
+
+  ]
+}

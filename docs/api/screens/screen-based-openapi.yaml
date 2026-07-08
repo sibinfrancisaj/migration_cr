@@ -1,0 +1,3310 @@
+openapi: 3.1.0
+info:
+  title: Abroad Matrimony — Screen-Based API Reference
+  version: 1.0.0
+  description: |
+    Complete API reference **organised by app screen** rather than by domain.
+    Each tag maps to one screen (or logical section) of the Flutter app, listing
+    every API call that screen makes with full request/response field descriptions
+    and usage notes.
+
+    ## Authentication
+    All endpoints except `/health`, `/api/v1/auth/otp/*`, and `/api/v1/auth/magic-link/*`
+    require an `Authorization: Bearer <access_token>` header.
+
+    | Token | TTL | How to obtain |
+    |-------|-----|---------------|
+    | `access_token` | 15 minutes | `POST /auth/otp/verify` or `POST /auth/token/refresh` |
+    | `refresh_token` | 30 days | Same endpoints; rotate via `POST /auth/token/refresh` |
+
+    ## Response envelope
+    Every response uses the `ApiResponse<T>` envelope:
+    ```json
+    {
+      "success": true,
+      "data": { ... },
+      "message": "Human-readable status",
+      "requestId": "uuid-trace-id"
+    }
+    ```
+    Errors add `"error": { "code": "ERROR_CODE", "details": {...} }`.
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.abroadmatrimony.com
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: "01 — Splash"
+    description: App startup health check before loading the main app.
+  - name: "02 — Auth · Login"
+    description: |
+      Phone OTP flow, JWT management, trusted-device bypass, magic link.
+      **No auth header required** for OTP request/verify and magic link endpoints.
+  - name: "03 — Profile Setup · Onboarding"
+    description: |
+      Multi-step onboarding shown once after first login:
+      Basic info → 12 Real-Life answers → 3 Story prompts → Photo upload → Voice intro.
+      Also covers profile read and edit thereafter.
+  - name: "04 — Home · Discovery Feed"
+    description: Main screen — cursor-paginated ranked list of potential matches.
+  - name: "05 — Profile Detail · Match View"
+    description: View a profile, log the visit, and fetch compatibility breakdown + why-this-match cards.
+  - name: "06 — Introductions · Drop Screen"
+    description: Curated introduction drops — browse, early-access view (costs diamonds), unlock full profile.
+  - name: "07 — Groups · Community"
+    description: Regional/cultural/professional/interest groups, social feed (posts, comments, likes), join/leave, proposals.
+  - name: "08 — Events · Gatherings"
+    description: Community events — list, calendar, detail, RSVP / cancel RSVP.
+  - name: "09 — Weekly Prompts"
+    description: View and respond to the active community prompt; resonate with others' responses.
+  - name: "10 — Conversations · Chat"
+    description: |
+      REST fallback for Firestore real-time chat.
+      Flutter reads messages live from Firestore; these endpoints are used for
+      history pagination, sending, read receipts, media upload URLs, and moderation.
+  - name: "11 — Connections"
+    description: Send, accept, decline, withdraw connection requests and list active connections.
+  - name: "12 — Habits · Consistency Hub"
+    description: Log/delete daily habits, view per-habit streaks, weekly dot charts, history, and AI-generated reflection.
+  - name: "13 — Signals · Dashboard"
+    description: Personal activity metrics — weekly stats with WoW delta, action queue, and 7-day view momentum chart.
+  - name: "14 — Saved Profiles · Shortlist"
+    description: Bookmark profiles with labels and notes; compare 2–3 profiles side by side.
+  - name: "15 — Trust Centre · Privacy"
+    description: Trust score (6-layer, max 100), privacy controls, profile pause/resume, block, report.
+  - name: "16 — Payments · Membership & Diamonds"
+    description: Founding Member subscription (Stripe / Razorpay), diamond packages, balance and spend.
+  - name: "17 — Verification · Identity"
+    description: Submit ID document + selfie for admin review; poll status.
+  - name: "18 — Match Tuning · Preferences"
+    description: Two-question preference UI that adjusts algorithm weights; preview rank impact.
+  - name: "19 — Admin Panel"
+    description: |
+      Admin-only endpoints. Requires `requireAdminRole` middleware.
+      Covers: user management, feature flags, verification queue, KPI analytics,
+      events, prompts, groups CRUD, AI proposals, system config, seeder control.
+
+paths:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 01 — SPLASH
+  # ─────────────────────────────────────────────────────────────────────────
+  /health:
+    get:
+      tags: ["01 — Splash"]
+      summary: Server health check
+      description: |
+        Called on app startup to verify the API is reachable before loading the
+        main navigation. Returns 200 when the server is up. No auth required.
+      security: []
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                    description: Always "ok" when healthy.
+                  uptime:
+                    type: number
+                    example: 3600.5
+                    description: Server uptime in seconds.
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: Server UTC time at the moment of the request.
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 02 — AUTH · LOGIN
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/auth/otp/request:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Request OTP (step 1 of login)
+      description: |
+        Sends a 6-digit OTP via Twilio Verify to the provided phone number.
+        Rate-limited to **5 attempts per phone per 15 minutes**.
+        Does NOT create a user row — that happens on successful verify.
+      security: []
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+                  pattern: "^\\+[1-9]\\d{1,14}$"
+                  example: "+447911123456"
+                  description: |
+                    Full E.164 phone number including country code.
+                    Example: +447911123456 (UK), +4915123456789 (Germany).
+            example:
+              phone: "+447911123456"
+      responses:
+        "200":
+          description: OTP sent successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data: { otpSent: true }
+                message: "OTP sent"
+        "429":
+          description: Rate limit exceeded (5 attempts / 15 min per phone)
+
+  /api/v1/auth/otp/verify:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Verify OTP and obtain JWT tokens (step 2 of login)
+      description: |
+        Verifies the 6-digit OTP via Twilio. On success:
+        - Creates or retrieves the `User` row (upsert by phone)
+        - Issues `access_token` (15 min) + `refresh_token` (30 days)
+        - Fires `USER_REGISTERED` CloudEvent for genuinely new users
+        - Stamps `isTrusted` on the device if this is the first successful OTP on it
+        - Registers the device fingerprint (max 5 devices per user)
+      security: []
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code, deviceFingerprint]
+              properties:
+                phone:
+                  type: string
+                  pattern: "^\\+[1-9]\\d{1,14}$"
+                  example: "+447911123456"
+                  description: Same phone used in the OTP request step.
+                code:
+                  type: string
+                  pattern: "^\\d{6}$"
+                  example: "123456"
+                  description: 6-digit OTP received via SMS.
+                deviceFingerprint:
+                  type: string
+                  format: uuid
+                  example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  description: |
+                    Stable UUID generated by the Flutter app for this device.
+                    Used for trusted-device bypass on future logins.
+                    Persisted in Flutter secure storage, never changes for the same install.
+      responses:
+        "200":
+          description: OTP verified — tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+
+  /api/v1/auth/token/refresh:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Rotate JWT tokens using a refresh token
+      description: |
+        Issues a new `access_token` + `refresh_token` pair.
+        The old refresh token is **immediately revoked** (one-time use).
+        Reuse of a previously-used token revokes ALL devices for the user.
+        Call this automatically when the access token is 401.
+      security: []
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken, deviceFingerprint]
+              properties:
+                refreshToken:
+                  type: string
+                  description: The refresh token received from the last verify or refresh call.
+                deviceFingerprint:
+                  type: string
+                  format: uuid
+                  description: Same device fingerprint used during OTP verify.
+      responses:
+        "200":
+          description: New token pair issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Invalid, expired, or already-used refresh token
+
+  /api/v1/auth/logout:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Logout current device
+      description: Revokes the refresh token for the current device only. Access token expires naturally (15 min).
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+                  description: Refresh token to revoke.
+      responses:
+        "200":
+          description: Logged out successfully
+
+  /api/v1/auth/logout/all:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Logout all devices
+      description: Revokes ALL refresh tokens for the authenticated user across every registered device.
+      operationId: logoutAll
+      responses:
+        "200":
+          description: All sessions terminated
+
+  /api/v1/auth/trusted-device:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Skip OTP for a trusted device
+      description: |
+        If the device fingerprint was previously stamped as trusted (on a successful OTP verify
+        within the last `TRUSTED_DEVICE_TTL_DAYS` days, default 90), this endpoint issues a
+        new token pair **without** sending an OTP. Flutter should call this first and fall back
+        to the full OTP flow if it returns 401.
+        Rate-limited: 10 attempts per phone per hour.
+      security: []
+      operationId: trustedDeviceLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, deviceFingerprint]
+              properties:
+                phone:
+                  type: string
+                  pattern: "^\\+[1-9]\\d{1,14}$"
+                  example: "+447911123456"
+                  description: E.164 phone number.
+                deviceFingerprint:
+                  type: string
+                  format: uuid
+                  description: Device UUID from Flutter secure storage.
+      responses:
+        "200":
+          description: Trusted device recognised — tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          description: Device not trusted — fall back to OTP flow
+
+  /api/v1/auth/firebase-token:
+    get:
+      tags: ["02 — Auth · Login"]
+      summary: Get Firebase custom auth token
+      description: |
+        Issues a Firebase custom token so the Flutter app can call
+        `FirebaseAuth.signInWithCustomToken()` and then read Firestore
+        (real-time messages) and Realtime DB (presence) directly.
+        Call once per session, immediately after OTP verify.
+      operationId: getFirebaseToken
+      responses:
+        "200":
+          description: Firebase token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  firebaseToken:
+                    type: string
+                    description: Short-lived Firebase custom token (1 hour). Pass to `signInWithCustomToken()`.
+
+  /api/v1/auth/magic-link/send:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Send email magic link (alternative login)
+      description: Sends a one-time login link to the user's email address. Link expires in 15 minutes.
+      security: []
+      operationId: sendMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User's email address.
+      responses:
+        "200":
+          description: Magic link sent
+
+  /api/v1/auth/magic-link/verify:
+    post:
+      tags: ["02 — Auth · Login"]
+      summary: Verify email magic link token
+      description: Exchanges the token from the magic link URL for a JWT token pair.
+      security: []
+      operationId: verifyMagicLink
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token:
+                  type: string
+                  description: The token extracted from the magic link URL parameter.
+      responses:
+        "200":
+          description: Magic link verified — tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 03 — PROFILE SETUP · ONBOARDING
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/profile:
+    post:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Create profile (onboarding step 1)
+      description: |
+        Creates the user's profile with basic demographic information.
+        Called once during onboarding. Returns the profile with an initial completion score.
+        After creation, subsequent updates use `PUT /api/v1/profile`.
+      operationId: createProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProfileRequest"
+      responses:
+        "201":
+          description: Profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+
+  /api/v1/profile/me:
+    get:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Get own profile
+      description: Returns the authenticated user's full profile including completion score, all answers, story prompts, and photos.
+      operationId: getMyProfile
+      responses:
+        "200":
+          description: Own profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileResponse"
+
+  /api/v1/profile/real-life/{questionKey}:
+    put:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Upsert a real-life question answer (onboarding step 2)
+      description: |
+        Saves or updates the answer to one of the 12 real-life personality questions.
+        Each `questionKey` corresponds to a dimension used in the matching algorithm.
+        Triggers a profile intelligence re-compute job (60 s debounce) if AI is configured.
+      operationId: upsertRealLifeAnswer
+      parameters:
+        - name: questionKey
+          in: path
+          required: true
+          description: |
+            One of the 12 question keys: `FAITH_IMPORTANCE`, `PARENTING_STYLE`,
+            `DIET_PREFERENCE`, `EXERCISE_HABIT`, `FAMILY_STRUCTURE`,
+            `PARENTS_INVOLVEMENT`, `FINANCIAL_STYLE`, `CONFLICT_RESOLUTION`,
+            `LIVING_PREFERENCE`, `SOCIAL_LIFE`, `CAREER_AMBITION`, `PET_PREFERENCE`.
+          schema:
+            type: string
+            enum:
+              - FAITH_IMPORTANCE
+              - PARENTING_STYLE
+              - DIET_PREFERENCE
+              - EXERCISE_HABIT
+              - FAMILY_STRUCTURE
+              - PARENTS_INVOLVEMENT
+              - FINANCIAL_STYLE
+              - CONFLICT_RESOLUTION
+              - LIVING_PREFERENCE
+              - SOCIAL_LIFE
+              - CAREER_AMBITION
+              - PET_PREFERENCE
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer:
+                  type: string
+                  maxLength: 500
+                  description: The user's free-text or enum-value answer to this question.
+                  example: "I attend religious services weekly and it's important my partner shares this."
+      responses:
+        "200":
+          description: Answer saved, completion score recalculated
+
+  /api/v1/profile/story/{promptKey}:
+    put:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Upsert a story prompt answer (onboarding step 3)
+      description: |
+        Saves the user's response to one of the 3 story prompts.
+        Story prompts are shown on the public profile and used in AI trait analysis.
+      operationId: upsertStoryPrompt
+      parameters:
+        - name: promptKey
+          in: path
+          required: true
+          description: |
+            One of 3 story keys: `HIGHLIGHT_MOMENT`, `IDEAL_WEEKEND`, `LOOKING_FOR`.
+          schema:
+            type: string
+            enum: [HIGHLIGHT_MOMENT, IDEAL_WEEKEND, LOOKING_FOR]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [answer]
+              properties:
+                answer:
+                  type: string
+                  maxLength: 1000
+                  description: Free-text story answer. Min ~50 chars recommended for AI analysis quality.
+      responses:
+        "200":
+          description: Story prompt saved
+
+  /api/v1/profile/media:
+    post:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Upload profile photo (onboarding step 4)
+      description: |
+        Accepts `multipart/form-data` with a single image file.
+        Uploads to private S3 bucket; serves via CloudFront CDN.
+        Max 6 photos per user. Accepted: JPEG, PNG, WebP. Max size: 5 MB.
+      operationId: uploadProfilePhoto
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                  description: |
+                    Image file. Accepted formats: JPEG, PNG, WebP.
+                    Maximum file size: 5 MB. Minimum dimensions: 400×400 px recommended.
+      responses:
+        "201":
+          description: Photo uploaded; returns the CDN URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  photoUrl:
+                    type: string
+                    format: uri
+                    description: CloudFront URL of the uploaded photo.
+                  photoCount:
+                    type: integer
+                    description: Total photos now on the profile (max 6).
+
+  /api/v1/profile/voice-intro/upload-url:
+    get:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Get presigned URL for voice intro upload
+      description: |
+        Returns a short-lived S3 presigned PUT URL. Flutter uploads the audio file
+        directly to S3, then calls `POST /api/v1/profile/voice-intro` to save the key.
+        Accepted: MP3, M4A, WAV. Max 60 seconds.
+      operationId: getVoiceIntroUploadUrl
+      responses:
+        "200":
+          description: Presigned URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadUrl:
+                    type: string
+                    format: uri
+                    description: S3 presigned PUT URL. Valid for 15 minutes.
+                  s3Key:
+                    type: string
+                    description: S3 object key to pass to the save endpoint after upload.
+
+  /api/v1/profile/voice-intro:
+    post:
+      tags: ["03 — Profile Setup · Onboarding"]
+      summary: Save voice intro S3 key after upload
+      description: |
+        After uploading audio directly to S3, call this to persist the S3 key on the profile.
+        Triggers Whisper transcription + AI intelligence re-compute asynchronously.
+      operationId: saveVoiceIntro
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [s3Key]
+              properties:
+                s3Key:
+                  type: string
+                  description: The S3 object key returned by the upload-url endpoint.
+      responses:
+        "200":
+          description: Voice intro saved; transcription queued
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 04 — HOME · DISCOVERY FEED
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/discover:
+    get:
+      tags: ["04 — Home · Discovery Feed"]
+      summary: Get discovery feed (cursor-paginated)
+      description: |
+        Returns a ranked, paginated list of potential matches for the authenticated user.
+        Scores are personalised using the user's match tuning settings.
+        Use `cursor` from the previous response to fetch the next page.
+        Results exclude: paused profiles, blocked users, and already-connected users.
+      operationId: getDiscoveryFeed
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: |
+            Opaque pagination cursor from the `nextCursor` field of the previous response.
+            Omit to start from the first page.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Number of profiles per page. Range 1–100. Default 20.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Discovery feed page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DiscoveryItem"
+                  nextCursor:
+                    type: string
+                    nullable: true
+                    description: Pass as `cursor` in the next request. Null on last page.
+                  total:
+                    type: integer
+                    description: Total eligible profiles in the pool (not just this page).
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 05 — PROFILE DETAIL · MATCH VIEW
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/profiles/{id}:
+    get:
+      tags: ["05 — Profile Detail · Match View"]
+      summary: Get a user's public profile
+      description: |
+        Returns the public view of another user's profile. Privacy controls
+        (`showPhotosBeforeMutual`, `showBioBeforeMutual`, `showAnswersBeforeMutual`)
+        are enforced — fields may be redacted if the users are not mutually connected.
+      operationId: getProfile
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the user whose profile to fetch.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Public profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicProfileResponse"
+        "404":
+          description: Profile not found
+
+  /api/v1/profiles/{id}/view:
+    post:
+      tags: ["05 — Profile Detail · Match View"]
+      summary: Log a profile view
+      description: |
+        Records that the authenticated user viewed this profile.
+        Deduplicated with a 1-hour Redis window (one view event per viewer-profile pair per hour).
+        Used in the `profileViewMomentum` matching dimension and Signals dashboard.
+        Call this when the user opens the profile detail screen.
+      operationId: logProfileView
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the profile being viewed.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: View logged (or silently deduped within 1h window)
+        "400":
+          description: Cannot view own profile (ViewSelfError)
+
+  /api/v1/profiles/{id}/match-context:
+    get:
+      tags: ["05 — Profile Detail · Match View"]
+      summary: Get match context — compatibility breakdown + why-this-match
+      description: |
+        Returns the stored compatibility score breakdown across all 18 dimensions
+        and up to 3 "why this match" highlight cards for the profile pair.
+        LLM-generated narrative is Redis-cached for 24 hours; dimension cards for 1 hour.
+        Only available for profiles with a computed `MatchScore` entry.
+      operationId: getMatchContext
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: UUID of the other user.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Match context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MatchContextResponse"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 06 — INTRODUCTIONS · DROP SCREEN
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/introductions:
+    get:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: List current introductions (legacy weekly view)
+      description: Returns introductions assigned to the user in the current week's drops.
+      operationId: listIntroductions
+      responses:
+        "200":
+          description: Current introductions list
+
+  /api/v1/introductions/drops:
+    get:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: List available introduction drops
+      description: |
+        Returns all LIVE `IntroductionDrop` entries visible to the user.
+        Each drop is a themed pool (e.g., "UK Professionals Q3", "Event Pre-Connect: Diwali Gala").
+        Early access and unlock state is included per drop.
+      operationId: listDrops
+      responses:
+        "200":
+          description: List of drops
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drops:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DropSummary"
+
+  /api/v1/introductions/drops/{dropId}:
+    get:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: Get drop detail with blurred introductions
+      description: |
+        Returns the drop's metadata and the user's assigned introductions from that drop.
+        Profile photos and names are blurred unless the user has paid for early access or the
+        drop has reached its `releaseAt` date.
+      operationId: getDropDetail
+      parameters:
+        - name: dropId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Drop UUID.
+      responses:
+        "200":
+          description: Drop detail with (possibly blurred) introductions
+
+  /api/v1/introductions/drops/{dropId}/early-access:
+    post:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: Pay diamonds for early access to a drop
+      description: |
+        Spends `earlyAccessCost` diamonds (typically 50) to VIEW profiles in this drop
+        before the public release date. Profiles remain blurred until the user also
+        unlocks them. This operation is idempotent — calling it twice does not charge twice.
+      operationId: earlyAccessDrop
+      parameters:
+        - name: dropId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Early access granted; diamond ledger updated
+        "402":
+          description: Insufficient diamonds
+        "409":
+          description: Already have early access
+
+  /api/v1/introductions/drops/{dropId}/unlock:
+    post:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: Unlock a specific introduction in a drop
+      description: |
+        Spends `unlockCost` diamonds (typically 100) to fully reveal one introduction's
+        profile in this drop. Must have early access first.
+        Idempotent per user-drop pair.
+      operationId: unlockDrop
+      parameters:
+        - name: dropId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Introduction unlocked
+        "402":
+          description: Insufficient diamonds
+
+  /api/v1/introductions/{introId}:
+    get:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: Get single introduction detail
+      description: Returns full detail of one introduction, including score breakdown and why-this-match card.
+      operationId: getIntroductionDetail
+      parameters:
+        - name: introId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Introduction detail
+
+  /api/v1/introductions/unlock-early:
+    post:
+      tags: ["06 — Introductions · Drop Screen"]
+      summary: Spend diamonds to unlock all current-week intros early
+      description: |
+        Spends `EARLY_UNLOCK_DIAMOND_COST` (300 diamonds) to mark all introductions
+        in the current week as early-unlocked for this user.
+        Idempotent — does not charge twice if already unlocked.
+      operationId: unlockEarlyIntros
+      responses:
+        "200":
+          description: All current-week introductions unlocked
+        "402":
+          description: Insufficient diamonds (InsufficientDiamondsError)
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 07 — GROUPS · COMMUNITY
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/groups:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: List groups the user belongs to
+      description: Returns all groups the authenticated user has joined, sorted by recent activity.
+      operationId: listGroups
+      responses:
+        "200":
+          description: User's groups
+
+  /api/v1/groups/suggested:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: Suggested groups for home feed
+      description: |
+        Returns groups the user hasn't joined, ranked by country match + member count.
+        Maximum returned controlled by `SystemConfig.SUGGESTED_GROUPS_MAX` (default 20).
+      operationId: listSuggestedGroups
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Max number of suggestions to return.
+      responses:
+        "200":
+          description: Suggested groups
+
+  /api/v1/groups/onboarding-suggestions:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: Groups to suggest during onboarding
+      description: |
+        Returns a curated list of groups to show at the end of onboarding
+        (regional auto-join + top cultural/professional matches).
+      operationId: getOnboardingSuggestions
+      responses:
+        "200":
+          description: Onboarding group suggestions
+
+  /api/v1/groups/{groupId}:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: Get group detail
+      operationId: getGroup
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Group detail
+
+  /api/v1/groups/{groupId}/join:
+    post:
+      tags: ["07 — Groups · Community"]
+      summary: Join a group
+      description: |
+        Adds the user to the group. For REGIONAL groups, this happens automatically on
+        registration. For other types, the user manually joins from suggestions.
+        Initiating a conversation with another member from this group costs diamonds
+        (`GROUP_CONVERSATION_INITIATION` ledger reason).
+      operationId: joinGroup
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Joined group
+        "409":
+          description: Already a member
+
+  /api/v1/groups/{groupId}/leave:
+    delete:
+      tags: ["07 — Groups · Community"]
+      summary: Leave a group
+      operationId: leaveGroup
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Left group
+
+  /api/v1/groups/{groupId}/members:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: List group members (paginated)
+      operationId: getGroupMembers
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated member list
+
+  /api/v1/groups/{groupId}/feed:
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: Get group social feed (posts)
+      description: |
+        Returns posts sorted by `isPinned DESC, createdAt DESC`.
+        Flat structure — no nested threads. Includes like count and comment count.
+      operationId: getGroupFeed
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Group feed posts
+
+  /api/v1/groups/{groupId}/posts:
+    post:
+      tags: ["07 — Groups · Community"]
+      summary: Create a post in a group
+      operationId: createGroupPost
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  maxLength: 2000
+                  description: Post text content. No HTML — plain text only.
+      responses:
+        "201":
+          description: Post created
+
+  /api/v1/groups/{groupId}/posts/{postId}/like:
+    post:
+      tags: ["07 — Groups · Community"]
+      summary: Like a post (idempotent)
+      operationId: likePost
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Liked (or already liked — idempotent)
+    delete:
+      tags: ["07 — Groups · Community"]
+      summary: Unlike a post (idempotent)
+      operationId: unlikePost
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Unliked
+
+  /api/v1/groups/{groupId}/posts/{postId}/comments:
+    post:
+      tags: ["07 — Groups · Community"]
+      summary: Add a comment to a post
+      operationId: addComment
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content:
+                  type: string
+                  maxLength: 500
+                  description: Comment text. Plain text only.
+      responses:
+        "201":
+          description: Comment added
+    get:
+      tags: ["07 — Groups · Community"]
+      summary: List comments on a post
+      operationId: listComments
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Comments list
+
+  /api/v1/groups/proposals:
+    post:
+      tags: ["07 — Groups · Community"]
+      summary: Propose a new INTEREST group
+      description: |
+        Any member can propose a new Interest group. It is created in `PENDING_APPROVAL`
+        status and reviewed by an admin. On approval, a Group is created and the proposer
+        is auto-joined.
+      operationId: proposeGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, description]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  description: Proposed group name.
+                description:
+                  type: string
+                  maxLength: 500
+                  description: What the group is about and who it's for.
+                tags:
+                  type: array
+                  items:
+                    type: string
+                  description: Optional topic tags (e.g., ["cricket", "bollywood"]).
+      responses:
+        "201":
+          description: Proposal submitted for admin review
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 08 — EVENTS · GATHERINGS
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/events:
+    get:
+      tags: ["08 — Events · Gatherings"]
+      summary: List events
+      description: Returns events the user is eligible to see, with a `whyInvited` personalised reason.
+      operationId: listEvents
+      parameters:
+        - name: tag
+          in: query
+          required: false
+          description: Filter by event tag (e.g., "networking", "cultural").
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: upcoming
+          in: query
+          required: false
+          description: If true, returns only future events. Default false.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Events list
+
+  /api/v1/events/calendar:
+    get:
+      tags: ["08 — Events · Gatherings"]
+      summary: Get this week's calendar milestones
+      description: |
+        Returns a combined timeline of milestones for the current week:
+        - `INTRO_DROP` — next Sunday 09:00 UTC (weekly drop)
+        - `CHECK_IN` — next Sunday 09:00 UTC
+        - `PROMPT_*` — current active prompt deadline
+        - `EVENT` — any community events this week
+      operationId: getEventCalendar
+      responses:
+        "200":
+          description: Calendar milestones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  milestones:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CalendarMilestone"
+
+  /api/v1/events/{eventId}:
+    get:
+      tags: ["08 — Events · Gatherings"]
+      summary: Get event detail
+      operationId: getEvent
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Event detail
+
+  /api/v1/events/{eventId}/rsvp:
+    post:
+      tags: ["08 — Events · Gatherings"]
+      summary: RSVP to an event (status GOING)
+      description: |
+        Marks the user as GOING. Co-attendance with another user who also RSVPs
+        contributes to the `eventCoAttendance` matching dimension.
+      operationId: rsvpToEvent
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: RSVP recorded
+    delete:
+      tags: ["08 — Events · Gatherings"]
+      summary: Cancel RSVP
+      operationId: cancelRsvp
+      parameters:
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: RSVP cancelled
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 09 — WEEKLY PROMPTS
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/prompts/current:
+    get:
+      tags: ["09 — Weekly Prompts"]
+      summary: Get the current active weekly prompt
+      description: |
+        Returns the prompt currently active (admin-set). Returns 404 if no active prompt.
+        Users respond once per prompt period.
+      operationId: getCurrentPrompt
+      responses:
+        "200":
+          description: Current prompt
+        "404":
+          description: No active prompt this week
+
+  /api/v1/prompts/current/response:
+    post:
+      tags: ["09 — Weekly Prompts"]
+      summary: Submit a response to the current prompt
+      description: |
+        Accepts text or voice response. Voice: upload audio to S3 first, then pass the S3 key here.
+        Response is published to the community feed (visible to other members).
+        Contributes to `promptResonance` matching dimension.
+      operationId: respondToCurrentPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [TEXT, AUDIO]
+                  description: "`TEXT` for written response, `AUDIO` for voice response."
+                content:
+                  type: string
+                  maxLength: 1000
+                  description: Required when `type` is TEXT. The written response.
+                audioS3Key:
+                  type: string
+                  description: Required when `type` is AUDIO. The S3 key of the uploaded audio file.
+      responses:
+        "201":
+          description: Response published
+
+  /api/v1/prompts/current/responses:
+    get:
+      tags: ["09 — Weekly Prompts"]
+      summary: List community responses to the current prompt
+      operationId: getCurrentPromptResponses
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated community responses
+
+  /api/v1/prompts/responses/{responseId}/resonate:
+    post:
+      tags: ["09 — Weekly Prompts"]
+      summary: Resonate with a prompt response
+      description: |
+        Marks that this response resonated with the user. If the response author
+        also resonates with YOUR response, both users get `promptResonance = 1.0`
+        in their match score. One-way resonance = 0.5.
+      operationId: resonateWithResponse
+      parameters:
+        - name: responseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Resonated
+    delete:
+      tags: ["09 — Weekly Prompts"]
+      summary: Remove resonance
+      operationId: unresonateWithResponse
+      parameters:
+        - name: responseId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Resonance removed
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 10 — CONVERSATIONS · CHAT
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/conversations:
+    get:
+      tags: ["10 — Conversations · Chat"]
+      summary: List conversations (inbox)
+      description: |
+        Returns all conversation threads the user is part of, with the latest message
+        preview and unread count. Flutter opens a Firestore listener after this call
+        for real-time updates.
+      operationId: listConversations
+      responses:
+        "200":
+          description: Conversation list with last-message previews
+
+  /api/v1/conversations/{convId}/messages:
+    get:
+      tags: ["10 — Conversations · Chat"]
+      summary: Get message history (REST fallback)
+      description: Paginated message history. Used as fallback when Firestore listener is unavailable.
+      operationId: getConversationMessages
+      parameters:
+        - name: convId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: before
+          in: query
+          description: ISO timestamp — fetch messages before this time (for reverse pagination).
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Message history
+    post:
+      tags: ["10 — Conversations · Chat"]
+      summary: Send a message
+      description: |
+        Sends a TEXT, IMAGE, or AUDIO message. For IMAGE/AUDIO, upload to S3 first
+        via the `GET /upload-url` endpoint and pass the resulting URL here.
+        Also triggers FCM push if the recipient is offline (quiet-window aware).
+      operationId: sendMessage
+      parameters:
+        - name: convId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  enum: [TEXT, IMAGE, AUDIO]
+                  description: Message content type.
+                content:
+                  type: string
+                  maxLength: 2000
+                  description: Required for TEXT messages.
+                mediaUrl:
+                  type: string
+                  format: uri
+                  description: Required for IMAGE or AUDIO. CloudFront URL of the uploaded file.
+                durationSeconds:
+                  type: integer
+                  description: Audio duration in seconds. Required when type is AUDIO.
+      responses:
+        "201":
+          description: Message sent
+
+  /api/v1/conversations/{convId}/upload-url:
+    get:
+      tags: ["10 — Conversations · Chat"]
+      summary: Get presigned URL for media message upload
+      description: Returns an S3 presigned PUT URL for uploading an image or audio file before sending.
+      operationId: getMessageUploadUrl
+      parameters:
+        - name: convId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: mimeType
+          in: query
+          required: true
+          description: MIME type of the file to upload (e.g., `image/jpeg`, `audio/mp4`).
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Presigned upload URL
+
+  /api/v1/conversations/{convId}/read:
+    post:
+      tags: ["10 — Conversations · Chat"]
+      summary: Mark conversation as read (REST fallback)
+      description: Updates the read timestamp for this conversation. Use when Firestore is unavailable.
+      operationId: markConversationRead
+      parameters:
+        - name: convId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Marked as read
+
+  /api/v1/messages/{msgId}/flag:
+    post:
+      tags: ["10 — Conversations · Chat"]
+      summary: Flag a message for moderation
+      description: |
+        Reports a message. After 3 flags from different users, the message is
+        automatically hidden (`isHidden = true`) in Firestore.
+      operationId: flagMessage
+      parameters:
+        - name: msgId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum: [HARASSMENT, SPAM, HATE_SPEECH, INAPPROPRIATE_CONTENT, SCAM, OTHER]
+                  description: Reason for flagging. Used by moderators in the review queue.
+                details:
+                  type: string
+                  maxLength: 500
+                  description: Optional additional context for the flag.
+      responses:
+        "201":
+          description: Message flagged
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 11 — CONNECTIONS
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/connections:
+    post:
+      tags: ["11 — Connections"]
+      summary: Send a connection request
+      description: |
+        Sends a connection request to another user. Must be a Founding Member
+        (or spend diamonds) to initiate. Creates a `ConnectionRequest` in PENDING status.
+      operationId: sendConnectionRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId:
+                  type: string
+                  format: uuid
+                  description: UUID of the user to send the request to.
+                message:
+                  type: string
+                  maxLength: 300
+                  description: Optional personal note to include with the request.
+      responses:
+        "201":
+          description: Connection request sent
+    get:
+      tags: ["11 — Connections"]
+      summary: List connections and pending requests
+      operationId: listConnections
+      parameters:
+        - name: status
+          in: query
+          description: Filter by status. Options `PENDING`, `ACCEPTED`, `DECLINED`.
+          schema:
+            type: string
+            enum: [PENDING, ACCEPTED, DECLINED]
+      responses:
+        "200":
+          description: Connection list
+
+  /api/v1/connections/{id}/accept:
+    put:
+      tags: ["11 — Connections"]
+      summary: Accept a connection request
+      description: Accepts an incoming request. Creates a mutual Match record.
+      operationId: acceptConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Connection request ID.
+      responses:
+        "200":
+          description: Connection accepted; Match created
+
+  /api/v1/connections/{id}/decline:
+    put:
+      tags: ["11 — Connections"]
+      summary: Decline a connection request
+      operationId: declineConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Request declined
+
+  /api/v1/connections/{id}:
+    delete:
+      tags: ["11 — Connections"]
+      summary: Withdraw a sent connection request
+      operationId: withdrawConnection
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Request withdrawn
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 12 — HABITS · CONSISTENCY HUB
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/habits:
+    get:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: List all 10 preset habits
+      description: Returns the full catalogue of available habits with the user's current streak for each.
+      operationId: listHabits
+      responses:
+        "200":
+          description: All habits
+
+  /api/v1/habits/streaks:
+    get:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: All habits with streaks + this-week dots
+      description: |
+        Returns all habits enriched with:
+        - `currentStreak`: consecutive days logged
+        - `longestStreak`: all-time best
+        - `thisWeekDots`: 7-element boolean array (Mon=index 0 … Sun=index 6)
+          indicating which days were logged this week
+      operationId: getAllStreaks
+      responses:
+        "200":
+          description: Habits with streak data and weekly dot pattern
+
+  /api/v1/habits/weekly-reflection:
+    get:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Get AI-generated weekly habit reflection
+      description: |
+        Returns a rule-based (v1) or LLM-generated (v2) weekly insight about the
+        user's habit consistency. Redis-cached for 7 days per user.
+        Cache key: `habit:weekly-reflection:{userId}`.
+      operationId: getWeeklyReflection
+      responses:
+        "200":
+          description: Weekly reflection insight
+
+  /api/v1/habits/summary-visibility:
+    put:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Toggle habit summary visibility on profile
+      description: |
+        When `visible: true`, the user's habit consistency summary is shown on their
+        public profile card. Affects `habitSummaryVisible` on the Profile model.
+      operationId: updateSummaryVisibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visible]
+              properties:
+                visible:
+                  type: boolean
+                  description: true to show habit summary publicly, false to hide it.
+      responses:
+        "200":
+          description: Visibility preference saved
+
+  /api/v1/habits/{habitKey}/log:
+    post:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Log a habit for today
+      description: |
+        Records that the user completed this habit today.
+        One log per habit per date. Date defaults to today (UTC) if not provided.
+      operationId: logHabit
+      parameters:
+        - name: habitKey
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - MORNING_ROUTINE
+              - EXERCISE
+              - HEALTHY_EATING
+              - MEDITATION
+              - READING
+              - JOURNALING
+              - LEARNING
+              - FAMILY_TIME
+              - SOCIAL_CONNECTION
+              - GRATITUDE
+          description: The habit identifier.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date:
+                  type: string
+                  format: date
+                  description: ISO date (YYYY-MM-DD). Defaults to today UTC if omitted.
+                note:
+                  type: string
+                  maxLength: 200
+                  description: Optional brief note about this session.
+      responses:
+        "201":
+          description: Habit logged
+
+  /api/v1/habits/{habitKey}/log/{date}:
+    delete:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Delete a habit log entry
+      description: Removes the habit log for the specified date. Recalculates streak.
+      operationId: deleteHabitLog
+      parameters:
+        - name: habitKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: date
+          in: path
+          required: true
+          description: ISO date (YYYY-MM-DD).
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Log entry deleted
+
+  /api/v1/habits/{habitKey}/streak:
+    get:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Get streak for one habit
+      operationId: getHabitStreak
+      parameters:
+        - name: habitKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Streak data for this habit
+
+  /api/v1/habits/{habitKey}/history:
+    get:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Get weekly history chart data for one habit
+      description: |
+        Returns per-week completion data for display as a bar/dot chart.
+        Used on the habit detail screen to show consistency over time.
+      operationId: getHabitHistory
+      parameters:
+        - name: habitKey
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: weeks
+          in: query
+          description: Number of past weeks to return. Default 8, max 52.
+          schema:
+            type: integer
+            default: 8
+            maximum: 52
+      responses:
+        "200":
+          description: Weekly history
+
+  /api/v1/habits/reflection:
+    post:
+      tags: ["12 — Habits · Consistency Hub"]
+      summary: Add a personal reflection note
+      description: Saves a free-text reflection about habit progress. Separate from the AI-generated weekly reflection.
+      operationId: addReflection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                habitKey:
+                  type: string
+                  description: Optional — link reflection to a specific habit.
+                note:
+                  type: string
+                  maxLength: 1000
+                  description: The reflection text.
+      responses:
+        "201":
+          description: Reflection saved
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 13 — SIGNALS · DASHBOARD
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/signals/week:
+    get:
+      tags: ["13 — Signals · Dashboard"]
+      summary: Weekly activity metrics with WoW delta
+      description: |
+        Returns 4 metrics for the current week vs last week:
+        - `profileViews`: how many people viewed the user's profile
+        - `connectionRequests`: incoming requests this week
+        - `promptResonates`: resonates received on prompt responses
+        - `introPoolSize`: number of active introduction pools the user appears in
+      operationId: getWeeklySignals
+      responses:
+        "200":
+          description: Weekly signals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklySignalsResponse"
+
+  /api/v1/signals/action-queue:
+    get:
+      tags: ["13 — Signals · Dashboard"]
+      summary: Priority action queue
+      description: |
+        Returns a list of items requiring the user's attention, sorted by priority:
+        1. `RESPOND_TO_INTRO` — unaccepted introduction in current drop
+        2. `ACCEPT_CONNECTION` — pending incoming connection request
+        3. `COMPLETE_PROFILE` — completion score below 80%
+      operationId: getActionQueue
+      responses:
+        "200":
+          description: Prioritised action items
+
+  /api/v1/signals/momentum:
+    get:
+      tags: ["13 — Signals · Dashboard"]
+      summary: 7-day profile view momentum chart
+      description: |
+        Returns daily view counts for the past 7 days (oldest first) for
+        display as a sparkline chart on the dashboard.
+      operationId: getMomentum
+      responses:
+        "200":
+          description: 7-day view counts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 14 — SAVED PROFILES · SHORTLIST
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/saved:
+    post:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: Save a profile to shortlist
+      operationId: saveProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [savedUserId]
+              properties:
+                savedUserId:
+                  type: string
+                  format: uuid
+                  description: UUID of the user to save.
+                label:
+                  type: string
+                  enum: [FAVOURITE, MAYBE, NOT_NOW]
+                  description: Optional category label. Default MAYBE.
+                notes:
+                  type: string
+                  maxLength: 500
+                  description: Private note visible only to the saving user.
+      responses:
+        "201":
+          description: Profile saved
+    get:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: List saved profiles
+      operationId: listSavedProfiles
+      parameters:
+        - name: label
+          in: query
+          description: Filter by label (FAVOURITE, MAYBE, NOT_NOW).
+          schema:
+            type: string
+            enum: [FAVOURITE, MAYBE, NOT_NOW]
+      responses:
+        "200":
+          description: Saved profiles
+
+  /api/v1/saved/compare:
+    get:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: Compare 2–3 saved profiles side by side
+      description: |
+        Returns real-life answer comparison for 2–3 profiles. All IDs must be
+        in the user's saved list (ProfileNotSavedError → 404 otherwise).
+      operationId: compareProfiles
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          description: Comma-separated list of 2–3 user UUIDs.
+          schema:
+            type: string
+            example: "uuid-1,uuid-2,uuid-3"
+      responses:
+        "200":
+          description: Side-by-side real-life answer comparison
+
+  /api/v1/saved/{savedUserId}:
+    patch:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: Update label or notes on a saved profile
+      operationId: updateSavedProfile
+      parameters:
+        - name: savedUserId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  enum: [FAVOURITE, MAYBE, NOT_NOW]
+                notes:
+                  type: string
+                  maxLength: 500
+      responses:
+        "200":
+          description: Updated
+    delete:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: Remove a profile from the shortlist
+      operationId: unsaveProfile
+      parameters:
+        - name: savedUserId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Removed from shortlist
+
+  /api/v1/saved/{savedUserId}/note:
+    post:
+      tags: ["14 — Saved Profiles · Shortlist"]
+      summary: Add or update a note on a saved profile
+      operationId: addSavedNote
+      parameters:
+        - name: savedUserId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+                  maxLength: 500
+                  description: Private note text (replaces existing note).
+      responses:
+        "200":
+          description: Note saved
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 15 — TRUST CENTRE · PRIVACY
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/trust:
+    get:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Get trust dashboard
+      description: |
+        Returns the user's composite trust score (0–100) across 6 layers,
+        plus privacy settings and pause status.
+        Score is persisted to `Profile.trustScore` on every call.
+
+        | Layer | Max points | How to earn |
+        |-------|-----------|-------------|
+        | PHONE | 20 | Phone verified via OTP |
+        | PROFILE_COMPLETE | 20 | Profile completion ≥ 80% |
+        | PHOTO | 15 | At least 1 approved photo |
+        | ID_VERIFIED | 25 | Admin-approved ID + selfie |
+        | EMAIL | 10 | Email magic link used at least once |
+        | VOICE | 10 | Voice intro uploaded |
+      operationId: getTrustDashboard
+      responses:
+        "200":
+          description: Trust dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrustCenterResponse"
+
+  /api/v1/profile/privacy-controls:
+    put:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Update privacy controls
+      description: |
+        Partial-merge update — only send the fields you want to change.
+        Controls which profile sections are visible to non-mutual connections.
+      operationId: updatePrivacyControls
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                showPhotosBeforeMutual:
+                  type: boolean
+                  description: If false, profile photos are hidden until both users are connected.
+                showBioBeforeMutual:
+                  type: boolean
+                  description: If false, bio/story prompts are hidden until mutual connection.
+                showAnswersBeforeMutual:
+                  type: boolean
+                  description: If false, real-life answers are hidden until mutual connection.
+      responses:
+        "200":
+          description: Privacy controls updated
+
+  /api/v1/profile/pause-visibility:
+    post:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Pause profile visibility (explicit)
+      description: |
+        Sets `Profile.isPaused = true`. The profile disappears from discovery feeds
+        and introduction pools. Does NOT affect existing connections or conversations.
+      operationId: pauseVisibility
+      responses:
+        "200":
+          description: Profile paused
+    delete:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Resume profile visibility (explicit)
+      description: Sets `Profile.isPaused = false`. Profile reappears in discovery feeds.
+      operationId: resumeVisibility
+      responses:
+        "200":
+          description: Profile resumed
+
+  /api/v1/profile/access-levels:
+    get:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Get access level definitions (PUBLIC / TRUSTED / FAMILY)
+      description: Returns static definitions of what each access level can see. Pure function — no DB call.
+      operationId: getAccessLevels
+      responses:
+        "200":
+          description: Access level definitions
+
+  /api/v1/trust/block:
+    post:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Block a user
+      description: |
+        Blocks the target user. Blocked users cannot see the blocker's profile,
+        send messages, or appear in discovery feeds for either party.
+      operationId: blockUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId]
+              properties:
+                targetUserId:
+                  type: string
+                  format: uuid
+                  description: UUID of the user to block.
+      responses:
+        "201":
+          description: User blocked
+
+  /api/v1/trust/block/{userId}:
+    delete:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Unblock a user
+      operationId: unblockUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User unblocked
+
+  /api/v1/trust/blocks:
+    get:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: List blocked users
+      operationId: listBlocks
+      responses:
+        "200":
+          description: Blocked users list
+
+  /api/v1/trust/report:
+    post:
+      tags: ["15 — Trust Centre · Privacy"]
+      summary: Report a user
+      description: Submits a report to the moderation queue. Separate from blocking — the user is not automatically blocked.
+      operationId: reportUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetUserId, reason]
+              properties:
+                targetUserId:
+                  type: string
+                  format: uuid
+                  description: UUID of the user being reported.
+                reason:
+                  type: string
+                  enum: [FAKE_PROFILE, HARASSMENT, SPAM, INAPPROPRIATE_CONTENT, SCAM, OTHER]
+                  description: Report category.
+                details:
+                  type: string
+                  maxLength: 1000
+                  description: Additional context to help moderators review the report.
+      responses:
+        "201":
+          description: Report submitted
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 16 — PAYMENTS · MEMBERSHIP & DIAMONDS
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/payment/membership:
+    get:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Get active membership status
+      description: Returns the user's current Founding Member status, plan, and renewal date.
+      operationId: getMembership
+      responses:
+        "200":
+          description: Membership status
+
+  /api/v1/payment/stripe/checkout:
+    post:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Create Stripe Founding Member checkout session
+      description: |
+        Creates a Stripe Checkout session for the Founding Member subscription.
+        Returns a `checkoutUrl` — redirect the user to this URL in a WebView.
+        Success/cancel URLs are configured via `PAYMENT_SUCCESS_URL` / `PAYMENT_CANCEL_URL`.
+      operationId: stripeCheckout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                successUrl:
+                  type: string
+                  format: uri
+                  description: Override the default success redirect URL.
+                cancelUrl:
+                  type: string
+                  format: uri
+                  description: Override the default cancel redirect URL.
+      responses:
+        "201":
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkoutUrl:
+                    type: string
+                    format: uri
+                    description: Stripe-hosted checkout page URL. Redirect user here.
+                  sessionId:
+                    type: string
+                    description: Stripe session ID for tracking.
+
+  /api/v1/payment/razorpay/order:
+    post:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Create Razorpay membership order (India)
+      description: Returns a Razorpay order ID for use with the Razorpay Flutter SDK.
+      operationId: razorpayOrder
+      responses:
+        "201":
+          description: Razorpay order created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orderId:
+                    type: string
+                    description: Razorpay order ID. Pass to Razorpay Flutter SDK.
+                  amount:
+                    type: integer
+                    description: Amount in paise (Indian Rupees × 100).
+                  currency:
+                    type: string
+                    example: INR
+
+  /api/v1/payment/razorpay/capture:
+    post:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Capture Razorpay payment after Flutter SDK success
+      description: Call this after the Razorpay Flutter SDK returns a successful payment.
+      operationId: razorpayCapture
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [razorpayPaymentId, razorpayOrderId, razorpaySignature]
+              properties:
+                razorpayPaymentId:
+                  type: string
+                  description: Payment ID from Razorpay SDK success callback.
+                razorpayOrderId:
+                  type: string
+                  description: Order ID from the create-order step.
+                razorpaySignature:
+                  type: string
+                  description: HMAC-SHA256 signature from Razorpay SDK. Verified server-side.
+      responses:
+        "200":
+          description: Payment captured; Founding Member activated
+
+  /api/v1/payment/diamonds/balance:
+    get:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Get diamond balance
+      description: |
+        Returns the current diamond balance (latest `balanceAfter` from the append-only ledger).
+        Also returns recent transaction history.
+      operationId: getDiamondBalance
+      responses:
+        "200":
+          description: Diamond balance and recent transactions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DiamondBalanceResponse"
+
+  /api/v1/payment/diamonds/purchase:
+    post:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Purchase diamond package via Stripe
+      description: |
+        Creates a one-time Stripe Checkout session for a diamond package.
+        Available packages are fixed — pass the `packageId` from the packages list.
+      operationId: purchaseDiamonds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [packageId]
+              properties:
+                packageId:
+                  type: string
+                  enum: [STARTER_50, POPULAR_150, VALUE_350, PREMIUM_750]
+                  description: Diamond package identifier.
+      responses:
+        "201":
+          description: Checkout session created
+
+  /api/v1/payment/diamonds/spend:
+    post:
+      tags: ["16 — Payments · Membership & Diamonds"]
+      summary: Spend diamonds
+      description: |
+        Deducts diamonds from the user's balance. Appends a debit row to the ledger.
+        Used internally by feature services (early access, unlock, etc.); may also be called
+        directly for custom spend scenarios.
+      operationId: spendDiamonds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, reason]
+              properties:
+                amount:
+                  type: integer
+                  minimum: 1
+                  description: Number of diamonds to spend.
+                reason:
+                  type: string
+                  enum:
+                    - INTRO_EARLY_VIEW
+                    - INTRO_EARLY_UNLOCK
+                    - GROUP_CONVERSATION_INITIATION
+                    - CUSTOM
+                  description: Reason code recorded in the ledger.
+                referenceId:
+                  type: string
+                  description: Optional ID of the related entity (drop ID, group ID, etc.).
+      responses:
+        "200":
+          description: Diamonds spent; new balance returned
+        "402":
+          description: Insufficient diamonds (InsufficientDiamondsError)
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 17 — VERIFICATION · IDENTITY
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/verification/upload-url:
+    get:
+      tags: ["17 — Verification · Identity"]
+      summary: Get presigned URL for ID document or selfie upload
+      description: |
+        Returns an S3 presigned PUT URL for uploading the identity document or selfie.
+        Call twice: once for the ID document, once for the selfie.
+      operationId: getVerificationUploadUrl
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: Type of document being uploaded.
+          schema:
+            type: string
+            enum: [ID_DOCUMENT, SELFIE]
+      responses:
+        "200":
+          description: Presigned upload URL
+
+  /api/v1/verification/submit:
+    post:
+      tags: ["17 — Verification · Identity"]
+      summary: Submit verification request
+      description: |
+        Creates a `VerificationRequest` in PENDING status for admin review.
+        Requires S3 keys from the upload-url step.
+        Admin approval adds 25 points to the user's trust score.
+      operationId: submitVerification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idDocumentS3Key, selfieS3Key, documentType]
+              properties:
+                idDocumentS3Key:
+                  type: string
+                  description: S3 key of the uploaded ID document.
+                selfieS3Key:
+                  type: string
+                  description: S3 key of the uploaded selfie.
+                documentType:
+                  type: string
+                  enum: [PASSPORT, DRIVING_LICENCE, NATIONAL_ID]
+                  description: Type of identity document submitted.
+      responses:
+        "201":
+          description: Verification request submitted
+
+  /api/v1/verification/status:
+    get:
+      tags: ["17 — Verification · Identity"]
+      summary: Get verification status
+      description: Returns the current verification status and trust score.
+      operationId: getVerificationStatus
+      responses:
+        "200":
+          description: Verification status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [NOT_SUBMITTED, PENDING, APPROVED, REJECTED]
+                    description: Current verification status.
+                  submittedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  reviewedAt:
+                    type: string
+                    format: date-time
+                    nullable: true
+                  rejectionReason:
+                    type: string
+                    nullable: true
+                    description: Admin's rejection reason if status is REJECTED.
+                  trustScore:
+                    type: integer
+                    description: Current composite trust score (0–100).
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 18 — MATCH TUNING · PREFERENCES
+  # ─────────────────────────────────────────────────────────────────────────
+  /api/v1/profile/match-tuning:
+    get:
+      tags: ["18 — Match Tuning · Preferences"]
+      summary: Get match tuning preferences
+      description: |
+        Returns the user's current tuning settings as two 1–5 UI questions.
+        Default is 3 (neutral weight) for both when no tuning has been set.
+      operationId: getMatchTuning
+      responses:
+        "200":
+          description: Current tuning questions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TuningQuestionsResponse"
+    post:
+      tags: ["18 — Match Tuning · Preferences"]
+      summary: Save match tuning preferences
+      description: |
+        Saves the two importance ratings and enqueues a background score recompute
+        for all stored MatchScore pairs involving this user.
+
+        | Rating | Multiplier applied to dimension weight |
+        |--------|----------------------------------------|
+        | 1 | ×0.50 (half weight) |
+        | 2 | ×0.75 |
+        | 3 | ×1.00 (neutral, default) |
+        | 4 | ×1.75 |
+        | 5 | ×2.50 (2.5× weight) |
+      operationId: saveMatchTuning
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [settlementImportance, familyImportance]
+              properties:
+                settlementImportance:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: |
+                    How important is it that your match plans to settle in the same country as you?
+                    1 = Not important · 5 = Extremely important.
+                familyImportance:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                  description: |
+                    How important is family involvement in your relationship?
+                    1 = Prefer independence · 5 = Family is central.
+      responses:
+        "200":
+          description: Tuning saved; score recompute enqueued
+
+  /api/v1/profile/match-tuning/impact:
+    get:
+      tags: ["18 — Match Tuning · Preferences"]
+      summary: Preview rank impact of proposed tuning weights
+      description: |
+        Without saving, applies proposed tuning weights to the user's top 20 stored
+        MatchScore pairs and returns who would move up or down in rank.
+        Useful for showing a live preview before the user confirms their preferences.
+      operationId: getMatchTuningImpact
+      parameters:
+        - name: settlementImportance
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+        - name: familyImportance
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5
+      responses:
+        "200":
+          description: Rank impact preview
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 19 — ADMIN PANEL (key endpoints)
+  # ─────────────────────────────────────────────────────────────────────────
+  /admin/auth/login:
+    post:
+      tags: ["19 — Admin Panel"]
+      summary: Admin login (bcrypt password + TOTP)
+      description: |
+        Admin-specific login. Requires email + password (bcrypt) + TOTP 6-digit code.
+        Returns admin JWT tokens. Admin tokens use a separate signing key and include `adminId` + `adminRole`.
+      security: []
+      operationId: adminLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, totp]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  description: Admin account password (bcrypt cost 12+).
+                totp:
+                  type: string
+                  pattern: "^\\d{6}$"
+                  description: 6-digit TOTP code from the admin's authenticator app.
+      responses:
+        "200":
+          description: Admin authenticated — tokens issued
+
+  /admin/users:
+    get:
+      tags: ["19 — Admin Panel"]
+      summary: List users (paginated, filterable)
+      description: Returns all users with status, verification, and seeder flags. Requires MODERATOR+ role.
+      operationId: adminListUsers
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, SUSPENDED, BANNED]
+        - name: search
+          in: query
+          description: Filter by phone number or name.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated user list
+
+  /admin/users/{userId}/suspend:
+    post:
+      tags: ["19 — Admin Panel"]
+      summary: Suspend a user
+      operationId: adminSuspendUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  description: Reason for suspension (logged in audit trail).
+      responses:
+        "200":
+          description: User suspended
+
+  /admin/analytics/kpi:
+    get:
+      tags: ["19 — Admin Panel"]
+      summary: Get KPI dashboard metrics
+      description: Returns DAU/MAU, new registrations, active memberships, diamond revenue, and retention rates.
+      operationId: adminGetKpi
+      responses:
+        "200":
+          description: KPI metrics
+
+  /admin/feature-flags:
+    get:
+      tags: ["19 — Admin Panel"]
+      summary: List feature flags
+      operationId: adminListFeatureFlags
+      responses:
+        "200":
+          description: Feature flags list
+    post:
+      tags: ["19 — Admin Panel"]
+      summary: Create a feature flag
+      operationId: adminCreateFeatureFlag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, enabled]
+              properties:
+                key:
+                  type: string
+                  description: Flag identifier (e.g., `algorithm_v2`).
+                enabled:
+                  type: boolean
+                rolloutPercent:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                  description: Percentage-based rollout (0–100). 0 = off for all, 100 = on for all.
+                allowedUserIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  description: Allowlist of specific user UUIDs who always get this flag enabled.
+                allowedEnvironments:
+                  type: array
+                  items:
+                    type: string
+                  description: Environments where this flag is active (e.g., ["production", "staging"]).
+      responses:
+        "201":
+          description: Flag created
+
+  /admin/verification:
+    get:
+      tags: ["19 — Admin Panel"]
+      summary: List pending verification requests
+      operationId: adminListVerifications
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        "200":
+          description: Verification queue
+
+  /admin/verification/{requestId}/approve:
+    post:
+      tags: ["19 — Admin Panel"]
+      summary: Approve a verification request
+      description: Sets status to APPROVED, adds 25 points to trust score, sets `isVerified = true` on profile.
+      operationId: adminApproveVerification
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Verification approved
+
+  /admin/system-config:
+    get:
+      tags: ["19 — Admin Panel"]
+      summary: List system config values
+      description: Returns all key-value system configuration entries (e.g., SUGGESTED_GROUPS_MAX, INTRO_DIAMOND_COST).
+      operationId: adminListSystemConfig
+      responses:
+        "200":
+          description: System config list
+    post:
+      tags: ["19 — Admin Panel"]
+      summary: Create or upsert a system config value
+      operationId: adminUpsertSystemConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key:
+                  type: string
+                  description: Config key (e.g., `SUGGESTED_GROUPS_MAX`).
+                value:
+                  type: string
+                  description: String value (parse to int/bool in the consuming service).
+                description:
+                  type: string
+                  description: Human-readable description shown in admin UI.
+                isProtected:
+                  type: boolean
+                  description: If true, the value cannot be deleted (only updated).
+      responses:
+        "200":
+          description: Config upserted
+
+# ─────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ─────────────────────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token from `POST /api/v1/auth/otp/verify` or `POST /api/v1/auth/token/refresh`.
+        Expires in 15 minutes. Pass as `Authorization: Bearer <token>`.
+
+  schemas:
+
+    TokenResponse:
+      type: object
+      description: JWT token pair issued after successful authentication.
+      properties:
+        accessToken:
+          type: string
+          description: Short-lived JWT for authenticating API requests. Expires in 15 minutes.
+        refreshToken:
+          type: string
+          description: Long-lived token (30 days) used only with `POST /auth/token/refresh` to get new tokens.
+        expiresIn:
+          type: integer
+          example: 900
+          description: Access token TTL in seconds (always 900 = 15 minutes).
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+              description: User's UUID.
+            phone:
+              type: string
+              description: User's E.164 phone number (partially masked in logs).
+            role:
+              type: string
+              enum: [USER, MODERATOR, ADMIN, SUPERADMIN]
+              description: User's role. Most users are USER.
+            hasProfile:
+              type: boolean
+              description: False for brand new users — redirect to onboarding if false.
+
+    CreateProfileRequest:
+      type: object
+      required: [fullName, dateOfBirth, gender, currentCity, currentCountry, settlementIntent]
+      properties:
+        fullName:
+          type: string
+          maxLength: 100
+          example: "Priya Sharma"
+          description: User's display name shown on profile cards.
+        dateOfBirth:
+          type: string
+          format: date
+          example: "1993-08-15"
+          description: Date of birth in YYYY-MM-DD format. Used to calculate displayed age.
+        gender:
+          type: string
+          enum: [MALE, FEMALE, NON_BINARY]
+          description: Gender identity.
+        currentCity:
+          type: string
+          maxLength: 100
+          example: "London"
+          description: City of current residence. Shown on profile card.
+        currentCountry:
+          type: string
+          maxLength: 100
+          example: "United Kingdom"
+          description: Country of residence. Used to auto-join REGIONAL group.
+        settlementIntent:
+          type: string
+          enum: [STAY_HERE, OPEN_TO_MOVE, RETURN_HOME, UNDECIDED]
+          description: |
+            Long-term settlement plan. Key dimension in matching algorithm.
+            - STAY_HERE: intends to remain in current country
+            - OPEN_TO_MOVE: willing to relocate for the right person
+            - RETURN_HOME: plans to return to India
+            - UNDECIDED: not yet decided
+        bio:
+          type: string
+          maxLength: 500
+          description: Optional short bio displayed on profile. Contributes to AI trait analysis.
+        height:
+          type: integer
+          description: Height in centimetres. Optional.
+        education:
+          type: string
+          maxLength: 200
+          description: Highest qualification or field of study.
+        occupation:
+          type: string
+          maxLength: 200
+          description: Current job title and/or company.
+        motherTongue:
+          type: string
+          maxLength: 50
+          description: Primary language. Used for CULTURAL group suggestions.
+        religion:
+          type: string
+          maxLength: 50
+          description: Religious background. Used in faith alignment matching dimension.
+        caste:
+          type: string
+          maxLength: 100
+          nullable: true
+          description: Optional caste/community field. Stored but not used in algorithm.
+
+    ProfileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Profile UUID (same as user UUID).
+        fullName:
+          type: string
+        age:
+          type: integer
+          description: Calculated from dateOfBirth at query time.
+        gender:
+          type: string
+        currentCity:
+          type: string
+        currentCountry:
+          type: string
+        settlementIntent:
+          type: string
+        bio:
+          type: string
+          nullable: true
+        photos:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: CloudFront URLs of approved photos (max 6).
+        completionScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Profile completeness as a percentage. Used in COMPLETE_PROFILE action queue item.
+        realLifeAnswers:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of questionKey → answer text for all answered questions.
+        storyPrompts:
+          type: object
+          additionalProperties:
+            type: string
+          description: Map of promptKey → answer text for all answered story prompts.
+        voiceIntroUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: CloudFront URL of voice intro audio file.
+        trustScore:
+          type: integer
+          description: Cached composite trust score (0–100).
+        isPaused:
+          type: boolean
+          description: True if the user has paused their visibility.
+        habitSummaryVisible:
+          type: boolean
+          description: True if habit consistency summary is shown on public profile.
+        isVerified:
+          type: boolean
+          description: True if identity verification has been admin-approved.
+
+    PublicProfileResponse:
+      type: object
+      description: |
+        Public view of a profile. Fields may be redacted based on the viewer's
+        connection status and the profile owner's privacy controls.
+      properties:
+        id:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        age:
+          type: integer
+        gender:
+          type: string
+        currentCity:
+          type: string
+        currentCountry:
+          type: string
+        settlementIntent:
+          type: string
+        bio:
+          type: string
+          nullable: true
+          description: Null if `showBioBeforeMutual = false` and not mutually connected.
+        photos:
+          type: array
+          items:
+            type: string
+            format: uri
+          description: Empty array if `showPhotosBeforeMutual = false` and not connected.
+        realLifeAnswers:
+          type: object
+          nullable: true
+          description: Null if `showAnswersBeforeMutual = false` and not connected.
+        voiceIntroUrl:
+          type: string
+          nullable: true
+        trustScore:
+          type: integer
+        isVerified:
+          type: boolean
+        habitSummaryVisible:
+          type: boolean
+
+    DiscoveryItem:
+      type: object
+      description: A single profile in the discovery feed.
+      properties:
+        userId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        age:
+          type: integer
+        currentCity:
+          type: string
+        currentCountry:
+          type: string
+        thumbnailUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: First profile photo as a thumbnail.
+        totalScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Raw compatibility score (0–1) before tuning is applied.
+        personalizedScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: |
+            Score after applying the user's match tuning weights.
+            Equals `totalScore` when no tuning has been set.
+            Feed is sorted by this field.
+        scoreBreakdown:
+          $ref: "#/components/schemas/ScoreBreakdown"
+        completionScore:
+          type: integer
+          description: Profile completeness percentage of the match.
+        isVerified:
+          type: boolean
+
+    ScoreBreakdown:
+      type: object
+      description: |
+        18-dimension compatibility breakdown. Core 9 dimensions always present when
+        both users have answered the relevant questions. Optional dimensions (10–18)
+        are only populated when both users have the relevant data.
+      properties:
+        settlementIntent:
+          type: number
+          description: "Dim 1: Settlement plan alignment (STAY_HERE vs RETURN_HOME etc.)."
+        faithAlignment:
+          type: number
+          description: "Dim 2: Religious / faith values alignment."
+        dietCompatibility:
+          type: number
+          description: "Dim 3: Diet preference match (veg/non-veg/vegan etc.)."
+        parentingStyle:
+          type: number
+          description: "Dim 4: Parenting philosophy alignment."
+        financialCompatibility:
+          type: number
+          description: "Dim 5: Financial style match (saver vs spender etc.)."
+        conflictResolution:
+          type: number
+          description: "Dim 6: Approach to resolving disagreements."
+        socialLife:
+          type: number
+          description: "Dim 7: Social preferences alignment (introvert/extrovert spectrum)."
+        careerAmbiton:
+          type: number
+          description: "Dim 8: Career priority and work-life balance alignment."
+        livingPreference:
+          type: number
+          description: "Dim 9: Urban/suburban/rural living preference."
+        habitConsistency:
+          type: number
+          nullable: true
+          description: "Dim 10 (optional): How regularly both users log habits. Populated when both have habit logs."
+        habitOverlap:
+          type: number
+          nullable: true
+          description: "Dim 11 (optional): Jaccard similarity of active habit keys. Populated when both track habits."
+        promptResonance:
+          type: number
+          nullable: true
+          description: "Dim 12 (optional): 1.0=mutual resonate, 0.5=one-way, 0.0=none. Populated when both have responded to prompts."
+        familyInvolvement:
+          type: number
+          nullable: true
+          description: "Dim 13 (optional): Jaccard of PARENTS_INVOLVEMENT + FAMILY_STRUCTURE answers."
+        eventCoAttendance:
+          type: number
+          nullable: true
+          description: "Dim 14 (optional): 1.0 if any shared GOING RSVP on the same event."
+        communicationStyle:
+          type: number
+          nullable: true
+          description: "Dim 15 (optional): Voice intro presence — both=1.0, one=0.5, neither=0.0."
+        profileViewMomentum:
+          type: number
+          nullable: true
+          description: "Dim 16 (optional): Average normalised 7-day view count."
+        trustLayerDepth:
+          type: number
+          nullable: true
+          description: "Dim 17 (optional): Average trust score / 100 for the pair."
+        familyImportanceMultiplier:
+          type: number
+          nullable: true
+          description: "Dim 18 (optional): familyImportance UI weight (1–5) mapped to multiplier."
+
+    MatchContextResponse:
+      type: object
+      properties:
+        totalScore:
+          type: number
+          description: Raw compatibility score (0–1).
+        personalizedScore:
+          type: number
+          description: Score after applying the authenticated user's match tuning weights.
+        breakdown:
+          $ref: "#/components/schemas/ScoreBreakdown"
+        whyThisMatch:
+          type: object
+          properties:
+            cards:
+              type: array
+              maxItems: 3
+              items:
+                type: object
+                properties:
+                  dimension:
+                    type: string
+                    description: Dimension key (e.g., "settlementIntent").
+                  label:
+                    type: string
+                    description: Human-readable dimension name (e.g., "Settlement Plans").
+                  score:
+                    type: number
+                    description: Score for this dimension (0–1).
+                  highlight:
+                    type: string
+                    description: One-sentence explanation of why this dimension scored well.
+            narrative:
+              type: string
+              nullable: true
+              description: |
+                LLM-generated paragraph explaining why these two people might connect well.
+                Redis-cached 24 hours. Null if AI not configured or LLM call failed.
+
+    DropSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          description: Drop theme name (e.g., "UK Professionals Q3 2026").
+        region:
+          type: string
+          description: Geographic target region.
+        releaseAt:
+          type: string
+          format: date-time
+          description: When the drop becomes public for all users.
+        earlyAccessCost:
+          type: integer
+          description: Diamonds required to VIEW profiles before `releaseAt`.
+        unlockCost:
+          type: integer
+          description: Diamonds required to UNLOCK a specific profile in this drop.
+        introductionCount:
+          type: integer
+          description: Number of introductions assigned to this user in this drop.
+        hasEarlyAccess:
+          type: boolean
+          description: True if the authenticated user has already paid for early access.
+        isUnlocked:
+          type: boolean
+          description: True if the authenticated user has fully unlocked this drop.
+        status:
+          type: string
+          enum: [DRAFT, PENDING_APPROVAL, SCHEDULED, LIVE, EXPIRED]
+
+    CalendarMilestone:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [INTRO_DROP, CHECK_IN, PROMPT_DEADLINE, EVENT]
+          description: Milestone category.
+        title:
+          type: string
+          description: Display title for the milestone.
+        scheduledAt:
+          type: string
+          format: date-time
+          description: When this milestone occurs.
+        referenceId:
+          type: string
+          format: uuid
+          nullable: true
+          description: ID of the related entity (event ID, drop ID, etc.).
+
+    WeeklySignalsResponse:
+      type: object
+      properties:
+        profileViews:
+          $ref: "#/components/schemas/SignalMetric"
+        connectionRequests:
+          $ref: "#/components/schemas/SignalMetric"
+        promptResonates:
+          $ref: "#/components/schemas/SignalMetric"
+        introPoolSize:
+          $ref: "#/components/schemas/SignalMetric"
+
+    SignalMetric:
+      type: object
+      properties:
+        thisWeek:
+          type: integer
+          description: Count for the current week (Mon–Sun UTC).
+        lastWeek:
+          type: integer
+          description: Count for the previous week.
+        delta:
+          type: integer
+          description: Difference (thisWeek - lastWeek). Positive = growth.
+        deltaPercent:
+          type: number
+          nullable: true
+          description: Percentage change. Null if lastWeek is 0.
+
+    TrustCenterResponse:
+      type: object
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Composite trust score across all 6 layers.
+        layers:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+                enum: [PHONE, PROFILE_COMPLETE, PHOTO, ID_VERIFIED, EMAIL, VOICE]
+              points:
+                type: integer
+                description: Points earned from this layer.
+              maxPoints:
+                type: integer
+                description: Maximum points available from this layer.
+              earned:
+                type: boolean
+                description: Whether the user has earned these points.
+              description:
+                type: string
+                description: What the user needs to do to earn these points.
+        isPaused:
+          type: boolean
+        privacySettings:
+          type: object
+          properties:
+            showPhotosBeforeMutual:
+              type: boolean
+            showBioBeforeMutual:
+              type: boolean
+            showAnswersBeforeMutual:
+              type: boolean
+
+    DiamondBalanceResponse:
+      type: object
+      properties:
+        balance:
+          type: integer
+          description: Current diamond balance (from latest `balanceAfter` ledger row).
+        recentTransactions:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              delta:
+                type: integer
+                description: Positive = credit, negative = debit.
+              balanceAfter:
+                type: integer
+              reason:
+                type: string
+                description: Ledger reason code.
+              createdAt:
+                type: string
+                format: date-time
+
+    TuningQuestionsResponse:
+      type: object
+      properties:
+        settlementImportance:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Current settlement importance rating (1–5). Default 3.
+        familyImportance:
+          type: integer
+          minimum: 1
+          maximum: 5
+          description: Current family importance rating (1–5). Default 3.
+        settlementMultiplier:
+          type: number
+          description: Computed multiplier applied to settlementIntent dimension weight.
+        familyMultiplier:
+          type: number
+          description: Computed multiplier applied to familyInvolvement dimension weight.
+        lastUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When tuning was last saved. Null if never set.
