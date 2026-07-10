@@ -1,0 +1,142 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 1 — deps
+# Install ALL dependencies (including devDeps needed for tsc build)
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-alpine AS deps
+WORKDIR /app
+
+# Copy manifests only — layer-cache friendly
+COPY package.json package-lock.json ./
+COPY apps/gateway/package.json          ./apps/gateway/
+COPY apps/seeder/package.json           ./apps/seeder/
+COPY libs/shared/package.json           ./libs/shared/
+COPY libs/config/package.json           ./libs/config/
+COPY libs/logger/package.json           ./libs/logger/
+COPY libs/db/package.json               ./libs/db/
+COPY libs/cache/package.json            ./libs/cache/
+COPY libs/event-bus/package.json        ./libs/event-bus/
+COPY libs/auth/package.json             ./libs/auth/
+COPY libs/storage/package.json          ./libs/storage/
+COPY libs/firebase/package.json         ./libs/firebase/
+COPY libs/messaging/package.json        ./libs/messaging/
+COPY libs/matching/package.json         ./libs/matching/
+COPY libs/notification/package.json     ./libs/notification/
+COPY libs/payment/package.json          ./libs/payment/
+COPY libs/connections/package.json      ./libs/connections/
+COPY libs/groups/package.json           ./libs/groups/
+COPY libs/gatherings/package.json       ./libs/gatherings/
+COPY libs/verification/package.json     ./libs/verification/
+COPY libs/habits/package.json           ./libs/habits/
+COPY libs/introductions/package.json    ./libs/introductions/
+COPY libs/prompts/package.json          ./libs/prompts/
+COPY libs/saved-profiles/package.json   ./libs/saved-profiles/
+COPY libs/trust/package.json            ./libs/trust/
+COPY libs/profile/package.json          ./libs/profile/
+COPY libs/ai/package.json               ./libs/ai/
+COPY libs/signals/package.json          ./libs/signals/
+COPY libs/analytics/package.json        ./libs/analytics/
+
+RUN npm ci --legacy-peer-deps
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 2 — build
+# Compile TypeScript for the gateway and all libs it depends on
+# ─────────────────────────────────────────────────────────────────────────────
+FROM deps AS builder
+WORKDIR /app
+
+# Copy source
+COPY tsconfig.base.json nx.json ./
+COPY libs/   ./libs/
+COPY apps/gateway/ ./apps/gateway/
+COPY libs/db/prisma/ ./libs/db/prisma/
+
+# Generate Prisma client
+RUN npx prisma generate --schema=libs/db/prisma/schema.prisma
+
+# Build libs in dependency order, then the gateway
+RUN npx tsc -p libs/shared/tsconfig.json       --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/config/tsconfig.json       --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/logger/tsconfig.json       --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/db/tsconfig.json           --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/cache/tsconfig.json        --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/event-bus/tsconfig.json    --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/storage/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/firebase/tsconfig.json     --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/auth/tsconfig.json         --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/messaging/tsconfig.json    --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/matching/tsconfig.json     --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/notification/tsconfig.json --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/payment/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/connections/tsconfig.json  --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/groups/tsconfig.json       --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/gatherings/tsconfig.json   --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/verification/tsconfig.json --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/habits/tsconfig.json       --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/introductions/tsconfig.json --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/prompts/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/saved-profiles/tsconfig.json --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/trust/tsconfig.json        --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/profile/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/ai/tsconfig.json           --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/signals/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/analytics/tsconfig.json    --noEmit false 2>/dev/null || true
+RUN npx tsc -p apps/gateway/tsconfig.json      --noEmit false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stage 3 — runtime
+# Lean production image — no devDeps, no source
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Only prod deps
+COPY package.json package-lock.json ./
+COPY apps/gateway/package.json      ./apps/gateway/
+COPY libs/shared/package.json       ./libs/shared/
+COPY libs/config/package.json       ./libs/config/
+COPY libs/logger/package.json       ./libs/logger/
+COPY libs/db/package.json           ./libs/db/
+COPY libs/cache/package.json        ./libs/cache/
+COPY libs/event-bus/package.json    ./libs/event-bus/
+COPY libs/auth/package.json         ./libs/auth/
+COPY libs/storage/package.json      ./libs/storage/
+COPY libs/firebase/package.json     ./libs/firebase/
+COPY libs/messaging/package.json    ./libs/messaging/
+COPY libs/matching/package.json     ./libs/matching/
+COPY libs/notification/package.json ./libs/notification/
+COPY libs/payment/package.json      ./libs/payment/
+COPY libs/connections/package.json  ./libs/connections/
+COPY libs/groups/package.json       ./libs/groups/
+COPY libs/gatherings/package.json   ./libs/gatherings/
+COPY libs/verification/package.json ./libs/verification/
+COPY libs/habits/package.json       ./libs/habits/
+COPY libs/introductions/package.json ./libs/introductions/
+COPY libs/prompts/package.json      ./libs/prompts/
+COPY libs/saved-profiles/package.json ./libs/saved-profiles/
+COPY libs/trust/package.json        ./libs/trust/
+COPY libs/profile/package.json      ./libs/profile/
+COPY libs/ai/package.json           ./libs/ai/
+COPY libs/signals/package.json      ./libs/signals/
+COPY libs/analytics/package.json    ./libs/analytics/
+
+RUN npm ci --omit=dev --legacy-peer-deps
+
+# Copy compiled output + Prisma client
+COPY --from=builder /app/apps/gateway/dist   ./apps/gateway/dist
+COPY --from=builder /app/libs                ./libs
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY libs/db/prisma/schema.prisma            ./libs/db/prisma/schema.prisma
+
+# Non-root user for security
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
+
+CMD ["node", "apps/gateway/dist/server.js"]

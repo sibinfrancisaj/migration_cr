@@ -1,0 +1,204 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Production Docker Compose — Abroad Matrimony
+#
+# Services: redis | gateway | seeder (staging profile) | nginx
+#
+# Usage:
+#   docker compose -f docker/docker-compose.prod.yml --env-file .env.production up -d
+#
+# First-time SSL:
+#   1. Comment out the HTTPS server block in nginx/nginx.conf and expose only port 80
+#   2. Run: docker compose ... up -d nginx
+#   3. Obtain certs: certbot certonly --webroot -w /var/www/certbot -d api.abroadmatrimony.com
+#   4. Restore nginx.conf HTTPS block and restart nginx
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  certbot_www:
+    driver: local
+  certbot_conf:
+    driver: local
+
+services:
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      sh -c "
+        sed 's|# requirepass.*|requirepass ${REDIS_PASSWORD}|' /etc/redis/redis.prod.conf > /tmp/redis.conf &&
+        redis-server /tmp/redis.conf
+      "
+    volumes:
+      - ./redis.prod.conf:/etc/redis/redis.prod.conf:ro
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Gateway API ────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRY: ${JWT_ACCESS_EXPIRY:-15m}
+      JWT_REFRESH_EXPIRY: ${JWT_REFRESH_EXPIRY:-30d}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_VERIFY_SERVICE_SID: ${TWILIO_VERIFY_SERVICE_SID}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      BREVO_API_KEY: ${BREVO_API_KEY}
+      BREVO_FROM_EMAIL: ${BREVO_FROM_EMAIL}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_CLOUDFRONT_DOMAIN: ${AWS_CLOUDFRONT_DOMAIN}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_FOUNDING_MEMBER_PRICE_ID: ${STRIPE_FOUNDING_MEMBER_PRICE_ID}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      PAYMENT_SUCCESS_URL: ${PAYMENT_SUCCESS_URL}
+      PAYMENT_CANCEL_URL: ${PAYMENT_CANCEL_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      SEEDER_SECRET: ${SEEDER_SECRET}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      TRUSTED_DEVICE_TTL_DAYS: ${TRUSTED_DEVICE_TTL_DAYS:-90}
+      ADMIN_TOTP_SECRET: ${ADMIN_TOTP_SECRET}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── Seeder / Bot simulator (staging profile — skipped in pure production) ──
+  seeder:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.seeder
+    restart: unless-stopped
+    profiles:
+      - staging          # only starts when: docker compose --profile staging up
+    environment:
+      NODE_ENV: staging
+      SEEDER_PORT: "3100"
+      GATEWAY_URL: http://gateway:3000
+      SEEDER_SECRET: ${SEEDER_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET}
+      AWS_CLOUDFRONT_DOMAIN: ${AWS_CLOUDFRONT_DOMAIN}
+      SEEDER_PHOTO_S3_PREFIX: ${SEEDER_PHOTO_S3_PREFIX:-seeder/profile-photos}
+      SEEDER_INITIAL_COUNT: ${SEEDER_INITIAL_COUNT:-500}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ── Nginx reverse proxy ────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # ── Certbot (Let's Encrypt — run once, then comment out) ──────────────────
+  certbot:
+    image: certbot/certbot:latest
+    profiles:
+      - certbot          # docker compose --profile certbot run certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_conf:/etc/letsencrypt
+    entrypoint: >
+      certbot certonly
+        --webroot -w /var/www/certbot
+        -d api.abroadmatrimony.com
+        --email ${CERTBOT_EMAIL}
+        --agree-tos
+        --non-interactive

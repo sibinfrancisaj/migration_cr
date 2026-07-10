@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Seeder — staging / testing only. Never runs in production.
+# NODE_ENV=production guard in server.ts exits immediately.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FROM node:22-alpine AS deps
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/seeder/package.json           ./apps/seeder/
+COPY libs/shared/package.json           ./libs/shared/
+COPY libs/config/package.json           ./libs/config/
+COPY libs/logger/package.json           ./libs/logger/
+COPY libs/db/package.json               ./libs/db/
+COPY libs/cache/package.json            ./libs/cache/
+
+RUN npm ci --legacy-peer-deps
+
+# ─────────────────────────────────────────────────────────────────────────────
+FROM deps AS builder
+WORKDIR /app
+
+COPY tsconfig.base.json ./
+COPY libs/shared/   ./libs/shared/
+COPY libs/config/   ./libs/config/
+COPY libs/logger/   ./libs/logger/
+COPY libs/db/       ./libs/db/
+COPY libs/cache/    ./libs/cache/
+COPY apps/seeder/   ./apps/seeder/
+
+RUN npx prisma generate --schema=libs/db/prisma/schema.prisma
+
+RUN npx tsc -p libs/shared/tsconfig.json  --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/config/tsconfig.json  --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/logger/tsconfig.json  --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/db/tsconfig.json      --noEmit false 2>/dev/null || true
+RUN npx tsc -p libs/cache/tsconfig.json   --noEmit false 2>/dev/null || true
+RUN npx tsc -p apps/seeder/tsconfig.json  --noEmit false
+
+# ─────────────────────────────────────────────────────────────────────────────
+FROM node:22-alpine AS runtime
+WORKDIR /app
+
+ENV NODE_ENV=staging
+
+COPY package.json package-lock.json ./
+COPY apps/seeder/package.json    ./apps/seeder/
+COPY libs/shared/package.json    ./libs/shared/
+COPY libs/config/package.json    ./libs/config/
+COPY libs/logger/package.json    ./libs/logger/
+COPY libs/db/package.json        ./libs/db/
+COPY libs/cache/package.json     ./libs/cache/
+
+RUN npm ci --omit=dev --legacy-peer-deps
+
+COPY --from=builder /app/apps/seeder/dist  ./apps/seeder/dist
+COPY --from=builder /app/libs              ./libs
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY libs/db/prisma/schema.prisma          ./libs/db/prisma/schema.prisma
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 3100
+
+HEALTHCHECK --interval=20s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -qO- http://localhost:3100/health || exit 1
+
+CMD ["node", "apps/seeder/dist/src/server.js"]
