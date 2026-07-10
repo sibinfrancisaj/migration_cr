@@ -6,7 +6,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { seederLog } from '../lib/seeder-logger.js';
 import { getSeederEnv } from '../lib/seeder-env.js';
-import { runActivitySimulation } from '../services/activity.simulator.js';
+import { runSocialLoop } from '../services/social-loop.service.js';
 
 export const ACTIVITY_QUEUE_NAME = 'seeder:activity';
 
@@ -34,9 +34,9 @@ export function startActivityWorker(): Worker {
   _worker = new Worker(
     ACTIVITY_QUEUE_NAME,
     async (_job: Job) => {
-      seederLog.info('Activity simulation starting');
-      const result = await runActivitySimulation();
-      seederLog.info('Activity simulation complete', result);
+      seederLog.info('Social loop starting');
+      const result = await runSocialLoop();
+      seederLog.info('Social loop complete', result);
     },
     { connection: getConnection(), concurrency: 1 },
   );

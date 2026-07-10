@@ -82,17 +82,15 @@ async function performAction(
 ): Promise<void> {
   switch (action) {
     case 'log_habit': {
-      // Find one of user's habits
-      const habit = await prisma.habit.findFirst({ where: { userId }, select: { id: true } });
-      if (!habit) break;
-      // Check if already logged today
+      const HABIT_KEYS = ['MORNING_ROUTINE', 'EXERCISE', 'HEALTHY_EATING', 'MEDITATION', 'READING', 'JOURNALING', 'LEARNING', 'FAMILY_TIME', 'SOCIAL_CONNECTION', 'GRATITUDE'];
+      const habitKey = randomFrom(HABIT_KEYS);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const existing = await prisma.habitLog.findFirst({
-        where: { habitId: habit.id, userId, loggedAt: { gte: today } },
+        where: { userId, habitKey: habitKey as any, loggedAt: { gte: today } },
       });
       if (existing) break;
-      await client.post(`/api/v1/habits/${habit.id}/log`, {}, asUser(userId));
+      await client.post(`/api/v1/habits/${habitKey}/log`, {}, asUser(userId));
       break;
     }
 
@@ -105,7 +103,7 @@ async function performAction(
       if (!membership) break;
       await client.post(
         `/api/v1/groups/${membership.groupId}/posts`,
-        { text: randomFrom(GROUP_POST_TEXTS) },
+        { content: randomFrom(GROUP_POST_TEXTS) },
         asUser(userId),
       );
       break;
@@ -159,7 +157,7 @@ async function performAction(
         skip: randomInt(0, 20),
       });
       if (!target) break;
-      await client.post(`/api/v1/saved/${target.id}`, {}, asUser(userId)).catch(() => {
+      await client.post('/api/v1/saved', { savedUserId: target.id }, asUser(userId)).catch(() => {
         // Already saved is fine
       });
       break;
