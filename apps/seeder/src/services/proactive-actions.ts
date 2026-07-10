@@ -44,7 +44,7 @@ export async function sendConnectionRequest(
   ]);
 
   const target = await prisma.user.findFirst({
-    where: { isSeeded: true, status: 'ACTIVE', id: { notIn: Array.from(excludedIds) } },
+    where: { status: 'ACTIVE', id: { notIn: Array.from(excludedIds) } },
     select: { id: true },
     skip: randomInt(0, 30),
   });
@@ -190,7 +190,7 @@ export async function logProfileView(
   client: AxiosInstance,
 ): Promise<boolean> {
   const target = await prisma.user.findFirst({
-    where: { isSeeded: true, status: 'ACTIVE', id: { not: userId } },
+    where: { status: 'ACTIVE', id: { not: userId } },
     select: { id: true },
     skip: randomInt(0, 50),
   });

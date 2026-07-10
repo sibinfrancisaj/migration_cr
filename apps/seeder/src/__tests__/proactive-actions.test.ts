@@ -55,6 +55,8 @@ describe('sendConnectionRequest', () => {
 
     await sendConnectionRequest('user-a', prisma, mockClient);
     const findFirstCall = prisma.user.findFirst.mock.calls[0][0];
+    // isSeeded filter removed so bots can reach real users too
+    expect(findFirstCall.where.isSeeded).toBeUndefined();
     expect(findFirstCall.where.id.notIn).toContain('taken-1');
     expect(findFirstCall.where.id.notIn).toContain('taken-2');
     expect(findFirstCall.where.id.notIn).toContain('user-a');
