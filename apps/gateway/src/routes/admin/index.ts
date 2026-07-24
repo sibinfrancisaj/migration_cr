@@ -249,6 +249,15 @@ adminRouter.get('/analytics/ai', requireAdminRole(AdminRole.MODERATOR), analytic
 /** GET /admin/analytics/diamonds */
 adminRouter.get('/analytics/diamonds', requireAdminRole(AdminRole.MODERATOR), analyticsAdminController.getDiamondAnalytics);
 
+/** GET /admin/analytics/match-health */
+adminRouter.get('/analytics/match-health', requireAdminRole(AdminRole.MODERATOR), analyticsAdminController.getMatchHealth);
+
+/** GET /admin/users/:userId/matches */
+adminRouter.get('/users/:userId/matches', requireAdminRole(AdminRole.MODERATOR), analyticsAdminController.getUserMatches);
+
+/** GET /admin/users/:userId/activity */
+adminRouter.get('/users/:userId/activity', requireAdminRole(AdminRole.MODERATOR), analyticsAdminController.getUserActivity);
+
 // ─── Events Administration (ADMIN-008) ───────────────────────────────────────
 
 /** GET /admin/events */

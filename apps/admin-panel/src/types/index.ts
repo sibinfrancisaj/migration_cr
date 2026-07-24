@@ -114,6 +114,55 @@ export interface FlagItem {
   message?: { content: string; senderId: string };
 }
 
+// ── Match Intelligence ────────────────────────────────────────────────────────
+
+export interface ScoreBucket { range: string; count: number }
+
+export interface MatchHealthDto {
+  totalPairsComputed: number;
+  avgScore: number;
+  medianScore: number;
+  usersWithZeroMatches: number;
+  usersWithLowTopScore: number;
+  scoreDistribution: ScoreBucket[];
+  algorithmVersions: Array<{ version: number; count: number }>;
+  lastComputedAt: string | null;
+  stalePairsCount: number;
+}
+
+export interface UserMatchDto {
+  matchedUserId: string;
+  matchedUserName: string | null;
+  matchedUserPhone: string;
+  totalScore: number;
+  breakdown: Record<string, number>;
+  algorithmV: number;
+  computedAt: string;
+}
+
+export interface UserMatchesResponse {
+  user: { id: string; name: string | null; phone: string };
+  matches: UserMatchDto[];
+}
+
+export interface ActivityPoint {
+  date: string;
+  profileViews: number;
+  connectionsSent: number;
+  messagesSet: number;
+  habitsLogged: number;
+  promptResponses: number;
+}
+
+export interface UserActivityDto {
+  userId: string;
+  daily: ActivityPoint[];
+  weeklySummary: { profileViews: number; connectionsSent: number; messagesSent: number; habitsLogged: number };
+  monthlySummary: { profileViews: number; connectionsSent: number; messagesSent: number; habitsLogged: number };
+  streakDays: number;
+  lastActiveAt: string | null;
+}
+
 // ── Seeder ───────────────────────────────────────────────────────────────────
 
 export interface SeederStatus {

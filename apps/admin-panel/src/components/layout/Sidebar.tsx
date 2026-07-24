@@ -4,7 +4,8 @@ import { clearToken } from '@/lib/token';
 
 const navItems = [
   { to: '/',              label: 'Dashboard',      icon: '📊' },
-  { to: '/users',         label: 'Users',           icon: '👥' },
+  { to: '/users',             label: 'Users',           icon: '👥' },
+  { to: '/match-intelligence', label: 'Match Intel',    icon: '🎯' },
   { to: '/verification',  label: 'Verification',    icon: '🪪' },
   { to: '/moderation',    label: 'Moderation',      icon: '🚩' },
   { to: '/introductions', label: 'Intro Drops',     icon: '💌' },

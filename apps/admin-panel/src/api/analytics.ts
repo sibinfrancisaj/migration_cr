@@ -1,5 +1,9 @@
 import { api } from '@/lib/axios';
-import type { ApiResponse, KpiDto, CohortBucket, GroupAnalyticsDto, DropAnalyticsDto, AiAnalyticsDto, DiamondAnalyticsDto, SeederStatus } from '@/types';
+import type {
+  ApiResponse, KpiDto, CohortBucket, GroupAnalyticsDto, DropAnalyticsDto,
+  AiAnalyticsDto, DiamondAnalyticsDto, SeederStatus,
+  MatchHealthDto, UserMatchesResponse, UserActivityDto,
+} from '@/types';
 
 export interface DateRange { from?: string; to?: string }
 
@@ -35,5 +39,20 @@ export async function fetchDiamondAnalytics(range?: DateRange): Promise<DiamondA
 
 export async function fetchSeederStatus(): Promise<SeederStatus> {
   const res = await api.get<ApiResponse<SeederStatus>>('/admin/seeder/status');
+  return res.data.data;
+}
+
+export async function fetchMatchHealth(): Promise<MatchHealthDto> {
+  const res = await api.get<ApiResponse<MatchHealthDto>>('/admin/analytics/match-health');
+  return res.data.data;
+}
+
+export async function fetchUserMatches(userId: string, limit = 20): Promise<UserMatchesResponse> {
+  const res = await api.get<ApiResponse<UserMatchesResponse>>(`/admin/users/${userId}/matches`, { params: { limit } });
+  return res.data.data;
+}
+
+export async function fetchUserActivity(userId: string): Promise<UserActivityDto> {
+  const res = await api.get<ApiResponse<UserActivityDto>>(`/admin/users/${userId}/activity`);
   return res.data.data;
 }

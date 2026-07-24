@@ -10,6 +10,10 @@ export type { KpiParams, KpiDto, CohortParams, CohortBucket } from './kpi.servic
 
 // Extended analytics (ADMIN-017)
 export { getGroupAnalytics, getDropAnalytics, getAiAnalytics, getDiamondAnalytics } from './extended.service.js';
+
+// Match Intelligence (Phase C)
+export { getMatchHealth, getUserMatches, getUserActivity } from './match.service.js';
+export type { MatchHealthDto, ScoreBucket, UserMatchDto, UserActivityDto, ActivityPoint } from './match.service.js';
 export type {
   PeriodParams,
   GroupAnalyticsDto,

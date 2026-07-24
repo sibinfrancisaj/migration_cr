@@ -7,6 +7,9 @@ import {
   getDropAnalytics,
   getAiAnalytics,
   getDiamondAnalytics,
+  getMatchHealth,
+  getUserMatches,
+  getUserActivity,
 } from '@abroad-matrimony/analytics';
 import type { ApiResponse } from '@abroad-matrimony/shared';
 import { HTTP_STATUS } from '../../constants/index.js';
@@ -74,6 +77,39 @@ export const analyticsAdminController = {
       const { from, to } = req.query as Record<string, string | undefined>;
       log.info('Admin get diamond analytics', { from, to });
       const data = await getDiamondAnalytics({ from, to });
+      const body: ApiResponse<typeof data> = { success: true, data, requestId: req.requestId };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) { next(err); }
+  },
+
+  async getMatchHealth(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:admin:analytics:match-health', requestId: req.requestId });
+    try {
+      log.info('Admin get match health');
+      const data = await getMatchHealth();
+      const body: ApiResponse<typeof data> = { success: true, data, requestId: req.requestId };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) { next(err); }
+  },
+
+  async getUserMatches(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:admin:analytics:user-matches', requestId: req.requestId });
+    try {
+      const { userId } = req.params;
+      const limit = Number(req.query['limit'] ?? 20);
+      log.info('Admin get user matches', { userId });
+      const data = await getUserMatches(userId!, limit);
+      const body: ApiResponse<typeof data> = { success: true, data, requestId: req.requestId };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) { next(err); }
+  },
+
+  async getUserActivity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:admin:analytics:user-activity', requestId: req.requestId });
+    try {
+      const { userId } = req.params;
+      log.info('Admin get user activity', { userId });
+      const data = await getUserActivity(userId!);
       const body: ApiResponse<typeof data> = { success: true, data, requestId: req.requestId };
       res.status(HTTP_STATUS.OK).json(body);
     } catch (err) { next(err); }
