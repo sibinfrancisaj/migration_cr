@@ -3,7 +3,8 @@ import type { DiamondAnalyticsDto } from '@/types';
 
 interface Props { data: DiamondAnalyticsDto }
 
-const COLORS = ['#c026d3', '#818cf8', '#34d399', '#fb923c', '#f472b6', '#60a5fa'];
+// Gold → Brown palette for pie segments
+const COLORS = ['#d97706', '#b45309', '#92400e', '#78350f', '#f59e0b', '#6B4F12'];
 
 export function DiamondChart({ data }: Props) {
   const pieData = data.topSpendReasons.map((r) => ({
@@ -12,7 +13,7 @@ export function DiamondChart({ data }: Props) {
   }));
 
   if (pieData.length === 0) {
-    return <p className="text-xs text-gray-400 py-8 text-center">No spend data yet</p>;
+    return <p className="text-xs text-stone-400 py-8 text-center">No spend data yet</p>;
   }
 
   return (
@@ -32,7 +33,7 @@ export function DiamondChart({ data }: Props) {
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+          contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e7e0d5' }}
           formatter={(v: number) => [v.toLocaleString(), 'diamonds']}
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />

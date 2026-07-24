@@ -29,7 +29,7 @@ export function DashboardPage() {
       {/* Page header */}
       <div>
         <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
+        <p className="text-sm text-stone-500 mt-0.5">
           Platform health overview · Last 30 days
         </p>
       </div>
@@ -42,7 +42,7 @@ export function DashboardPage() {
           label="New Registrations"
           value={kpiQ.isLoading ? '—' : fmt(kpi?.users.newRegistrations ?? 0)}
           icon={<UserIcon />}
-          color="blue"
+          color="gold"
         />
         <StatCard
           label="Active Users"
@@ -56,7 +56,7 @@ export function DashboardPage() {
           value={kpiQ.isLoading ? '—' : fmt(kpi?.membership.totalActive ?? 0)}
           sub={`${kpi?.membership.conversionRate ?? '—'} conversion`}
           icon={<MemberIcon />}
-          color="purple"
+          color="brown"
         />
         <StatCard
           label="Avg Match Score"
@@ -80,14 +80,14 @@ export function DashboardPage() {
           value={kpiQ.isLoading ? '—' : fmt(kpi?.profiles.totalComplete ?? 0)}
           sub={`avg ${kpi?.profiles.avgCompletionScore ?? 0}% score`}
           icon={<ProfileIcon />}
-          color="blue"
+          color="gold"
         />
         <StatCard
           label="Diamonds Spent"
           value={kpiQ.isLoading ? '—' : fmt(kpi?.diamonds.totalSpentPaise ?? 0)}
           sub={`${fmt(kpi?.diamonds.totalCreditedPaise ?? 0)} credited`}
           icon={<DiamondIcon />}
-          color="purple"
+          color="brown"
         />
         <StatCard
           label="Voice Intros"
@@ -218,8 +218,8 @@ function Row({ label, value, indent, highlight }: { label: string; value: string
 function StatusPill({ label, active }: { label: string; active: boolean }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className={`badge ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+      <span className="text-xs text-stone-500">{label}</span>
+      <span className={`badge ${active ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-500'}`}>
         {active ? 'Active' : 'Paused'}
       </span>
     </div>
