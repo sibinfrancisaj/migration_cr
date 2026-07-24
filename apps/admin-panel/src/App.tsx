@@ -14,7 +14,16 @@ import { MatchIntelligencePage } from '@/pages/match-intelligence/MatchIntellige
 import { UsersPage } from '@/pages/users/UsersPage';
 import VerificationPage from '@/pages/verification/VerificationPage';
 import ModerationPage from '@/pages/moderation/ModerationPage';
-import { ComingSoonPage } from '@/pages/ComingSoonPage';
+import IntroductionsPage from '@/pages/introductions/IntroductionsPage';
+import GroupsPage from '@/pages/groups/GroupsPage';
+import EventsPage from '@/pages/events/EventsPage';
+import PromptsPage from '@/pages/prompts/PromptsPage';
+import PaymentsPage from '@/pages/payments/PaymentsPage';
+import AiMonitoringPage from '@/pages/ai/AiMonitoringPage';
+import FeatureFlagsPage from '@/pages/flags/FeatureFlagsPage';
+import SystemConfigPage from '@/pages/config/SystemConfigPage';
+import AuditLogPage from '@/pages/audit/AuditLogPage';
+import SeederPage from '@/pages/seeder/SeederPage';
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -67,16 +76,16 @@ export default function App() {
               <Route path="users"         element={<UsersPage />} />
               <Route path="verification"  element={<VerificationPage />} />
               <Route path="moderation"    element={<ModerationPage />} />
-              <Route path="introductions" element={<ComingSoonPage title="Introduction Drops" icon="💌" />} />
-              <Route path="groups"        element={<ComingSoonPage title="Groups" icon="🏘️" />} />
-              <Route path="events"        element={<ComingSoonPage title="Events" icon="📅" />} />
-              <Route path="prompts"       element={<ComingSoonPage title="Weekly Prompts" icon="💬" />} />
-              <Route path="payments"      element={<ComingSoonPage title="Payments & Refunds" icon="💳" />} />
-              <Route path="ai"            element={<ComingSoonPage title="AI Monitoring" icon="🤖" />} />
-              <Route path="flags"         element={<ComingSoonPage title="Feature Flags" icon="🚦" />} />
-              <Route path="config"        element={<ComingSoonPage title="System Config" icon="⚙️" />} />
-              <Route path="audit"         element={<ComingSoonPage title="Audit Log" icon="📜" />} />
-              <Route path="seeder"        element={<ComingSoonPage title="Seeder & Bot Control" icon="🌱" />} />
+              <Route path="introductions" element={<IntroductionsPage />} />
+              <Route path="groups"        element={<GroupsPage />} />
+              <Route path="events"        element={<EventsPage />} />
+              <Route path="prompts"       element={<PromptsPage />} />
+              <Route path="payments"      element={<PaymentsPage />} />
+              <Route path="ai"            element={<AiMonitoringPage />} />
+              <Route path="flags"         element={<FeatureFlagsPage />} />
+              <Route path="config"        element={<SystemConfigPage />} />
+              <Route path="audit"         element={<AuditLogPage />} />
+              <Route path="seeder"        element={<SeederPage />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />
