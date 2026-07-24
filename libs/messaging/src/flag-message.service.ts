@@ -219,6 +219,29 @@ export async function getAdminFlagSummary(
 }
 
 /**
+ * List all flags globally (admin moderation queue).
+ * Cursor-based pagination, newest first.
+ */
+export async function listAllFlags(params: {
+  status?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<{ flags: FlagDto[]; hasMore: boolean; nextCursor: string | null }> {
+  const limit = Math.min(params.limit ?? 20, 100);
+  const rows = await prisma.flag.findMany({
+    where: {
+      ...(params.status ? { status: params.status } : {}),
+      ...(params.cursor ? { id: { gt: params.cursor } } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit + 1,
+  });
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  return { flags: page.map(toFlagDto), hasMore, nextCursor: hasMore ? page[page.length - 1]!.id : null };
+}
+
+/**
  * Resolve or dismiss a flag (admin action).
  *
  * Side-effects:

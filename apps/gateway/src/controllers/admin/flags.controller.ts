@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import {
   getAdminFlagSummary,
+  listAllFlags,
   resolveFlag,
   FlagNotFoundError,
 } from '@abroad-matrimony/messaging';
@@ -13,6 +14,18 @@ import { FLAG_ERRORS, FLAG_MESSAGES } from '../../constants/flag.constants.js';
 import type { ResolveFlagBody, AdminFlagsQuery } from '../../schemas/admin/resolve-flag.schema.js';
 
 export const flagsController = {
+
+  async listAll(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const log = createChildLogger({ module: 'gateway:admin:flags:list-all', requestId: req.requestId });
+    try {
+      const { status, cursor, limit } = req.query as Record<string, string | undefined>;
+      log.info('Admin list all flags', { status });
+      const result = await listAllFlags({ status, cursor, limit: limit ? Number(limit) : undefined });
+      const body: ApiResponse<typeof result> = { success: true, data: result, requestId: req.requestId };
+      res.status(HTTP_STATUS.OK).json(body);
+    } catch (err) { next(err); }
+  },
+
   /**
    * GET /admin/users/:userId/flags?page=1&limit=20
    *

@@ -82,31 +82,45 @@ export interface UserAdminDetail extends UserAdminSummary {
 
 // ── Verification ─────────────────────────────────────────────────────────────
 
-export interface VerificationRequest {
+export interface VerificationAdminDto {
   id: string;
   userId: string;
-  status: 'PENDING' | 'UNDER_REVIEW' | 'APPROVED' | 'REJECTED';
-  documentType: string;
-  documentUrl: string;
-  selfieUrl: string;
-  createdAt: string;
+  status: string;
+  idDocType: string;
+  idDocS3Key: string;
+  selfieS3Key: string;
+  submittedAt: string;
   reviewedAt: string | null;
   reviewNote: string | null;
-  user?: { phone: string; profile?: { fullName: string } };
+  user: { phone: string; email: string | null; profileName: string | null };
+}
+
+export interface VerificationListResult {
+  items: VerificationAdminDto[];
+  hasMore: boolean;
+  nextCursor: string | null;
 }
 
 // ── Flags / Moderation ────────────────────────────────────────────────────────
 
 export interface FlagItem {
   id: string;
-  messageId: string;
   reporterId: string;
+  targetUserId: string;
+  targetEntityId: string;
   reason: string;
-  status: 'PENDING' | 'RESOLVED';
+  description: string | null;
+  status: string;
   actionTaken: string | null;
+  resolution: string | null;
+  resolvedAt: string | null;
   createdAt: string;
-  reporter?: { phone: string };
-  message?: { content: string; senderId: string };
+}
+
+export interface FlagListResult {
+  flags: FlagItem[];
+  hasMore: boolean;
+  nextCursor: string | null;
 }
 
 // ── Match Intelligence ────────────────────────────────────────────────────────

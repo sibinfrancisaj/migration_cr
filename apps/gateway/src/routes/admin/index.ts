@@ -226,6 +226,9 @@ adminRouter.get('/audit-log', requireAdminRole(AdminRole.SUPERADMIN), auditLogCo
 
 // ─── Moderation Flags (ADMIN-006) ─────────────────────────────────────────────
 
+/** GET /admin/flags — global moderation queue */
+adminRouter.get('/flags', requireAdminRole(AdminRole.MODERATOR), flagsController.listAll);
+
 /** PUT /admin/flags/:flagId */
 adminRouter.put('/flags/:flagId', requireAdminRole(AdminRole.MODERATOR), validateParams(flagIdParamsSchema), validateBody(resolveFlagBodySchema), flagsController.resolve);
 

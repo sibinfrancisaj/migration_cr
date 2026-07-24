@@ -50,6 +50,7 @@ export {
 export {
   flagMessage,
   getAdminFlagSummary,
+  listAllFlags,
   resolveFlag,
   MessageNotFoundError,
   AlreadyFlaggedError,

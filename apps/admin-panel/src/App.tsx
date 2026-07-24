@@ -12,6 +12,8 @@ import { LoginPage } from '@/pages/auth/LoginPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { MatchIntelligencePage } from '@/pages/match-intelligence/MatchIntelligencePage';
 import { UsersPage } from '@/pages/users/UsersPage';
+import VerificationPage from '@/pages/verification/VerificationPage';
+import ModerationPage from '@/pages/moderation/ModerationPage';
 import { ComingSoonPage } from '@/pages/ComingSoonPage';
 
 const qc = new QueryClient({
@@ -63,8 +65,8 @@ export default function App() {
               <Route index element={<DashboardPage />} />
               <Route path="match-intelligence" element={<MatchIntelligencePage />} />
               <Route path="users"         element={<UsersPage />} />
-              <Route path="verification"  element={<ComingSoonPage title="Verification Queue" icon="🪪" />} />
-              <Route path="moderation"    element={<ComingSoonPage title="Content Moderation" icon="🚩" />} />
+              <Route path="verification"  element={<VerificationPage />} />
+              <Route path="moderation"    element={<ModerationPage />} />
               <Route path="introductions" element={<ComingSoonPage title="Introduction Drops" icon="💌" />} />
               <Route path="groups"        element={<ComingSoonPage title="Groups" icon="🏘️" />} />
               <Route path="events"        element={<ComingSoonPage title="Events" icon="📅" />} />
