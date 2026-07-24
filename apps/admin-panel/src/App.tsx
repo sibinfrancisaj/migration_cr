@@ -11,6 +11,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/pages/auth/LoginPage';
 import { DashboardPage } from '@/pages/dashboard/DashboardPage';
 import { MatchIntelligencePage } from '@/pages/match-intelligence/MatchIntelligencePage';
+import { UsersPage } from '@/pages/users/UsersPage';
 import { ComingSoonPage } from '@/pages/ComingSoonPage';
 
 const qc = new QueryClient({
@@ -61,7 +62,7 @@ export default function App() {
             <Route element={<AppShell />}>
               <Route index element={<DashboardPage />} />
               <Route path="match-intelligence" element={<MatchIntelligencePage />} />
-              <Route path="users"         element={<ComingSoonPage title="User Management" icon="👥" />} />
+              <Route path="users"         element={<UsersPage />} />
               <Route path="verification"  element={<ComingSoonPage title="Verification Queue" icon="🪪" />} />
               <Route path="moderation"    element={<ComingSoonPage title="Content Moderation" icon="🚩" />} />
               <Route path="introductions" element={<ComingSoonPage title="Introduction Drops" icon="💌" />} />

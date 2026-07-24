@@ -63,26 +63,21 @@ export interface DiamondAnalyticsDto {
 
 // ── Users ────────────────────────────────────────────────────────────────────
 
-export interface UserListItem {
+export interface UserAdminSummary {
   id: string;
   phone: string;
+  email: string | null;
   role: string;
-  createdAt: string;
-  profile?: {
-    fullName: string;
-    completionScore: number;
-    currentCountry: string;
-    gender: string;
-  };
   isSeeded: boolean;
-  _count?: { matchesAsA: number; matchesAsB: number };
+  createdAt: string;
+  profile: { name: string; completionScore: number; verificationStatus: string } | null;
 }
 
-export interface UserListResponse {
-  users: UserListItem[];
-  total: number;
-  page: number;
-  limit: number;
+export interface UserAdminDetail extends UserAdminSummary {
+  devices: Array<{ id: string; fingerprint: string; lastUsedAt: string | null }>;
+  membership: { plan: string; status: string; expiresAt: string | null } | null;
+  verificationStatus: string;
+  openFlagCount: number;
 }
 
 // ── Verification ─────────────────────────────────────────────────────────────
