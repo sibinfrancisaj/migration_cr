@@ -363,6 +363,27 @@ adminRouter.get('/seeder/status', requireAdminRole(AdminRole.SUPERADMIN), seeder
 /** POST /admin/seeder/flush */
 adminRouter.post('/seeder/flush', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.flush);
 
+/** POST /admin/seeder/trigger-drip */
+adminRouter.post('/seeder/trigger-drip', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.triggerDrip);
+
+/** POST /admin/seeder/trigger-activity */
+adminRouter.post('/seeder/trigger-activity', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.triggerActivity);
+
+/** POST /admin/seeder/pause-drip */
+adminRouter.post('/seeder/pause-drip', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.pauseDrip);
+
+/** POST /admin/seeder/resume-drip */
+adminRouter.post('/seeder/resume-drip', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.resumeDrip);
+
+/** POST /admin/seeder/pause-activity */
+adminRouter.post('/seeder/pause-activity', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.pauseActivity);
+
+/** POST /admin/seeder/resume-activity */
+adminRouter.post('/seeder/resume-activity', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.resumeActivity);
+
+/** POST /admin/seeder/seed-groups */
+adminRouter.post('/seeder/seed-groups', requireAdminRole(AdminRole.SUPERADMIN), seederMonitoringController.seedGroups);
+
 // ─── AI / Embedding Monitoring (ADMIN-016) ────────────────────────────────────
 
 /** GET /admin/ai/embeddings/status */

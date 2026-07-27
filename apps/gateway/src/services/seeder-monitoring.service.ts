@@ -1,12 +1,19 @@
 /**
  * ADMIN-015 — Seeder monitoring service.
- * Returns seeded record counts per entity; flush runs a Prisma transaction.
- * No HTTP call to the seeder app — reads/writes DB directly.
+ * DB reads go direct via Prisma. Workflow control (trigger/pause/resume)
+ * proxies to the seeder app over HTTP using SEEDER_URL env var.
  */
 import { getPrismaClient } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
+import { getEnv } from '@abroad-matrimony/config';
 
 const log = createChildLogger({ module: 'gateway:seeder-monitoring' });
+
+export interface WorkflowActionResult {
+  success: boolean;
+  message: string;
+  jobId?: string;
+}
 
 export interface SeederStatusDto {
   seededCounts: {
@@ -132,4 +139,66 @@ export async function flushAllSeeded(): Promise<SeederFlushResult> {
 
   log.info('Seeded data flush complete', { deleted: result.deleted });
   return result;
+}
+
+// ─── Seeder app workflow control (HTTP proxy) ────────────────────────────────
+
+function getSeederBase(): string {
+  const env = getEnv();
+  return (env as any).SEEDER_URL ?? 'http://localhost:3100';
+}
+
+function getSeederKey(): string {
+  const env = getEnv();
+  return (env as any).SEEDER_SECRET ?? '';
+}
+
+async function callSeeder(path: string, method = 'POST'): Promise<WorkflowActionResult> {
+  const url = `${getSeederBase()}${path}`;
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Seeder-Key': getSeederKey(),
+      },
+    });
+    const body = await res.json() as { success?: boolean; data?: { message?: string; jobId?: string } };
+    return {
+      success: !!body.success,
+      message: body.data?.message ?? (body.success ? 'OK' : 'Seeder returned error'),
+      jobId: body.data?.jobId,
+    };
+  } catch (err) {
+    log.warn('Seeder app unreachable', { url, err });
+    return { success: false, message: 'Seeder app unreachable — is it running?' };
+  }
+}
+
+export function triggerDrip(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/run');
+}
+
+export function triggerActivity(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/activity');
+}
+
+export function pauseDrip(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/pause');
+}
+
+export function resumeDrip(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/resume');
+}
+
+export function pauseActivity(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/pause-activity');
+}
+
+export function resumeActivity(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/resume-activity');
+}
+
+export function seedGroups(): Promise<WorkflowActionResult> {
+  return callSeeder('/seed/groups');
 }

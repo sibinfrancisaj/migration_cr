@@ -11,5 +11,8 @@ seedRouter.get('/status',  seedController.getStatus);
 seedRouter.post('/run',    seedController.triggerRun);
 seedRouter.post('/groups', seedController.seedGroups);   // GRP-R-007: idempotent group seed
 seedRouter.post('/flush',  seedController.flush);
-seedRouter.post('/pause',  seedController.pause);
-seedRouter.post('/resume', seedController.resume);
+seedRouter.post('/pause',          seedController.pause);
+seedRouter.post('/resume',         seedController.resume);
+seedRouter.post('/activity',       seedController.triggerActivity);
+seedRouter.post('/pause-activity', seedController.pauseActivityHandler);
+seedRouter.post('/resume-activity',seedController.resumeActivityHandler);

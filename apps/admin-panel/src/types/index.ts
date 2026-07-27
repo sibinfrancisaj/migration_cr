@@ -174,14 +174,51 @@ export interface UserActivityDto {
 
 // ── Seeder ───────────────────────────────────────────────────────────────────
 
+export interface SocialLoopSnapshot {
+  ranAt: string;
+  usersActive: number;
+  totalProactive: number;
+  connectionsHandled: number;
+  introsHandled: number;
+  postsLiked: number;
+  commentsAdded: number;
+  responsesResonated: number;
+  durationMs: number;
+}
+
+export interface DripSnapshot {
+  ranAt: string;
+  profilesCreated: number;
+  durationMs: number;
+}
+
 export interface SeederStatus {
-  isRunning: boolean;
+  running: boolean;
+  activityRunning: boolean;
   dripPaused: boolean;
+  activityPaused: boolean;
   lastRunAt: string | null;
   lastDripAt: string | null;
+  lastMatchRecomputeAt: string | null;
+  lastActivityAt: string | null;
   totalProfilesCreated: number;
-  seededUserCount: number;
-  seededProfileCount: number;
+  seededCounts: {
+    users: number;
+    profiles: number;
+    groups: number;
+    groupPosts: number;
+    groupMemberships: number;
+    connections: number;
+    introductions: number;
+    habitLogs: number;
+    promptResponses: number;
+    savedProfiles: number;
+    eventRsvps: number;
+  };
+  lastSocialLoop: SocialLoopSnapshot | null;
+  lastDrip: DripSnapshot | null;
+  socialLoopHistory: SocialLoopSnapshot[];
+  dripHistory: DripSnapshot[];
 }
 
 export interface ApiResponse<T> {

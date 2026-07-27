@@ -6,6 +6,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { seederLog } from '../lib/seeder-logger.js';
 import { getSeederEnv } from '../lib/seeder-env.js';
+import { getState, setActivityRunning, setSocialLoopCompleted } from '../lib/seeder-state.js';
 import { runSocialLoop } from '../services/social-loop.service.js';
 
 export const ACTIVITY_QUEUE_NAME = 'seeder:activity';
@@ -19,13 +20,23 @@ function getConnection(): IORedis {
   return new IORedis(getSeederEnv().REDIS_URL, { maxRetriesPerRequest: null });
 }
 
-export async function scheduleActivityJob(): Promise<void> {
+export function getActivityQueue(): Queue {
   if (!_queue) _queue = new Queue(ACTIVITY_QUEUE_NAME, { connection: getConnection() });
-  await _queue.add('activity', {}, {
+  return _queue;
+}
+
+export async function scheduleActivityJob(): Promise<void> {
+  await getActivityQueue().add('activity', {}, {
     repeat: { every: ACTIVITY_INTERVAL_MS },
     jobId: 'seeder-activity-repeatable',
   });
   seederLog.info('Activity simulation job scheduled', { intervalMs: ACTIVITY_INTERVAL_MS });
+}
+
+export async function triggerImmediateActivity(): Promise<string> {
+  const job = await getActivityQueue().add('activity-manual', {}, { priority: 1 });
+  seederLog.info('Manual activity trigger queued', { jobId: job.id });
+  return job.id ?? 'unknown';
 }
 
 export function startActivityWorker(): Worker {
@@ -34,14 +45,36 @@ export function startActivityWorker(): Worker {
   _worker = new Worker(
     ACTIVITY_QUEUE_NAME,
     async (_job: Job) => {
+      if (getState().activityPaused) {
+        seederLog.info('Activity job skipped — scheduler is paused');
+        return;
+      }
+
+      setActivityRunning(true);
+      const startMs = Date.now();
       seederLog.info('Social loop starting');
+
       const result = await runSocialLoop();
-      seederLog.info('Social loop complete', result);
+      const durationMs = Date.now() - startMs;
+
+      setSocialLoopCompleted({
+        usersActive: result.usersActive,
+        totalProactive: result.totalProactive,
+        connectionsHandled: result.totalReactive.connectionsHandled,
+        introsHandled: result.totalReactive.introsHandled,
+        postsLiked: result.totalReactive.postsLiked,
+        commentsAdded: result.totalReactive.commentsAdded,
+        responsesResonated: result.totalReactive.responsesResonated,
+        durationMs,
+      });
+
+      seederLog.info('Social loop complete', { ...result, durationMs });
     },
     { connection: getConnection(), concurrency: 1 },
   );
 
   _worker.on('failed', (job, err) => {
+    setActivityRunning(false);
     seederLog.error('Activity simulation job failed', { jobId: job?.id, err });
   });
 

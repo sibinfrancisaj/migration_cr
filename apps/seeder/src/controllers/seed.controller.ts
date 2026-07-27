@@ -1,14 +1,20 @@
 /**
  * SEED-008 — Seeder control API controller.
  * GET /seed/status, POST /seed/run, POST /seed/flush,
- * POST /seed/pause, POST /seed/resume
+ * POST /seed/pause, POST /seed/resume, POST /seed/activity,
+ * POST /seed/pause-activity, POST /seed/resume-activity
  */
 import type { Request, Response, NextFunction } from 'express';
 import { getSeederStatus } from '../services/status.service.js';
 import { flushAllSeededData } from '../services/flush.service.js';
 import { seedSystemGroups } from '../services/group-seed.service.js';
 import { triggerImmediateDrip } from '../jobs/drip.job.js';
-import { pauseDrip, resumeDrip, getState } from '../lib/seeder-state.js';
+import { triggerImmediateActivity } from '../jobs/activity.job.js';
+import {
+  pauseDrip, resumeDrip,
+  pauseActivity, resumeActivity,
+  getState,
+} from '../lib/seeder-state.js';
 import { seederLog } from '../lib/seeder-logger.js';
 
 export const seedController = {
@@ -29,7 +35,6 @@ export const seedController = {
         res.status(409).json({ success: false, error: 'A seeder job is already running' });
         return;
       }
-      // GRP-R-007: ensure system groups exist before profiles are created
       const groupResult = await seedSystemGroups();
       seederLog.info('System groups ensured before drip', groupResult);
 
@@ -41,7 +46,22 @@ export const seedController = {
     }
   },
 
-  /** POST /seed/groups — create/verify system groups (idempotent, standalone) */
+  /** POST /seed/activity — trigger immediate social loop run */
+  async triggerActivity(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      if (getState().activityRunning) {
+        res.status(409).json({ success: false, error: 'Activity loop is already running' });
+        return;
+      }
+      const jobId = await triggerImmediateActivity();
+      seederLog.info('Manual activity loop triggered', { jobId });
+      res.status(202).json({ success: true, data: { jobId, message: 'Activity job queued' } });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /** POST /seed/groups — create/verify system groups (idempotent) */
   async seedGroups(_req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       seederLog.info('Manual system group seed requested');
@@ -63,7 +83,6 @@ export const seedController = {
         });
         return;
       }
-
       seederLog.warn('Flush requested via control API');
       const result = await flushAllSeededData();
       res.json({ success: true, data: result });
@@ -76,15 +95,23 @@ export const seedController = {
     }
   },
 
-  /** POST /seed/pause — pause drip scheduler */
   pause(_req: Request, res: Response): void {
     pauseDrip();
     res.json({ success: true, data: { dripPaused: true } });
   },
 
-  /** POST /seed/resume — resume drip scheduler */
   resume(_req: Request, res: Response): void {
     resumeDrip();
     res.json({ success: true, data: { dripPaused: false } });
+  },
+
+  pauseActivityHandler(_req: Request, res: Response): void {
+    pauseActivity();
+    res.json({ success: true, data: { activityPaused: true } });
+  },
+
+  resumeActivityHandler(_req: Request, res: Response): void {
+    resumeActivity();
+    res.json({ success: true, data: { activityPaused: false } });
   },
 };
