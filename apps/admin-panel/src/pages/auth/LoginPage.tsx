@@ -58,7 +58,7 @@ export function LoginPage() {
           >
             <span className="font-bold text-2xl" style={{ color: '#2C1A0E' }}>A</span>
           </div>
-          <h1 className="text-xl font-bold" style={{ color: '#fef3c7' }}>Abroad Matrimony</h1>
+          <h1 className="text-xl font-bold" style={{ color: '#fef3c7' }}>Test Project</h1>
           <p className="text-sm mt-0.5" style={{ color: '#fbbf24' }}>Admin Panel</p>
         </div>
 
@@ -132,7 +132,7 @@ export function LoginPage() {
         </div>
 
         <p className="text-center text-xs mt-4" style={{ color: 'rgba(251,191,36,0.6)' }}>
-          Abroad Matrimony Admin · Authorised access only
+          Test Project Admin · Authorised access only
         </p>
       </div>
     </div>

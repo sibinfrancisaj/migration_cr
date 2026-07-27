@@ -38,7 +38,7 @@ export function Sidebar() {
           A
         </div>
         <div>
-          <p className="text-sm font-semibold text-gold-100 leading-none">Abroad</p>
+          <p className="text-sm font-semibold text-gold-100 leading-none">Test Project</p>
           <p className="text-xs text-gold-400 leading-none mt-0.5">Admin Panel</p>
         </div>
       </div>
