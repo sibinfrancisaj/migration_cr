@@ -608,3 +608,55 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 - `apps/gateway/src/controllers/matches/__tests__/tuning.controller.test.ts` — 19 tests (was 7, +12 new)
 - `docs/api/openapi.yaml` — Match Tuning section replaced; 3 new paths
 - `docs/api/postman-collection.json` — Match Tuning folder updated with 5 requests
+
+
+---
+
+## Phase 17 — pgvector / Smart Discovery (Recommended Next) ⏳
+**Goal:** Eliminate cold-start on discovery, add semantic group suggestions, richer match explanations.
+**Dependencies:** pgvector live ✅ · ProfileEmbedding model ✅ · libs/ai ✅
+**Estimated effort:** 3–5 days
+**Status:** Backlog — ready to start immediately (no schema changes needed for F-049 and F-051)
+
+| Task ID   | Description                                                                 | Status |
+|-----------|-----------------------------------------------------------------------------|--------|
+| VEC-001   | ANN cold-start in `getDiscoveryFeed()` — pgvector fallback when <10 scores  | ⏳     |
+| VEC-002   | Group description embeddings — store in `group_embeddings` (new model)      | ⏳     |
+| VEC-003   | Semantic `listSuggestedGroups()` — ANN group embedding vs user embedding    | ⏳     |
+| VEC-004   | Richer `generateWhyThisMatchLLM()` — pass both users' AI summaries as context | ⏳  |
+| VEC-005   | Admin: `GET /admin/users/:id/similar` — top-N similar users by embedding    | ⏳     |
+
+---
+
+## Phase 18 — Connections + Verification Gateway Wiring ⏳
+**Goal:** Wire the already-built `libs/connections` and `libs/verification` service layers into gateway routes.
+**Dependencies:** Phase 7b ✅ (service layers done) · All gateway middleware ✅
+**Estimated effort:** 2–3 days
+**Status:** Backlog — service layer complete, gateway endpoints missing
+
+| Task ID   | Description                                                                 | Status |
+|-----------|-----------------------------------------------------------------------------|--------|
+| CONN-001  | `POST /api/v1/connections` — send connection request                        | ⏳     |
+| CONN-002  | `GET /api/v1/connections` — list sent/received/accepted                     | ⏳     |
+| CONN-003  | `POST /api/v1/connections/:id/accept` + `decline` + `withdraw`              | ⏳     |
+| CONN-004  | `DELETE /api/v1/connections/:id` — remove connection                        | ⏳     |
+| VER-001   | `POST /api/v1/verification` — submit ID doc + selfie                        | ⏳     |
+| VER-002   | `GET /api/v1/verification/status` — get own verification status             | ⏳     |
+| VER-003   | `GET /api/v1/verification/trust-score` — 6-layer trust score               | ⏳     |
+
+---
+
+## Phase 19 — Production Readiness ⏳
+**Goal:** Everything needed before the app goes live with real users.
+**Status:** Backlog
+
+| Task ID   | Description                                                                 | Status |
+|-----------|-----------------------------------------------------------------------------|--------|
+| PROD-001  | Email unsubscribe + one-click opt-out (CAN-SPAM / legal)                   | ⏳     |
+| PROD-002  | GDPR data export + account deletion flow (`deletedAt` field exists)        | ⏳     |
+| PROD-003  | Google Vision API image moderation before S3 store                         | ⏳     |
+| PROD-004  | Subscription renewal reminder BullMQ job (3d + 1d before `expiresAt`)     | ⏳     |
+| PROD-005  | Notification preferences table + per-user channel opt-out                 | ⏳     |
+| PROD-006  | Partner preference filters on discovery feed (age range, city, religion)  | ⏳     |
+| PROD-007  | Redis Cloud HA setup (replace single Docker Redis)                         | ⏳     |
+| PROD-008  | Verify Supabase automated DB backups enabled                               | ⏳     |

@@ -39,6 +39,10 @@
 | F-014 | Partner preference filters (age range, city, etc.)| High     | Discovery feed currently score-only; filters needed for UX |
 | F-015 | Profile photo ordering / reordering               | Medium   | `media.order` field exists; drag-and-drop reorder API needed |
 | F-016 | Voice intro / video intro playback                | Low      | `MediaType.VOICE_INTRO` and `VIDEO_INTRO` exist in schema |
+| F-049 | pgvector ANN discovery feed (replace pre-computed MatchScore) | High | `ProfileEmbedding` + pgvector already live. For new users with no stored scores, fall back to live cosine similarity ANN query against `profile_embeddings`. Fastest wins: no cold-start problem for new joiners. See RAG note below. |
+| F-050 | Semantic group suggestions via embedding similarity | Medium | `listSuggestedGroups()` currently ranks by country + memberCount. Query group description embeddings against user profile embedding for topic-aware suggestions (e.g. finance professional → Professional/Finance group). |
+| F-051 | Richer "Why this match" using RAG context        | Medium   | `generateWhyThisMatchLLM()` currently uses score breakdown only. Pull top-3 semantically similar ProfileEmbedding dimensions as grounding context into the GPT prompt → more natural, less formulaic explanations. |
+| F-052 | Profile similarity search admin tool             | Low      | Admin endpoint: given a userId, return top-N most embedding-similar users. Useful for QA, moderation (find fake-profile clusters), and debugging match quality. |
 
 ---
 
@@ -117,6 +121,55 @@
 | F-046 | Automated text/voice moderation                   | Medium   | Google Perspective API for toxic text. Voice → Whisper transcription → Perspective. |
 | F-047 | User safety score dashboard (admin)               | High     | Per-user: total flags received, unique reporters, open/resolved breakdown. |
 | F-048 | Repeat-offender auto-escalation                   | Medium   | X flags in Y days → auto-`SUSPENDED_REVIEW` status. Currently manual only. |
+
+---
+
+## pgvector / RAG Architecture Note (added 2026-07-27)
+
+> Reference: Using PostgreSQL as a Vector Database for RAG (Nitin Prodduturi, Medium)
+> Verdict: **The infrastructure is already in place. RAG-style features are low-effort additions.**
+
+### What we already have
+- `pgvector 0.8.5` extension live in local Docker Postgres (and Supabase)
+- `ProfileEmbedding` model — 1536-dim `text-embedding-3-small` vector per user
+- `libs/ai` — `generateProfileIntelligence()` writes embeddings; BullMQ 60s-debounce job keeps them fresh
+- `pairing.service.ts` — already does pgvector cosine similarity ANN queries for intro drop matching
+
+### What the article describes that we don't have yet
+The article describes **RAG for Q&A** — retrieving semantically similar document chunks to ground an LLM answer. We don't need Q&A, but the same vector retrieval pattern applies to our use cases.
+
+### Recommended additions (in priority order)
+
+#### 1. Cold-start discovery via ANN (F-049) — HIGH priority
+**Problem:** New users have no `MatchScore` rows → discovery feed is empty for days until BullMQ batch-computes pairs.
+**Fix:** In `getDiscoveryFeed()`, when stored scores < 10 for a user, fall back to a live pgvector query:
+```sql
+SELECT user_id, 1 - (embedding <=> $1::vector) AS similarity
+FROM profile_embeddings
+WHERE user_id != $2
+ORDER BY embedding <=> $1::vector
+LIMIT 20;
+```
+This is one SQL query. No new infrastructure. Eliminates cold-start entirely.
+
+#### 2. Semantic group suggestions (F-050) — MEDIUM priority
+**Problem:** `listSuggestedGroups()` uses country + memberCount only — no semantic relevance.
+**Fix:** Store a 1536-dim embedding for each Group (from its name + description). ANN query at suggestion time. Groups whose description embedding is closest to the user's profile embedding rank first.
+
+#### 3. Richer "Why this match" (F-051) — MEDIUM priority
+**Problem:** `generateWhyThisMatchLLM()` only sends the numeric score breakdown as context. GPT has to invent the narrative.
+**Fix:** Fetch both users' `ProfileEmbedding.summary` (150-word AI summary already generated). Pass as grounding context in the system prompt. Result is grounded in actual profile content, not just numbers.
+
+#### 4. Admin similarity search (F-052) — LOW priority
+One-liner admin endpoint using the same ANN pattern. Useful for spotting fake-profile clusters (similar embeddings + no organic activity = bot signals).
+
+### Implementation effort estimate
+| Feature | New code | Complexity |
+|---------|----------|------------|
+| F-049 Cold-start ANN | ~30 lines in `discover.service.ts` | Low |
+| F-050 Group suggestions | ~40 lines + one Prisma migration for Group embedding | Medium |
+| F-051 Why-this-match context | ~10 lines in `generateWhyThisMatchLLM()` | Very low |
+| F-052 Admin similarity search | ~20 lines + 1 route | Low |
 
 ---
 
