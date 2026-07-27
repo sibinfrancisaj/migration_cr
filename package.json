@@ -17,11 +17,16 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\" --ignore-path .prettierignore",
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:down:volumes": "docker compose -f docker/docker-compose.yml down -v",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "docker:reset": "npm run docker:down:volumes && npm run docker:up && npm run db:wait && npm run db:push && npm run db:generate",
+    "db:wait": "node -e \"const n=require('net');let t=0;function c(){const s=n.createConnection(5433,'localhost');s.on('connect',()=>{console.log('Postgres ready');s.destroy();process.exit(0)});s.on('error',()=>{if(++t>30){console.error('Postgres timeout');process.exit(1)}setTimeout(c,1000)})}c()\"",
     "db:generate": "prisma generate --schema=libs/db/prisma/schema.prisma",
     "db:migrate": "prisma migrate dev --schema=libs/db/prisma/schema.prisma",
     "db:push": "prisma db push --schema=libs/db/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=libs/db/prisma/schema.prisma",
-    "db:seed": "ts-node -r tsconfig-paths/register libs/db/src/seed.ts"
+    "db:seed": "ts-node -r tsconfig-paths/register libs/db/src/seed.ts",
+    "dev": "npm run docker:up && npx ts-node -e \"setTimeout(()=>{},2000)\" && npm run db:generate"
   },
   "devDependencies": {
     "@nx/eslint": "^22.7.4",
