@@ -937,6 +937,8 @@ tags:
     description: Key-value store for admin-configurable platform settings
   - name: Admin — Seeder
     description: Seeder service status and flush control (non-production only)
+  - name: Notifications
+    description: Per-user notification channel preferences (PROD-005)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -6525,6 +6527,39 @@ paths:
         '403': { $ref: '#/components/responses/403Forbidden' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
+  # ── Admin — Queue Health ──────────────────────────────────────────────────
+
+  /admin/system/queue-health:
+    get:
+      tags: [Admin — System]
+      summary: BullMQ queue health dashboard
+      description: Returns job counts (waiting, active, delayed, failed, paused) and worker count for all BullMQ queues. Requires MODERATOR.
+      operationId: adminGetQueueHealth
+      security:
+        - adminBearerAuth: []
+      responses:
+        '200':
+          description: Queue health stats
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  queues:
+                    - { name: matching, waiting: 0, active: 1, delayed: 0, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: notification, waiting: 3, active: 0, delayed: 0, failed: 1, paused: 0, workerCount: 1 }
+                    - { name: profile-intelligence, waiting: 0, active: 0, delayed: 0, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: weekly-intros, waiting: 0, active: 0, delayed: 1, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: events, waiting: 0, active: 0, delayed: 0, failed: 0, paused: 0, workerCount: 0 }
+                    - { name: renewal-reminder, waiting: 0, active: 0, delayed: 5, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: seeder:drip, waiting: 0, active: 0, delayed: 1, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: seeder:activity, waiting: 0, active: 0, delayed: 1, failed: 0, paused: 0, workerCount: 1 }
+                    - { name: seeder:match-recompute, waiting: 0, active: 0, delayed: 0, failed: 0, paused: 0, workerCount: 0 }
+                  checkedAt: "2026-07-28T09:00:00.000Z"
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
   # ── Admin — AI Monitoring (ADMIN-016) ─────────────────────────────────────
 
   /admin/ai/embeddings/status:
@@ -6618,4 +6653,102 @@ paths:
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '403': { $ref: '#/components/responses/403Forbidden' }
         '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  # Phase 19: Production Readiness
+
+  /api/v1/auth/unsubscribe:
+    get:
+      tags: [Auth]
+      summary: Unsubscribe from marketing emails (PROD-001)
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Successfully unsubscribed }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/auth/resubscribe:
+    post:
+      tags: [Auth]
+      summary: Resubscribe to marketing emails (PROD-001)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Successfully resubscribed }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/export-data:
+    post:
+      tags: [Profile]
+      summary: GDPR data export Article 15 (PROD-002)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Data export summary }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/profile/partner-preferences:
+    get:
+      tags: [Profile]
+      summary: Get partner preference filters (PROD-006)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Partner preference filters }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    put:
+      tags: [Profile]
+      summary: Set partner preference filters (PROD-006)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ageMin: { type: integer, minimum: 18, maximum: 80 }
+                ageMax: { type: integer, minimum: 18, maximum: 80 }
+                countries: { type: array, items: { type: string } }
+                cities: { type: array, items: { type: string } }
+                religions: { type: array, items: { type: string } }
+      responses:
+        '200': { description: Preferences saved }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: Get notification channel preferences (PROD-005)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Notification opt-out preferences }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+    put:
+      tags: [Notifications]
+      summary: Update notification channel preferences (PROD-005)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                emailEnabled: { type: boolean }
+                smsEnabled: { type: boolean }
+                pushEnabled: { type: boolean }
+                marketingEnabled: { type: boolean }
+      responses:
+        '200': { description: Preferences updated }
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }

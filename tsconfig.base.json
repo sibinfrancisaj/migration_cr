@@ -51,7 +51,9 @@
       "@abroad-matrimony/trust": ["libs/trust/src/index.ts"],
       "@abroad-matrimony/ai": ["libs/ai/src/index.ts"],
       "@abroad-matrimony/analytics": ["libs/analytics/src/index.ts"],
-      "@abroad-matrimony/signals": ["libs/signals/src/index.ts"]
+      "@abroad-matrimony/recommendations": ["libs/recommendations/src/index.ts"],
+      "@abroad-matrimony/signals": ["libs/signals/src/index.ts"],
+      "@abroad-matrimony/moderation": ["libs/moderation/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

@@ -5,6 +5,7 @@ import { getEmailAdapter } from './adapters/email/index.js';
 import { getSmsAdapter } from './adapters/sms/index.js';
 import { getPushAdapter } from './adapters/push/index.js';
 import { NotificationType, type NotificationJobData } from './types/notification.types.js';
+import { getNotificationPreferences } from './preferences.service.js';
 
 const log = createChildLogger({ module: 'notification:worker' });
 
@@ -42,15 +43,38 @@ async function getPushDelay(userId: string | undefined): Promise<number> {
  */
 export async function processNotification(data: NotificationJobData): Promise<void> {
   switch (data.type) {
-    case NotificationType.EMAIL:
+    case NotificationType.EMAIL: {
+      if (data.payload.userId) {
+        const prefs = await getNotificationPreferences(data.payload.userId);
+        if (!prefs.emailEnabled) {
+          log.info('Email notification skipped (user opted out)', { userId: data.payload.userId });
+          return;
+        }
+      }
       await getEmailAdapter().send(data.payload);
       break;
+    }
 
-    case NotificationType.SMS:
+    case NotificationType.SMS: {
+      if (data.payload.userId) {
+        const prefs = await getNotificationPreferences(data.payload.userId);
+        if (!prefs.smsEnabled) {
+          log.info('SMS notification skipped (user opted out)', { userId: data.payload.userId });
+          return;
+        }
+      }
       await getSmsAdapter().send(data.payload);
       break;
+    }
 
     case NotificationType.PUSH: {
+      if (data.payload.userId) {
+        const prefs = await getNotificationPreferences(data.payload.userId);
+        if (!prefs.pushEnabled) {
+          log.info('Push notification skipped (user opted out)', { userId: data.payload.userId });
+          return;
+        }
+      }
       const delayMs = await getPushDelay(data.payload.userId);
       if (delayMs > 0) {
         log.info('Push notification deferred (quiet window)', {

@@ -10,6 +10,7 @@
 
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { cacheGet, cacheSet } from '@abroad-matrimony/cache';
+import { prisma } from '@abroad-matrimony/db';
 import { CACHE_KEYS, CACHE_TTL } from '@abroad-matrimony/shared';
 import type { ScoreBreakdown } from '@abroad-matrimony/shared';
 
@@ -187,10 +188,22 @@ export async function generateWhyThisMatchLLM(
       .map(d => `${d.label}: ${d.pct}%`)
       .join(', ');
 
+    // RAG context: fetch both users' AI-generated profile summaries (F-051)
+    const embeddings = await prisma.profileEmbedding.findMany({
+      where: { userId: { in: [userAId, userBId] } },
+      select: { userId: true, summary: true },
+    });
+    const summaryA = embeddings.find(e => e.userId === userAId)?.summary ?? '';
+    const summaryB = embeddings.find(e => e.userId === userBId)?.summary ?? '';
+    const ragContext = summaryA && summaryB
+      ? `\n\nProfile A summary: "${summaryA}"\nProfile B summary: "${summaryB}"`
+      : '';
+
     const prompt = [
       'You are a compassionate matchmaking assistant for the Abroad Matrimony platform.',
       'Write a warm, encouraging 2-sentence "Why this match?" explanation for two compatible users.',
       `Their top compatibility dimensions are: ${dimensionSummary}.`,
+      ...(ragContext ? [`Additional context about both profiles:${ragContext}`] : []),
       'Keep it under 60 words. Do not mention percentages. Focus on shared values and life vision.',
       'Return JSON with keys: headline (max 12 words) and summary (2 sentences).',
     ].join('\n');

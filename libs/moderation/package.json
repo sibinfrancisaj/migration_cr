@@ -1,0 +1,10 @@
+{
+  "name": "@abroad-matrimony/moderation",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/logger": "*"
+  }
+}

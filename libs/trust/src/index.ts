@@ -216,6 +216,8 @@ export async function getSignals(userId: string): Promise<SignalsDto> {
     totalSent,
     introductions,
     checkIns,
+    profileViews7d,
+    profileViews30d,
   ] = await Promise.all([
     prisma.connection.count({
       where: { senderId: userId, createdAt: { gte: sevenDaysAgo } },
@@ -244,6 +246,8 @@ export async function getSignals(userId: string): Promise<SignalsDto> {
       take: 10,
       select: { weekKey: true },
     }),
+    prisma.profileView.count({ where: { viewedId: userId, viewedAt: { gte: sevenDaysAgo } } }),
+    prisma.profileView.count({ where: { viewedId: userId, viewedAt: { gte: thirtyDaysAgo } } }),
   ]);
 
   // Compute check-in streak (consecutive weeks)
@@ -252,13 +256,9 @@ export async function getSignals(userId: string): Promise<SignalsDto> {
   // Match rate = accepted / sent (0 if none sent)
   const matchRate = totalSent > 0 ? Math.round((totalAccepted / totalSent) * 100) : 0;
 
-  // thirtyDaysAgo reserved for profile view tracking (future feature)
-  void thirtyDaysAgo;
-
-  // Profile views: placeholder (requires a view tracking table)
   return {
-    profileViews7d: 0,
-    profileViews30d: 0,
+    profileViews7d,
+    profileViews30d,
     connectionRequestsSent7d: connectionsSent7d,
     connectionRequestsReceived7d: connectionsReceived7d,
     matchRate,

@@ -19,6 +19,7 @@ import { signalsRouter } from './signals/index.js';
 import { trustRouter } from './trust/index.js';
 import { habitsRouter } from './habits/index.js';
 import { matchesRouter } from './matches/index.js';
+import { notificationsRouter } from './notifications/index.js';
 
 export function registerRoutes(app: Router): void {
   // ── Infrastructure ────────────────────────────────────────────────────────────
@@ -63,6 +64,9 @@ export function registerRoutes(app: Router): void {
 
   // ── Trust & Safety ────────────────────────────────────────────────────────────
   app.use('/api/v1/trust', trustRouter);
+
+  // ── Notification Preferences ──────────────────────────────────────────────────
+  app.use('/api/v1/notifications', notificationsRouter);
 
   // ── Verification ──────────────────────────────────────────────────────────────
   app.use('/api/v1/verification', verificationRouter);

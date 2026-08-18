@@ -3,6 +3,15 @@ import { createChildLogger } from '@abroad-matrimony/logger';
 
 const log = createChildLogger({ module: 'groups:proposals' });
 
+async function enqueueGroupEmbedding(groupId: string): Promise<void> {
+  try {
+    const ai = await import('@abroad-matrimony/ai');
+    if (ai.isAiConfigured()) {
+      void ai.generateGroupEmbedding(groupId).catch(() => { /* swallow */ });
+    }
+  } catch { /* libs/ai absent in test — no-op */ }
+}
+
 // ─── Custom errors ────────────────────────────────────────────────────────────
 
 export class GroupProposalNotFoundError extends Error {
@@ -201,6 +210,8 @@ export async function approveGroupProposal(
   }
 
   log.info('approveGroupProposal', { proposalId, adminId });
+
+  if (newGroup) void enqueueGroupEmbedding(newGroup.id);
 
   return toProposalDto(updatedProposal);
 }

@@ -9,7 +9,7 @@ import { getSeederEnv } from '../lib/seeder-env.js';
 import { getState, setActivityRunning, setSocialLoopCompleted } from '../lib/seeder-state.js';
 import { runSocialLoop } from '../services/social-loop.service.js';
 
-export const ACTIVITY_QUEUE_NAME = 'seeder:activity';
+export const ACTIVITY_QUEUE_NAME = 'seeder-activity';
 
 const ACTIVITY_INTERVAL_MS = 2 * 60 * 60 * 1000; // 2 hours
 

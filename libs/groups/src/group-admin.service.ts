@@ -8,6 +8,16 @@ import { createChildLogger } from '@abroad-matrimony/logger';
 import { auditLog } from '@abroad-matrimony/auth';
 import { GroupStatus } from '@abroad-matrimony/shared';
 
+// Fire-and-forget group embedding — dynamic import keeps groups lib independent of libs/ai at compile time
+async function enqueueGroupEmbedding(groupId: string): Promise<void> {
+  try {
+    const ai = await import('@abroad-matrimony/ai');
+    if (ai.isAiConfigured()) {
+      void ai.generateGroupEmbedding(groupId).catch(() => { /* swallow */ });
+    }
+  } catch { /* libs/ai absent in test — no-op */ }
+}
+
 const log = createChildLogger({ module: 'groups:admin' });
 
 // ─── Custom errors ────────────────────────────────────────────────────────────
@@ -183,6 +193,8 @@ export async function createAdminGroup(
     metadata: { name: input.name, type: input.type },
   });
 
+  void enqueueGroupEmbedding(row.id);
+
   return toGroupAdminDto(row);
 }
 
@@ -236,6 +248,11 @@ export async function updateAdminGroup(
     ipAddress,
     metadata: input,
   });
+
+  // Re-embed if name or description changed
+  if (input.name !== undefined || input.description !== undefined) {
+    void enqueueGroupEmbedding(groupId);
+  }
 
   return toGroupAdminDto(row);
 }

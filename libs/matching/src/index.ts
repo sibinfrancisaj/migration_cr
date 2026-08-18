@@ -3,6 +3,7 @@ export {
   computeMatchScore, SCORE_WEIGHTS, HABIT_WEIGHTS, PROMPT_RESONANCE_WEIGHT, V2_DIM_WEIGHTS,
   applyTuningToBreakdown,
   tokenize, jaccardSimilarity, answerSimilarity, recencyScore, ageInYears,
+  scorePearsonAnswerFit,
 } from './scoring.service.js';
 export type { UserScoringData, ScoreResult } from './scoring.service.js';
 
@@ -17,7 +18,7 @@ export type { ScoreRecomputeJobData, ScoreRecomputeResult } from './score-recomp
 export { getMatchScore, setMatchScoreCache, deleteMatchScoreCache } from './score-cache.service.js';
 
 // Discovery feed
-export { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge } from './discover.service.js';
+export { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge, mmrRerank } from './discover.service.js';
 export type { DiscoverOptions } from './discover.service.js';
 
 // Match tuning
@@ -30,3 +31,11 @@ export type {
   MatchTuningDto, MatchWeights,
   TuningQuestionsDto, TuningImpactDto,
 } from './match-tuning.service.js';
+
+// Partner preference pre-filter (PROD-006)
+export { getPartnerPreferences, setPartnerPreferences } from './partner-preferences.service.js';
+export type { PartnerPreferenceDto, SetPartnerPreferenceInput } from './partner-preferences.service.js';
+
+// Implicit signal feedback loop (Phase-E)
+export { applyImplicitSignal } from './implicit-signal.service.js';
+export type { ImplicitSignalType } from './implicit-signal.service.js';

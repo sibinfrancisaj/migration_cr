@@ -98,3 +98,7 @@ export type { UserSearchParams, UserAdminSummaryDto, UserAdminDetailDto } from '
 // Audit log admin (ADMIN-005)
 export { listAuditLogs } from './audit-log-admin.service.js';
 export type { AuditLogQuery, AuditLogEntryDto } from './audit-log-admin.service.js';
+
+// GDPR — data export + account deletion (PROD-002)
+export { exportUserData, deleteAccount, AccountAlreadyDeletedError } from './gdpr.service.js';
+export type { DataExportSummaryDto } from './gdpr.service.js';

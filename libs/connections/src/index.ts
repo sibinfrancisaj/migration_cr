@@ -1,6 +1,7 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { ConnectionStatus } from '@abroad-matrimony/shared';
+import { applyImplicitSignal } from '@abroad-matrimony/matching';
 
 const log = createChildLogger({ module: 'connections' });
 
@@ -171,6 +172,9 @@ export async function sendConnectionRequest(
       expiresAt,
     },
   });
+
+  // Fire-and-forget implicit signal (Phase-E)
+  void applyImplicitSignal(senderId, receiverId, 'CONNECTION_REQUEST');
 
   log.info('sendConnectionRequest — created', { connectionId: conn.id, senderId, receiverId });
 

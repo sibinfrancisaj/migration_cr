@@ -12,6 +12,7 @@ import { firebaseTokenController } from '../../controllers/auth/firebase-token.c
 import { trustedDeviceController } from '../../controllers/auth/trusted-device.controller.js';
 import { emailLinkController } from '../../controllers/auth/email-link.controller.js';
 import { sendEmailLinkSchema, verifyEmailLinkSchema } from '../../schemas/auth/email-link.schema.js';
+import { unsubscribeController } from '../../controllers/auth/unsubscribe.controller.js';
 
 export const authRouter = Router();
 
@@ -51,3 +52,15 @@ authRouter.post('/email/link', validateBody(sendEmailLinkSchema), emailLinkContr
  * Verify a magic link token and issue a JWT pair.
  */
 authRouter.post('/email/verify', validateBody(verifyEmailLinkSchema), emailLinkController.verify);
+
+/**
+ * GET /api/v1/auth/unsubscribe?token=...
+ * Public — CAN-SPAM one-click unsubscribe. Token is HMAC-signed (1-year expiry).
+ */
+authRouter.get('/unsubscribe', unsubscribeController.unsubscribe);
+
+/**
+ * POST /api/v1/auth/resubscribe
+ * Authenticated — re-opt in to marketing emails.
+ */
+authRouter.post('/resubscribe', requireAuth, unsubscribeController.resubscribe);

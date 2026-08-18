@@ -30,6 +30,7 @@ export default {
     '^@abroad-matrimony/ai$':            '<rootDir>/../../libs/ai/src/index.ts',
     '^@abroad-matrimony/analytics$':     '<rootDir>/../../libs/analytics/src/index.ts',
     '^@abroad-matrimony/signals$':       '<rootDir>/../../libs/signals/src/index.ts',
+    '^@abroad-matrimony/moderation$':    '<rootDir>/../../libs/moderation/src/index.ts',
   },
   coverageDirectory: '../../coverage/apps/gateway',
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.ts'],

@@ -200,7 +200,7 @@ export interface ActivityPoint {
   date: string;   // ISO date YYYY-MM-DD
   profileViews: number;
   connectionsSent: number;
-  messagesSet: number;
+  messagesSent: number;
   habitsLogged: number;
   promptResponses: number;
 }
@@ -242,11 +242,11 @@ export async function getUserActivity(userId: string): Promise<UserActivityDto> 
     lastHabit,
   ] = await Promise.all([
     prisma.profileView.count({ where: { viewerId: userId, viewedAt: { gte: thirtyDaysAgo } } }),
-    prisma.connection.count({ where: { requesterId: userId, createdAt: { gte: thirtyDaysAgo } } }),
+    prisma.connection.count({ where: { senderId: userId, createdAt: { gte: thirtyDaysAgo } } }),
     prisma.habitLog.count({ where: { userId, date: { gte: thirtyDaysAgo.toISOString().split('T')[0]! } } }),
     prisma.promptResponse.count({ where: { userId, createdAt: { gte: thirtyDaysAgo } } }),
     prisma.profileView.count({ where: { viewerId: userId, viewedAt: { gte: sevenDaysAgo } } }),
-    prisma.connection.count({ where: { requesterId: userId, createdAt: { gte: sevenDaysAgo } } }),
+    prisma.connection.count({ where: { senderId: userId, createdAt: { gte: sevenDaysAgo } } }),
     prisma.habitLog.count({ where: { userId, date: { gte: sevenDaysAgo.toISOString().split('T')[0]! } } }),
     prisma.habitLog.findFirst({ where: { userId }, orderBy: { date: 'desc' }, select: { date: true } }),
   ]);
@@ -261,7 +261,7 @@ export async function getUserActivity(userId: string): Promise<UserActivityDto> 
   const dailyConns = await prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
     SELECT DATE(created_at) AS day, COUNT(*) AS count
     FROM connections
-    WHERE requester_id = ${userId} AND created_at >= ${thirtyDaysAgo}
+    WHERE sender_id = ${userId} AND created_at >= ${thirtyDaysAgo}
     GROUP BY day ORDER BY day
   `;
   const dailyHabits = await prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
@@ -324,5 +324,5 @@ export async function getUserActivity(userId: string): Promise<UserActivityDto> 
 }
 
 function zero(date: string): ActivityPoint {
-  return { date, profileViews: 0, connectionsSent: 0, messagesSet: 0, habitsLogged: 0, promptResponses: 0 };
+  return { date, profileViews: 0, connectionsSent: 0, messagesSent: 0, habitsLogged: 0, promptResponses: 0 };
 }

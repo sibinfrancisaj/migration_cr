@@ -62,3 +62,7 @@ export {
   InsufficientDiamondsError,
 } from './diamond.service.js';
 export type { CreditTransactionDto } from './diamond.service.js';
+
+// ── Renewal reminders (PROD-004) ───────────────────────────────────────────────
+export { sendMembershipRenewalReminders } from './renewal-reminder.service.js';
+export { createRenewalReminderWorker } from './renewal-reminder.worker.js';

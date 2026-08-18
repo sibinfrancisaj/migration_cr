@@ -34,10 +34,12 @@ const mockEventFindMany  = jest.fn();
 const mockProfileFindUnique = jest.fn();
 const mockSystemConfigFindUnique = jest.fn();
 const mockTransaction = jest.fn();
+const mockQueryRaw    = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
     $transaction: (...a: unknown[]) => mockTransaction(...a),
+    $queryRaw:    (...a: unknown[]) => mockQueryRaw(...a),
     group: {
       findFirst:  (...a: unknown[]) => mockGroupFindFirst(...a),
       findMany:   (...a: unknown[]) => mockGroupFindMany(...a),
@@ -299,10 +301,13 @@ describe('autoJoinRegionalCountryGroup', () => {
 // ── listSuggestedGroups ────────────────────────────────────────────────────────
 
 describe('listSuggestedGroups', () => {
-  it('returns groups the user is not a member of', async () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns groups the user is not a member of (fallback path)', async () => {
     mockGroupMemberFindMany.mockResolvedValue([{ groupId: 'other-group' }]);
     mockProfileFindUnique.mockResolvedValue({ currentCountry: 'United Kingdom' });
     mockGroupFindMany.mockResolvedValue([makeGroup({ id: GROUP_ID, country: 'United Kingdom' })]);
+    mockQueryRaw.mockRejectedValue(new Error('no embedding'));
 
     const result = await listSuggestedGroups(USER_ID, 10);
 
@@ -314,9 +319,80 @@ describe('listSuggestedGroups', () => {
     mockGroupMemberFindMany.mockResolvedValue([{ groupId: GROUP_ID }]);
     mockProfileFindUnique.mockResolvedValue({ currentCountry: 'United Kingdom' });
     mockGroupFindMany.mockResolvedValue([]);
+    mockQueryRaw.mockResolvedValue([]);
 
     const result = await listSuggestedGroups(USER_ID, 10);
     expect(result).toHaveLength(0);
+  });
+
+  it('ranks by semantic similarity when embeddings are available', async () => {
+    const groupA = makeGroup({ id: 'g-a', name: 'Finance Professionals', memberCount: 10 });
+    const groupB = makeGroup({ id: 'g-b', name: 'UK Regional Group',     memberCount: 200 });
+    mockGroupMemberFindMany.mockResolvedValue([]);
+    mockProfileFindUnique.mockResolvedValue({ currentCountry: 'Germany' });
+    mockGroupFindMany.mockResolvedValue([groupB, groupA]); // DB returns B first (higher memberCount)
+
+    // ANN says group A is more semantically similar
+    mockQueryRaw.mockResolvedValue([
+      { group_id: 'g-a', similarity: 0.92 },
+      { group_id: 'g-b', similarity: 0.45 },
+    ]);
+
+    const result = await listSuggestedGroups(USER_ID, 10);
+
+    // Group A should rank first despite lower memberCount
+    expect(result[0].id).toBe('g-a');
+    expect(result[1].id).toBe('g-b');
+  });
+
+  it('places groups without embeddings after groups with embeddings', async () => {
+    const withEmbed    = makeGroup({ id: 'g-embed',   name: 'Has Embedding',    memberCount: 5  });
+    const withoutEmbed = makeGroup({ id: 'g-no-embed', name: 'No Embedding',    memberCount: 999 });
+    mockGroupMemberFindMany.mockResolvedValue([]);
+    mockProfileFindUnique.mockResolvedValue({ currentCountry: 'Germany' });
+    mockGroupFindMany.mockResolvedValue([withoutEmbed, withEmbed]);
+
+    // Only g-embed has a similarity row
+    mockQueryRaw.mockResolvedValue([{ group_id: 'g-embed', similarity: 0.6 }]);
+
+    const result = await listSuggestedGroups(USER_ID, 10);
+
+    expect(result[0].id).toBe('g-embed');
+    expect(result[1].id).toBe('g-no-embed');
+  });
+
+  it('falls back to country + memberCount ranking when ANN query fails', async () => {
+    const ukGroup  = makeGroup({ id: 'g-uk',  country: 'United Kingdom', memberCount: 10 });
+    const deGroup  = makeGroup({ id: 'g-de',  country: 'Germany',        memberCount: 50 });
+    mockGroupMemberFindMany.mockResolvedValue([]);
+    mockProfileFindUnique.mockResolvedValue({ currentCountry: 'United Kingdom' });
+    mockGroupFindMany.mockResolvedValue([deGroup, ukGroup]); // DB: Germany first (more members)
+    mockQueryRaw.mockRejectedValue(new Error('no user embedding'));
+
+    const result = await listSuggestedGroups(USER_ID, 10);
+
+    // UK group wins via country match bonus (fallback path, no semantic data)
+    expect(result[0].id).toBe('g-uk');
+  });
+
+  it('country match bonus boosts a lower-similarity group above a higher one in same tier', async () => {
+    const homeGroup   = makeGroup({ id: 'g-home',  country: 'United Kingdom', memberCount: 10 });
+    const foreignGroup = makeGroup({ id: 'g-abroad', country: 'Germany',      memberCount: 10 });
+    mockGroupMemberFindMany.mockResolvedValue([]);
+    mockProfileFindUnique.mockResolvedValue({ currentCountry: 'United Kingdom' });
+    mockGroupFindMany.mockResolvedValue([foreignGroup, homeGroup]);
+
+    // Both have embeddings; foreign group is slightly more similar semantically
+    mockQueryRaw.mockResolvedValue([
+      { group_id: 'g-abroad', similarity: 0.72 },
+      { group_id: 'g-home',   similarity: 0.65 },
+    ]);
+
+    const result = await listSuggestedGroups(USER_ID, 10);
+
+    // home group: 0.65*0.6 + 1*0.25 + tiny = 0.39 + 0.25 = 0.64
+    // foreign:   0.72*0.6 + 0*0.25 + tiny = 0.432
+    expect(result[0].id).toBe('g-home');
   });
 });
 

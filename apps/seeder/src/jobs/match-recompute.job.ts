@@ -10,7 +10,7 @@ import { seederLog } from '../lib/seeder-logger.js';
 import { getSeederEnv } from '../lib/seeder-env.js';
 import { setMatchRecomputeAt } from '../lib/seeder-state.js';
 
-export const MATCH_QUEUE_NAME = 'seeder:match-recompute';
+export const MATCH_QUEUE_NAME = 'seeder-match-recompute';
 
 let _queue: Queue | null = null;
 let _worker: Worker | null = null;

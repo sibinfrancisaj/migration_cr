@@ -6,6 +6,8 @@
   "types": "src/index.ts",
   "dependencies": {
     "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/matching": "*",
     "@abroad-matrimony/shared": "*"
   }
 }

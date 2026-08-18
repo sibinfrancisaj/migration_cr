@@ -19,12 +19,19 @@ export interface EmailPayload {
   htmlBody: string;
   /** Plain-text fallback (generated from htmlBody by Brevo when omitted). */
   textBody?: string;
+  /**
+   * Recipient user ID — used for unsubscribe token generation and opt-out check.
+   * Optional: if absent, unsubscribe headers are omitted.
+   */
+  userId?: string;
 }
 
 export interface SmsPayload {
   /** Recipient phone number in E.164 format (e.g. +919876543210). */
   to: string;
   body: string;
+  /** Recipient user ID — used for per-user channel opt-out check (PROD-005). */
+  userId?: string;
 }
 
 export interface PushPayload {

@@ -360,43 +360,119 @@ export async function autoJoinRegionalCountryGroup(
   log.info('autoJoinRegionalCountryGroup — joined', { country, groupId: group.id, userId });
 }
 
+// ── Semantic group suggestion weights (VEC-003) ────────────────────────────────
+const GROUP_SUGGEST_WEIGHT_SEMANTIC  = 0.60;
+const GROUP_SUGGEST_WEIGHT_COUNTRY   = 0.25;
+const GROUP_SUGGEST_WEIGHT_MEMBERS   = 0.15;
+const GROUP_SUGGEST_MAX_MEMBERS_CAP  = 500; // normalise memberCount against this cap
+
+type SimilarityRow = { group_id: string; similarity: number };
+
 /**
- * Return groups the user is NOT already in, ranked by profile match → member count → recent activity.
- * Filtered to `isActive: true`.
+ * Return groups the user is NOT already in, ranked by a hybrid score:
+ *   60% pgvector semantic similarity (profile embedding ↔ group embedding)
+ *   25% country / region match
+ *   15% normalised member count
+ *
+ * Falls back to the original country + memberCount ranking when the user has
+ * no `ProfileEmbedding` or no `GroupEmbedding` rows exist yet.
  */
 export async function listSuggestedGroups(userId: string, limit = 20): Promise<GroupDto[]> {
-  // Fetch the user's current memberships + profile tags for ranking
+  const overFetch = limit * 3; // fetch more candidates than needed for re-ranking
+
+  // ── 1. Fetch memberships + profile in parallel ─────────────────────────────
   const [memberships, userProfile] = await Promise.all([
     prisma.groupMember.findMany({
-      where: { userId, status: 'ACTIVE' },
+      where:  { userId, status: 'ACTIVE' },
       select: { groupId: true },
     }),
     prisma.profile.findUnique({
-      where: { userId },
+      where:  { userId },
       select: { currentCountry: true },
     }),
   ]);
 
-  const joinedGroupIds = new Set(memberships.map((m) => m.groupId));
+  const joinedGroupIds  = new Set(memberships.map((m) => m.groupId));
+  const userCountry     = userProfile?.currentCountry ?? '';
+  const excludeIds      = Array.from(joinedGroupIds);
 
+  // ── 2. Candidate groups ────────────────────────────────────────────────────
   const candidates = await prisma.group.findMany({
     where: {
       isActive: true,
-      status: { in: [GroupStatus.FORMING, GroupStatus.ACTIVE] },
-      id: { notIn: Array.from(joinedGroupIds) },
+      status:   { in: [GroupStatus.FORMING, GroupStatus.ACTIVE] },
+      ...(excludeIds.length > 0 ? { id: { notIn: excludeIds } } : {}),
     },
     orderBy: [{ memberCount: 'desc' }],
-    take: limit * 3, // over-fetch for client-side re-ranking
+    take:    overFetch,
   });
 
-  // Rank: country match first, then member count (already sorted by DB)
-  const country = userProfile?.currentCountry ?? '';
-  const ranked = [
-    ...candidates.filter((g) => g.country === country || g.region === country),
-    ...candidates.filter((g) => g.country !== country && g.region !== country),
-  ].slice(0, limit);
+  if (candidates.length === 0) return [];
 
-  return ranked.map((row) => toGroupDto(row, false));
+  // ── 3. pgvector ANN — similarity of user profile ↔ group embeddings ─────────
+  const candidateIds = candidates.map((g) => g.id);
+  let similarityMap  = new Map<string, number>(); // groupId → cosine similarity 0–1
+
+  try {
+    const rows = await prisma.$queryRaw<SimilarityRow[]>`
+      SELECT ge.group_id,
+             1 - (ge.embedding <=> (
+               SELECT embedding FROM profile_embeddings WHERE user_id = ${userId}
+             )) AS similarity
+      FROM group_embeddings ge
+      WHERE ge.group_id = ANY(${candidateIds}::uuid[])
+        AND ge.embedding IS NOT NULL
+        AND (SELECT embedding FROM profile_embeddings WHERE user_id = ${userId}) IS NOT NULL
+      ORDER BY ge.embedding <=> (
+        SELECT embedding FROM profile_embeddings WHERE user_id = ${userId}
+      )
+    `;
+
+    for (const row of rows) {
+      similarityMap.set(row.group_id, Math.max(0, Math.min(1, Number(row.similarity))));
+    }
+  } catch {
+    // No embedding for user yet, or pgvector unavailable — degrade gracefully
+    log.debug('listSuggestedGroups: ANN query skipped (no user embedding?)', { userId });
+  }
+
+  const hasSemanticData = similarityMap.size > 0;
+
+  // ── 4. Score each candidate ────────────────────────────────────────────────
+  const scored = candidates.map((g) => {
+    const semantic   = similarityMap.get(g.id) ?? 0;
+    const countryHit = g.country === userCountry || g.region === userCountry ? 1 : 0;
+    const members    = Math.min(g.memberCount, GROUP_SUGGEST_MAX_MEMBERS_CAP) / GROUP_SUGGEST_MAX_MEMBERS_CAP;
+
+    let score: number;
+    if (hasSemanticData && similarityMap.has(g.id)) {
+      // Full hybrid score for groups that have an embedding
+      score = semantic  * GROUP_SUGGEST_WEIGHT_SEMANTIC
+            + countryHit * GROUP_SUGGEST_WEIGHT_COUNTRY
+            + members    * GROUP_SUGGEST_WEIGHT_MEMBERS;
+    } else if (hasSemanticData) {
+      // Group has no embedding yet — put it after all embedding-ranked groups
+      score = -1 + countryHit * GROUP_SUGGEST_WEIGHT_COUNTRY + members * GROUP_SUGGEST_WEIGHT_MEMBERS;
+    } else {
+      // No semantic data at all — fall back to original country + memberCount ranking
+      score = countryHit * GROUP_SUGGEST_WEIGHT_COUNTRY + members * GROUP_SUGGEST_WEIGHT_MEMBERS;
+    }
+
+    return { group: g, score };
+  });
+
+  // ── 5. Sort and return top `limit` ─────────────────────────────────────────
+  scored.sort((a, b) => b.score - a.score);
+  const ranked = scored.slice(0, limit).map(({ group }) => toGroupDto(group, false));
+
+  log.info('listSuggestedGroups', {
+    userId,
+    candidates: candidates.length,
+    withEmbedding: similarityMap.size,
+    returned: ranked.length,
+  });
+
+  return ranked;
 }
 
 /**

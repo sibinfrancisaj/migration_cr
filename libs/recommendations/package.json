@@ -1,0 +1,11 @@
+{
+  "name": "@abroad-matrimony/recommendations",
+  "version": "0.1.0",
+  "main": "src/index.js",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/shared": "*"
+  }
+}

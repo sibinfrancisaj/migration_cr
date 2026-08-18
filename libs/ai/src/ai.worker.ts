@@ -45,6 +45,13 @@ export function createAiWorker(redisUrl: string): Worker<ProfileIntelligenceJobD
     {
       connection: { url: redisUrl },
       concurrency: 2,
+      // Retry with exponential back-off; keep last 100 failed jobs in DLQ for inspection
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60_000 },
+        removeOnComplete: { count: 200 },
+        removeOnFail:     { count: 100 },
+      },
     },
   );
 

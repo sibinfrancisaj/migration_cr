@@ -14,7 +14,7 @@ import { autoJoinGroups } from '../services/group-join.service.js';
 import { setRunning, setDripCompleted } from '../lib/seeder-state.js';
 import { triggerMatchRecompute } from './match-recompute.job.js';
 
-export const DRIP_QUEUE_NAME = 'seeder:drip';
+export const DRIP_QUEUE_NAME = 'seeder-drip';
 
 let _queue: Queue | null = null;
 let _worker: Worker | null = null;

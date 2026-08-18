@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "dependencies": {
     "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
     "@abroad-matrimony/firebase": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/shared": "*",

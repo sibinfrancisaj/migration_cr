@@ -9,11 +9,20 @@
 // Client + configuration
 export { isAiConfigured, getAiClient, AiNotConfiguredError, _resetAiClient } from './client.js';
 
+// Fallback utility (AI-fallback pattern — ADR-017)
+export { withAiFallback } from './fallback.js';
+export type { AiFallbackOptions } from './fallback.js';
+
+// Semantic search + RRF fusion
+export { getSemanticallySimilarUsers, mergeWithRRF, mergeWithWeightedRRF } from './semantic-search.service.js';
+
 // Services
 export { generateProfileIntelligence } from './profile-intelligence.service.js';
 export { transcribeVoiceIntro } from './whisper.service.js';
 export { proposeIntroductionDrops } from './intro-grouping.service.js';
 export { generateEventPreConnections } from './event-preconnect.service.js';
+export { generateGroupEmbedding, generateAllGroupEmbeddings, GroupNotFoundError } from './group-intelligence.service.js';
+export type { GroupEmbeddingDto } from './group-intelligence.service.js';
 
 // Quiet window helpers (AI-006)
 export { getContactWindow, isWithinWindow, msUntilWindowOpens } from './quiet-window.js';

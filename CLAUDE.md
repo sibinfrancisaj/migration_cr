@@ -1163,8 +1163,55 @@ KEY DECISIONS (Phases 13–16, 2026-06-02):
   - Profile.privacySettings Json? (Phase 15)
   Both added to libs/db/prisma/schema.prisma.
 
-Next phase: Phase 5b — Connections + Verification (CONN-001–004, VER-001–003).
-Service layers already built (libs/connections, libs/verification). Gateway wiring only.
+Phase 20 ✅ RAG / TDS Algorithm Enhancement ALL DONE (2026-08-18). 231 matching tests, 62 AI tests all green.
+RAG-001 ✅ libs/ai/src/fallback.ts — withAiFallback<T>(opts): races AI call against timeout, deterministic fallback on any failure
+RAG-002 ✅ libs/ai/src/semantic-search.service.ts — getSemanticallySimilarUsers() (pgvector ANN, <=> cosine), mergeWithRRF() (1/(60+rank))
+RAG-003 ✅ discover.service.ts step 1c — RRF fusion for users with ≥10 scores; semantic-only candidates get proxy scores max(40, 85-rank×0.45)
+RAG-004 ✅ discover.service.ts step 1b — cold-start ANN when scoreRows.length < ANN_THRESHOLD (10); mutual exclusion with RRF
+RAG-005 ✅ ScoreBreakdown — vibeCompatibility? + pearsonAnswerFit? optional fields added
+RAG-006 ✅ scoring.service.ts — scoreVibeCompatibility(): Euclidean dist in 5-dim vibe space (warmth/ambition/tradition/socialEnergy/openness), V2_DIM_WEIGHTS.vibeCompatibility=0.04
+RAG-007 ✅ scoring.service.ts — scorePearsonAnswerFit(): Pearson-r across ordinal-encoded answers (9 ANSWER_ORDINALS keys), returns null if <3 common, V2_DIM_WEIGHTS.pearsonAnswerFit=0.04
+RAG-008 ✅ scoring.service.ts — scoreRealLifeAnswers() now importance-weighted; answerImportanceToWeight() local copy (avoids circular import with match-tuning.service.ts)
+RAG-009 ✅ match-score.service.ts — getUserScoringData() fetches profileEmbedding.vibeScores + answer.importance in parallel (9th query)
+RAG-010 ✅ libs/matching/src/implicit-signal.service.ts — applyImplicitSignal(signalUserId, targetUserId, signal): boosts MatchScore.implicitBoost ±BOOST_CAP(0.30); fire-and-forget safe
+RAG-011 ✅ Signal wiring: logProfileView() (libs/signals), saveProfile() (libs/saved-profiles), sendConnectionRequest() (libs/connections) each call void applyImplicitSignal()
+RAG-012 ✅ ai.worker.ts — BullMQ defaultJobOptions: attempts=3, backoff exponential 60s, removeOnFail.count=100
+RAG-013 ✅ Prisma schema: MatchScore.implicitBoost Float @default(0) + RealLifeAnswer.importance Int @default(3) (⚠️ run prisma db push locally — see BUG-RAG-001)
+
+KEY DECISIONS (Phase 20 — 2026-08-18):
+- withAiFallback(): timeoutMs default 3000ms; returns fallback() on timeout OR any thrown error. Never throws.
+- RRF constant K=60 (standard). Score = Σ 1/(K + rank_i). Higher = better.
+- Cold-start ANN (step 1b) and RRF fusion (step 1c) are mutually exclusive. Cold-start runs when scoreRows < 10.
+- Semantic-only candidates: proxy score = max(40, 85 - rank×0.45) inserted into annScoreMap so DTO builder includes them.
+- answerImportanceToWeight() table: 1→0.50, 2→0.75, 3→1.00, 4→1.75, 5→2.50 (duplicated in scoring.service.ts to avoid circular import).
+- scorePearsonAnswerFit() returns null when <3 shared ordinal keys or constant vectors; dimension omitted from breakdown.
+- ANSWER_ORDINALS encodes 9 of 12 RealLifeQuestionKey values as ordered integer scales. DIET/LANGUAGE/RELIGION encoded as string equality (not ordinal).
+- applyImplicitSignal() catches all errors silently. Callers use void — never await.
+- BOOST_CAP = 0.30 hard limit on implicitBoost field; clamped with Math.min/Math.max after each update.
+
+Phase 18 ✅ Connections + Verification Gateway Wiring ALL DONE (38 tests: 23 connections + 15 verification).
+CONN-001–004 ✅ All connection endpoints wired (send, list, accept, decline, withdraw)
+VER-001–003 ✅ All verification endpoints wired (submit, status, trust-score, upload-url)
+
+Phase G ✅ Collaborative Filtering ALL DONE (libs/recommendations — 7 tests).
+libs/recommendations/src/collaborative-filter.service.ts — top-K neighbourhood filter, action weights (connection=3, save=2, view=1), RRF fusion into discovery step 1d
+
+Phase H ✅ MMR Diversity Reranking ALL DONE (discover.service.ts — 4 new tests).
+mmrRerank(items, vibeMap, λ=0.7) applied as step 11 in getDiscoveryFeed(); vibeDistance() Euclidean in 5-dim vibe space; exported from libs/matching index
+
+Phase 20 ✅ RAG / TDS Algorithm Enhancement ALL DONE (231 matching tests, 62 AI tests all green).
+RAG-001–013 complete. See Phase 20 section above for full details.
+
+Codebase Audit ✅ 2026-08-18 — all critical bugs fixed:
+- C-1: libs/analytics/src/match.service.ts — requesterId → senderId (Prisma field), raw SQL requester_id → sender_id; messagesSet typo → messagesSent
+- C-2: libs/moderation/src/image-moderation.service.ts — wired assertImageSafe() into photo upload controller (profile.controller.ts); ImageModerationRejectedError → 422; moderation added to gateway package.json + jest.config.ts
+- M-5: libs/trust/src/index.ts — getSignals() profileViews7d/30d replaced hardcoded 0 with real prisma.profileView.count() queries
+
+⚠️ PENDING OPERATOR TASKS (must run on local machine — cloud runner cannot reach Supabase):
+See project-management/pending-ops.md for the full checklist.
+
+Next: Phase 17 VEC-002/003/005 (group embeddings + semantic group suggestions + admin similar-users endpoint).
+Or: Fix OpenAPI spec gaps for connections/verification (M-1, M-2 from audit).
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
 before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot reach Supabase).

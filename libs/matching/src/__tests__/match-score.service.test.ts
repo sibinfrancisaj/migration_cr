@@ -7,11 +7,12 @@ const mockProfileFindUnique        = jest.fn();
 const mockRLAnswerFindMany         = jest.fn();
 const mockCheckInFindFirst         = jest.fn();
 const mockGroupMemberFindMany      = jest.fn();
-const mockHabitLogFindMany         = jest.fn();
-const mockPromptResonateFindMany   = jest.fn();
-const mockEventRsvpFindMany        = jest.fn();
-const mockProfileViewCount         = jest.fn();
-const mockMatchScoreUpsert         = jest.fn();
+const mockHabitLogFindMany            = jest.fn();
+const mockPromptResonateFindMany      = jest.fn();
+const mockEventRsvpFindMany           = jest.fn();
+const mockProfileViewCount            = jest.fn();
+const mockProfileEmbeddingFindUnique  = jest.fn();
+const mockMatchScoreUpsert            = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -38,6 +39,10 @@ jest.mock('@abroad-matrimony/db', () => ({
     },
     profileView: {
       count: (...a: any[]) => mockProfileViewCount(...a),
+    },
+    profileEmbedding: {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      findUnique: (...a: any[]) => mockProfileEmbeddingFindUnique(...a),
     },
     matchScore: {
       upsert: (...a: any[]) => mockMatchScoreUpsert(...a),
@@ -77,9 +82,9 @@ const DB_PROFILE = {
 };
 
 const DB_ANSWERS = [
-  { questionKey: RealLifeQuestionKey.DIET,              value: 'Vegetarian' },
-  { questionKey: RealLifeQuestionKey.FAITH_IN_PRACTICE, value: 'Hindu' },
-  { questionKey: RealLifeQuestionKey.LANGUAGE_AT_HOME,  value: 'Tamil' },
+  { questionKey: RealLifeQuestionKey.DIET,              value: 'Vegetarian', importance: 4 },
+  { questionKey: RealLifeQuestionKey.FAITH_IN_PRACTICE, value: 'Hindu',      importance: 3 },
+  { questionKey: RealLifeQuestionKey.LANGUAGE_AT_HOME,  value: 'Tamil',      importance: 5 },
 ];
 
 const DB_CHECK_IN = { submittedAt: new Date('2026-05-25T10:00:00.000Z') };
@@ -113,6 +118,8 @@ function setHappyPathMocks(): void {
   mockEventRsvpFindMany.mockResolvedValue([]);
   // ALG-008: default 0 profile views
   mockProfileViewCount.mockResolvedValue(0);
+  // Phase-D: default no embedding — vibeCompatibility not included
+  mockProfileEmbeddingFindUnique.mockResolvedValue(null);
   mockMatchScoreUpsert.mockResolvedValue(DB_MATCH_SCORE);
   mockSetMatchScoreCache.mockResolvedValue(undefined);
 }
@@ -238,6 +245,22 @@ describe('getUserScoringData()', () => {
     const data = await getUserScoringData('user-a');
 
     expect(data.profileTrustScore).toBe(30);
+  });
+
+  // Phase-D: vibe scores
+  it('sets vibeScores from profileEmbedding when present (Phase-D)', async () => {
+    const vibeScores = { warmth: 8, ambition: 7, tradition: 5, socialEnergy: 9, openness: 6 };
+    mockProfileEmbeddingFindUnique.mockResolvedValueOnce({ vibeScores });
+
+    const data = await getUserScoringData('user-a');
+
+    expect(data.vibeScores).toEqual(vibeScores);
+  });
+
+  it('sets vibeScores to undefined when profileEmbedding is null (Phase-D)', async () => {
+    const data = await getUserScoringData('user-a');
+
+    expect(data.vibeScores).toBeUndefined();
   });
 });
 

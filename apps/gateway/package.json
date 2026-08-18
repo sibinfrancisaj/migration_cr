@@ -4,7 +4,7 @@
   "private": true,
   "main": "src/server.ts",
   "scripts": {
-    "dev": "ts-node -r tsconfig-paths/register src/server.ts",
+    "dev": "node -r tsx/cjs -r tsconfig-paths/register src/server.ts",
     "start": "node dist/server.js"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/matching": "*",
+    "@abroad-matrimony/moderation": "*",
     "@abroad-matrimony/shared": "*",
     "cors": "^2.8.5",
     "express": "^4.21.0",

@@ -1,6 +1,8 @@
 import { createChildLogger } from '@abroad-matrimony/logger';
+import { prisma } from '@abroad-matrimony/db';
 import type { EmailAdapter } from './base.email.adapter.js';
 import type { EmailPayload } from '../../types/notification.types.js';
+import { generateUnsubscribeToken } from '../../unsubscribe.service.js';
 
 const log = createChildLogger({ module: 'notification:brevo' });
 
@@ -17,6 +19,7 @@ interface BrevoSendEmailBody {
   subject: string;
   htmlContent: string;
   textContent?: string;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -33,12 +36,35 @@ export class BrevoEmailAdapter implements EmailAdapter {
   ) {}
 
   async send(payload: EmailPayload): Promise<void> {
+    // CAN-SPAM / PROD-001: skip marketing emails for unsubscribed users
+    if (payload.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: payload.userId },
+        select: { emailUnsubscribed: true },
+      });
+      if (user?.emailUnsubscribed) {
+        log.info('Skipping email — user is unsubscribed', { userId: payload.userId });
+        return;
+      }
+    }
+
+    const unsubscribeToken = payload.userId ? generateUnsubscribeToken(payload.userId) : null;
+    const unsubscribeUrl = unsubscribeToken
+      ? `https://api.abroadmatrimony.com/api/v1/auth/unsubscribe?token=${unsubscribeToken}`
+      : null;
+
     const body: BrevoSendEmailBody = {
       sender: { email: this.fromEmail, name: this.fromName },
       to: [{ email: payload.to, ...(payload.toName ? { name: payload.toName } : {}) }],
       subject: payload.subject,
       htmlContent: payload.htmlBody,
       ...(payload.textBody ? { textContent: payload.textBody } : {}),
+      ...(unsubscribeUrl ? {
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+        },
+      } : {}),
     };
 
     log.info('Sending transactional email via Brevo', { to: payload.to, subject: payload.subject });

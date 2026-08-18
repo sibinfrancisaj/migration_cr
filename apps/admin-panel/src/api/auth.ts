@@ -2,7 +2,7 @@ import { api } from '@/lib/axios';
 import type { ApiResponse } from '@/types';
 
 interface LoginResponse {
-  token: string;
+  accessToken: string;
   admin: { id: string; email: string; name: string; role: string };
 }
 

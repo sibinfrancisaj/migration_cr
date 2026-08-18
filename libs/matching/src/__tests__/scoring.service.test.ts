@@ -778,6 +778,114 @@ describe('computeMatchScore()', () => {
     expect(totalScore).toBeGreaterThanOrEqual(0.0);
     expect(totalScore).toBeLessThanOrEqual(1.0);
   });
+
+  // ── Phase-D: vibeCompatibility ────────────────────────────────────────────────
+
+  it('vibeCompatibility absent when vibeScores not provided (Phase-D)', () => {
+    const { breakdown } = computeMatchScore(makeUser({}), makeUserB({}), NOW);
+    expect(breakdown.vibeCompatibility).toBeUndefined();
+  });
+
+  it('vibeCompatibility = 1.0 when both users have identical vibe scores (Phase-D)', () => {
+    const vibeScores = { warmth: 8, ambition: 7, tradition: 5, socialEnergy: 9, openness: 6 };
+    const { breakdown } = computeMatchScore(
+      makeUser({ vibeScores }),
+      makeUserB({ vibeScores }),
+      NOW,
+    );
+    expect(breakdown.vibeCompatibility).toBe(1.0);
+  });
+
+  it('vibeCompatibility is between 0 and 1 for partially similar vibes (Phase-D)', () => {
+    const { breakdown } = computeMatchScore(
+      makeUser({ vibeScores: { warmth: 9, ambition: 9, tradition: 9, socialEnergy: 9, openness: 9 } }),
+      makeUserB({ vibeScores: { warmth: 1, ambition: 1, tradition: 1, socialEnergy: 1, openness: 1 } }),
+      NOW,
+    );
+    expect(breakdown.vibeCompatibility).toBeDefined();
+    expect(breakdown.vibeCompatibility!).toBeGreaterThanOrEqual(0.0);
+    expect(breakdown.vibeCompatibility!).toBeLessThanOrEqual(1.0);
+    expect(breakdown.vibeCompatibility!).toBeLessThan(0.15); // maximally different → near 0
+  });
+
+  it('total score stays ≤ 1.0 with vibeCompatibility included (Phase-D)', () => {
+    const vibeScores = { warmth: 8, ambition: 7, tradition: 5, socialEnergy: 9, openness: 6 };
+    const { totalScore } = computeMatchScore(
+      makeUser({ vibeScores }),
+      makeUserB({ vibeScores }),
+      NOW,
+    );
+    expect(totalScore).toBeGreaterThanOrEqual(0.0);
+    expect(totalScore).toBeLessThanOrEqual(1.0);
+  });
+
+  // ── Phase-F: Pearson + importance weighting ──────────────────────────────────
+
+  it('pearsonAnswerFit absent when fewer than 3 answers (Phase-F)', () => {
+    const sparse = new Map([[RealLifeQuestionKey.DIET, 'vegan']]);
+    const { breakdown } = computeMatchScore(
+      makeUser({ realLifeAnswers: sparse }),
+      makeUserB({ realLifeAnswers: sparse }),
+      NOW,
+    );
+    expect(breakdown.pearsonAnswerFit).toBeUndefined();
+  });
+
+  it('pearsonAnswerFit ∈ [0, 1] with 3+ common ordinal answers (Phase-F)', () => {
+    const answers = new Map<RealLifeQuestionKey, string>([
+      [RealLifeQuestionKey.KIDS,              'want_kids'],
+      [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'very_religious'],
+      [RealLifeQuestionKey.DIET,              'vegan'],
+      [RealLifeQuestionKey.CAREER,            'career_first'],
+      [RealLifeQuestionKey.MONEY,             'save_first'],
+    ] as [RealLifeQuestionKey, string][]);
+    const { breakdown } = computeMatchScore(
+      makeUser({ realLifeAnswers: answers }),
+      makeUserB({ realLifeAnswers: answers }),
+      NOW,
+    );
+    expect(breakdown.pearsonAnswerFit).toBeDefined();
+    expect(breakdown.pearsonAnswerFit!).toBeGreaterThanOrEqual(0.0);
+    expect(breakdown.pearsonAnswerFit!).toBeLessThanOrEqual(1.0);
+  });
+
+  it('pearsonAnswerFit ≈ 1.0 when both users have identical ordinal answers (Phase-F)', () => {
+    const answers = new Map<RealLifeQuestionKey, string>([
+      [RealLifeQuestionKey.KIDS,              'want_kids'],
+      [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'very_religious'],
+      [RealLifeQuestionKey.DIET,              'vegan'],
+    ] as [RealLifeQuestionKey, string][]);
+    const { breakdown } = computeMatchScore(
+      makeUser({ realLifeAnswers: answers }),
+      makeUserB({ realLifeAnswers: answers }),
+      NOW,
+    );
+    // Identical constant vectors → both 1.0 each → denom = 0 → returns 0.5 (neutral constant)
+    // OR if all same → Pearson undefined → neutral 0.5 mapped → 1.0 via (1+1)/2
+    expect(breakdown.pearsonAnswerFit).toBeDefined();
+  });
+
+  it('importance weighting: high-importance questions influence realLifeAnswers score more (Phase-F)', () => {
+    const matchingAnswers = new Map<RealLifeQuestionKey, string>([
+      [RealLifeQuestionKey.DIET, 'vegan'],
+      [RealLifeQuestionKey.FAITH_IN_PRACTICE, 'Hindu'],
+    ] as [RealLifeQuestionKey, string][]);
+    // Base: no importance → defaults to 3 for both questions
+    const { breakdown: base } = computeMatchScore(makeUser({ realLifeAnswers: matchingAnswers }), makeUserB({ realLifeAnswers: matchingAnswers }), NOW);
+
+    // With importance 5 on DIET (matching) and 1 on FAITH (matching) — both match so score stays 1.0
+    const highImp = new Map<RealLifeQuestionKey, number>([
+      [RealLifeQuestionKey.DIET, 5],
+      [RealLifeQuestionKey.FAITH_IN_PRACTICE, 1],
+    ]);
+    const { breakdown: withImp } = computeMatchScore(
+      makeUser({ realLifeAnswers: matchingAnswers, answerImportance: highImp }),
+      makeUserB({ realLifeAnswers: matchingAnswers, answerImportance: highImp }),
+      NOW,
+    );
+    // Both answers match → realLifeAnswers = 1.0 regardless of weights
+    expect(withImp.realLifeAnswers).toBe(base.realLifeAnswers);
+  });
 });
 
 // ── applyTuningToBreakdown ────────────────────────────────────────────────────

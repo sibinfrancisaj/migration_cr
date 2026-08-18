@@ -1,5 +1,6 @@
 import { RealLifeQuestionKey, VerificationStatus } from '@abroad-matrimony/shared';
 import type { ScoreBreakdown } from '@abroad-matrimony/shared';
+import type { VibeScores } from '@abroad-matrimony/ai';
 
 // ── Weights — core 9 dimensions sum to 1.0 ────────────────────────────────────
 
@@ -43,6 +44,8 @@ export const V2_DIM_WEIGHTS = {
   communicationStyle:  0.02, // ALG-007
   profileViewMomentum: 0.01, // ALG-008
   trustLayerDepth:     0.02, // ALG-009
+  vibeCompatibility:   0.04, // Phase-D
+  pearsonAnswerFit:    0.04, // Phase-F
 } as const;
 
 // ── Input type ────────────────────────────────────────────────────────────────
@@ -62,6 +65,11 @@ export interface UserScoringData {
   };
   /** All real-life answers keyed by RealLifeQuestionKey. */
   realLifeAnswers: Map<RealLifeQuestionKey, string | string[]>;
+  /**
+   * Phase-F: per-question importance (1–5, default 3).
+   * Undefined = importance data not fetched (treated as all-3).
+   */
+  answerImportance?: Map<RealLifeQuestionKey, number>;
   /** Most recent check-in submission date, or null if the user never checked in. */
   latestCheckIn: Date | null;
   /** Active group IDs the user belongs to. */
@@ -107,6 +115,12 @@ export interface UserScoringData {
    * Undefined = trust data not fetched.
    */
   profileTrustScore?: number;
+
+  /**
+   * Phase-D: AI-generated personality vibe scores (1–10 per dimension).
+   * Undefined = no ProfileEmbedding yet.
+   */
+  vibeScores?: VibeScores;
 }
 
 // ── Output type ───────────────────────────────────────────────────────────────
@@ -209,6 +223,24 @@ export function computeMatchScore(
     breakdown.trustLayerDepth = scoreTrustLayerDepth(userA, userB);
   }
 
+  // Phase-D: vibe compatibility — when both have AI-generated vibe scores
+  const hasVibeData = userA.vibeScores !== undefined && userB.vibeScores !== undefined;
+
+  if (hasVibeData) {
+    breakdown.vibeCompatibility = scoreVibeCompatibility(userA, userB);
+  }
+
+  // Phase-F: Pearson answer fit — when both have answered at least 3 questions
+  const hasPearsonData =
+    userA.realLifeAnswers.size >= 3 && userB.realLifeAnswers.size >= 3;
+
+  if (hasPearsonData) {
+    const pearson = scorePearsonAnswerFit(userA, userB);
+    if (pearson !== null) {
+      breakdown.pearsonAnswerFit = pearson;
+    }
+  }
+
   // Compute weighted total.
   // Optional allocations scale the core contribution down.
   const habitAlloc   = hasHabitData   ? 0.05 : 0.0;
@@ -218,8 +250,10 @@ export function computeMatchScore(
   const commAlloc    = hasCommData    ? V2_DIM_WEIGHTS.communicationStyle  : 0.0;
   const momentumAlloc = hasMomentumData ? V2_DIM_WEIGHTS.profileViewMomentum : 0.0;
   const trustAlloc   = hasTrustData   ? V2_DIM_WEIGHTS.trustLayerDepth     : 0.0;
+  const vibeAlloc    = hasVibeData    ? V2_DIM_WEIGHTS.vibeCompatibility    : 0.0;
+  const pearsonAlloc = breakdown.pearsonAnswerFit !== undefined ? V2_DIM_WEIGHTS.pearsonAnswerFit : 0.0;
   const coreScale    = 1.0 - habitAlloc - promptAlloc - familyAlloc - eventAlloc
-                           - commAlloc - momentumAlloc - trustAlloc;
+                           - commAlloc - momentumAlloc - trustAlloc - vibeAlloc - pearsonAlloc;
 
   const coreTotal =
     breakdown.verification        * SCORE_WEIGHTS.verification        +
@@ -241,13 +275,27 @@ export function computeMatchScore(
     (breakdown.eventCoAttendance  ?? 0) * V2_DIM_WEIGHTS.eventCoAttendance +
     (breakdown.communicationStyle ?? 0) * V2_DIM_WEIGHTS.communicationStyle +
     (breakdown.profileViewMomentum ?? 0) * V2_DIM_WEIGHTS.profileViewMomentum +
-    (breakdown.trustLayerDepth    ?? 0) * V2_DIM_WEIGHTS.trustLayerDepth,
+    (breakdown.trustLayerDepth    ?? 0) * V2_DIM_WEIGHTS.trustLayerDepth +
+    (breakdown.vibeCompatibility  ?? 0) * V2_DIM_WEIGHTS.vibeCompatibility +
+    (breakdown.pearsonAnswerFit   ?? 0) * V2_DIM_WEIGHTS.pearsonAnswerFit,
   );
 
   return { totalScore, breakdown };
 }
 
 // ── Dimension scorers (each returns 0.0–1.0) ──────────────────────────────────
+
+/**
+ * Maps a 1–5 importance value to a scoring weight multiplier.
+ * Same table as `importanceToMultiplier` in match-tuning.service.ts but kept
+ * here to avoid a circular import (match-tuning imports applyTuningToBreakdown
+ * from this file).
+ * 1 → 0.50 · 2 → 0.75 · 3 → 1.00 · 4 → 1.75 · 5 → 2.50
+ */
+function answerImportanceToWeight(importance: number): number {
+  const TABLE: Record<number, number> = { 1: 0.50, 2: 0.75, 3: 1.00, 4: 1.75, 5: 2.50 };
+  return TABLE[importance] ?? 1.0;
+}
 
 /** Both users verified → 1.0; one verified → 0.5; neither → 0.0. */
 function scoreVerification(a: UserScoringData, b: UserScoringData): number {
@@ -272,18 +320,25 @@ function scoreSettlementIntent(a: UserScoringData, b: UserScoringData): number {
  * profileCompleteness captures that separately).
  */
 function scoreRealLifeAnswers(a: UserScoringData, b: UserScoringData): number {
-  let total = 0;
-  let count = 0;
+  let weightedTotal = 0;
+  let weightSum     = 0;
 
   for (const key of Object.values(RealLifeQuestionKey)) {
     const aVal = a.realLifeAnswers.get(key);
     const bVal = b.realLifeAnswers.get(key);
     if (aVal === undefined || bVal === undefined) continue;
-    total += answerSimilarity(aVal, bVal);
-    count++;
+
+    // Phase-F: apply importance multiplier if available; default importance = 3
+    const importanceA = a.answerImportance?.get(key) ?? 3;
+    const importanceB = b.answerImportance?.get(key) ?? 3;
+    const avgImportance = Math.round((importanceA + importanceB) / 2);
+    const weight = answerImportanceToWeight(avgImportance);
+
+    weightedTotal += answerSimilarity(aVal, bVal) * weight;
+    weightSum     += weight;
   }
 
-  return count === 0 ? 0.0 : round2(total / count);
+  return weightSum === 0 ? 0.0 : round2(weightedTotal / weightSum);
 }
 
 /** Average normalised completion score of both users. */
@@ -510,6 +565,116 @@ function scoreTrustLayerDepth(a: UserScoringData, b: UserScoringData): number {
   return round2((aScore + bScore) / 2);
 }
 
+// ── Phase-D vibe compatibility scorer ────────────────────────────────────────
+
+const VIBE_DIMS: (keyof VibeScores)[] = ['warmth', 'ambition', 'tradition', 'socialEnergy', 'openness'];
+
+/**
+ * Euclidean distance in normalized 5-dim personality space.
+ * Scores are 1–10 so max per-dim diff is 9; we normalize to [0, 1].
+ * max_dist = sqrt(5) when all dims differ maximally.
+ * Returns 1.0 for identical vibes, 0.0 for maximally different.
+ * Called only when both users have ProfileEmbedding.vibeScores.
+ */
+function scoreVibeCompatibility(a: UserScoringData, b: UserScoringData): number {
+  const va = a.vibeScores;
+  const vb = b.vibeScores;
+  if (!va || !vb) return 0.5;
+
+  const sumSq = VIBE_DIMS.reduce((acc, k) => {
+    const diff = (va[k] - vb[k]) / 9; // normalize: max diff per dim = 9
+    return acc + diff * diff;
+  }, 0);
+
+  const maxDist = Math.sqrt(VIBE_DIMS.length);
+  return round2(1 - Math.sqrt(sumSq) / maxDist);
+}
+
+// ── Phase-F Pearson answer fit ────────────────────────────────────────────────
+
+/**
+ * Ordinal encoding of answer values for Pearson correlation.
+ * Only single-value (string) answers are encoded; array answers are skipped.
+ * Values are normalized to [0, 1] so all questions contribute equally.
+ */
+const ANSWER_ORDINALS: Partial<Record<RealLifeQuestionKey, Record<string, number>>> = {
+  [RealLifeQuestionKey.KIDS]: {
+    'want_kids': 1.0, 'open_to_kids': 0.75, 'unsure': 0.5, 'no_more_kids': 0.25, 'no_kids': 0.0,
+  },
+  [RealLifeQuestionKey.FAITH_IN_PRACTICE]: {
+    'very_religious': 1.0, 'religious': 0.75, 'spiritual': 0.5, 'cultural': 0.25, 'not_religious': 0.0,
+  },
+  [RealLifeQuestionKey.DIET]: {
+    'vegan': 1.0, 'vegetarian': 0.8, 'jain': 0.6, 'halal': 0.4, 'everything': 0.2, 'varies': 0.0,
+  },
+  [RealLifeQuestionKey.CAREER]: {
+    'career_first': 1.0, 'balanced': 0.75, 'family_first': 0.5, 'flexible': 0.25, 'not_working': 0.0,
+  },
+  [RealLifeQuestionKey.MONEY]: {
+    'save_first': 1.0, 'balanced': 0.75, 'invest': 0.5, 'live_now': 0.25, 'no_preference': 0.0,
+  },
+  [RealLifeQuestionKey.BODY_AND_HEALTH]: {
+    'very_active': 1.0, 'active': 0.75, 'moderate': 0.5, 'light': 0.25, 'sedentary': 0.0,
+  },
+  [RealLifeQuestionKey.MIND_AND_EMOTIONAL]: {
+    'talk_through': 1.0, 'need_space': 0.75, 'mixed': 0.5, 'avoidant': 0.25, 'unsure': 0.0,
+  },
+  [RealLifeQuestionKey.MINDSET_AND_AMBITION]: {
+    'very_ambitious': 1.0, 'ambitious': 0.75, 'balanced': 0.5, 'relaxed': 0.25, 'none': 0.0,
+  },
+  [RealLifeQuestionKey.WHERE_TO_SETTLE]: {
+    'stay_abroad': 1.0, 'open': 0.67, 'return_home': 0.33, 'unsure': 0.0,
+  },
+};
+
+/**
+ * Pearson correlation coefficient across numerically-encoded answer vectors.
+ * Captures cross-dimension pattern correlation (e.g. career-ambitious + save-first).
+ * Returns null when < 3 common encoded questions — not enough data for meaningful r.
+ * Maps r ∈ [-1, +1] to compatibility score ∈ [0, 1] via (r + 1) / 2.
+ */
+export function scorePearsonAnswerFit(a: UserScoringData, b: UserScoringData): number | null {
+  const xValues: number[] = [];
+  const yValues: number[] = [];
+
+  for (const [key, ordinals] of Object.entries(ANSWER_ORDINALS) as [RealLifeQuestionKey, Record<string, number>][]) {
+    const aRaw = a.realLifeAnswers.get(key);
+    const bRaw = b.realLifeAnswers.get(key);
+    if (typeof aRaw !== 'string' || typeof bRaw !== 'string') continue;
+
+    const aOrd = ordinals[aRaw.toLowerCase().replace(/\s+/g, '_')];
+    const bOrd = ordinals[bRaw.toLowerCase().replace(/\s+/g, '_')];
+    if (aOrd === undefined || bOrd === undefined) continue;
+
+    xValues.push(aOrd);
+    yValues.push(bOrd);
+  }
+
+  if (xValues.length < 3) return null;
+
+  const n     = xValues.length;
+  const meanX = xValues.reduce((s, v) => s + v, 0) / n;
+  const meanY = yValues.reduce((s, v) => s + v, 0) / n;
+
+  let num   = 0;
+  let denomX = 0;
+  let denomY = 0;
+
+  for (let i = 0; i < n; i++) {
+    const dx = xValues[i] - meanX;
+    const dy = yValues[i] - meanY;
+    num    += dx * dy;
+    denomX += dx * dx;
+    denomY += dy * dy;
+  }
+
+  const denom = Math.sqrt(denomX * denomY);
+  if (denom === 0) return 0.5; // constant vectors → neutral
+
+  const r = num / denom; // [-1, +1]
+  return round2((r + 1) / 2); // map to [0, 1]
+}
+
 // ── PROMPT-007 dimension scorer ───────────────────────────────────────────────
 
 /**
@@ -571,6 +736,8 @@ export function applyTuningToBreakdown(
     communicationStyle:  V2_DIM_WEIGHTS.communicationStyle,
     profileViewMomentum: V2_DIM_WEIGHTS.profileViewMomentum,
     trustLayerDepth:     V2_DIM_WEIGHTS.trustLayerDepth,
+    vibeCompatibility:   V2_DIM_WEIGHTS.vibeCompatibility,
+    pearsonAnswerFit:    V2_DIM_WEIGHTS.pearsonAnswerFit,
   };
 
   // Only include dimensions that are present in the breakdown

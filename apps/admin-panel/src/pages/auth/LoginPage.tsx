@@ -23,8 +23,8 @@ export function LoginPage() {
     setLoading(true);
     try {
       const data = await adminLogin(email, password, needsTotp ? totp : undefined);
-      saveToken(data.token);
-      login(data.token, data.admin as AdminUser);
+      saveToken(data.accessToken);
+      login(data.accessToken, data.admin as AdminUser);
       navigate('/');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;

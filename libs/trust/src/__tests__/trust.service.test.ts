@@ -30,6 +30,7 @@ const mockFlagCreate           = jest.fn();
 const mockConnectionCount      = jest.fn();
 const mockIntroductionCount    = jest.fn();
 const mockCheckInFindMany      = jest.fn();
+const mockProfileViewCount     = jest.fn();
 const mockTransaction          = jest.fn();
 const mockUserFindUnique       = jest.fn();
 const mockProfileFindUnique    = jest.fn();
@@ -56,6 +57,9 @@ jest.mock('@abroad-matrimony/db', () => ({
     },
     checkIn: {
       findMany: (...a: unknown[]) => mockCheckInFindMany(...a),
+    },
+    profileView: {
+      count: (...a: unknown[]) => mockProfileViewCount(...a),
     },
     user: {
       findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
@@ -262,6 +266,9 @@ describe('getSignals', () => {
       { weekKey: '2026-W21' },
       { weekKey: '2026-W20' },
     ]);
+    mockProfileViewCount
+      .mockResolvedValueOnce(7)   // profileViews7d
+      .mockResolvedValueOnce(25); // profileViews30d
 
     const result = await getSignals(BLOCKER_ID);
 
@@ -270,8 +277,8 @@ describe('getSignals', () => {
     expect(result.matchRate).toBe(50); // 5/10 * 100
     expect(result.introductionsThisWeek).toBe(1);
     expect(result.checkInsStreak).toBeGreaterThanOrEqual(1);
-    expect(result.profileViews7d).toBe(0); // placeholder
-    expect(result.profileViews30d).toBe(0); // placeholder
+    expect(result.profileViews7d).toBe(7);
+    expect(result.profileViews30d).toBe(25);
   });
 
   it('returns 0 matchRate when no connections sent', async () => {
@@ -282,9 +289,11 @@ describe('getSignals', () => {
       .mockResolvedValueOnce(0); // totalSent
     mockIntroductionCount.mockResolvedValue(0);
     mockCheckInFindMany.mockResolvedValue([]);
+    mockProfileViewCount
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
 
     const result = await getSignals(BLOCKER_ID);
-
 
     expect(result.matchRate).toBe(0);
     expect(result.checkInsStreak).toBe(0);

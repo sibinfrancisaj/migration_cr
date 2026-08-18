@@ -4,6 +4,12 @@
  * ⚠️  PRODUCTION GUARD — this process will exit immediately if NODE_ENV === 'production'.
  * The seeder is a developer tool and must NEVER run in production.
  */
+
+// Load .env from monorepo root before any other code reads process.env.
+// __dirname = apps/seeder/src → ../../../ = monorepo root
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
+
 import http from 'http';
 import { createSeederApp } from './app.js';
 import { getSeederEnv } from './lib/seeder-env.js';
@@ -71,7 +77,13 @@ async function start(): Promise<void> {
   process.on('SIGINT',  () => { void shutdown('SIGINT'); });
 }
 
-start().catch((err) => {
-  seederLog.error('Failed to start seeder', { err });
+start().catch((err: unknown) => {
+  // Raw output BEFORE any logger — never truncated
+  process.stderr.write('\n=== SEEDER STARTUP ERROR ===\n');
+  process.stderr.write(err instanceof Error ? err.stack ?? err.message : String(err));
+  process.stderr.write('\n============================\n');
+  const message = err instanceof Error ? err.message : String(err);
+  const stack   = err instanceof Error ? err.stack   : undefined;
+  seederLog.error('Failed to start seeder', { message, stack });
   process.exit(1);
 });

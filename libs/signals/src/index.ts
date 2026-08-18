@@ -1,6 +1,7 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { ConnectionStatus, IntroductionStatus } from '@abroad-matrimony/shared';
+import { applyImplicitSignal } from '@abroad-matrimony/matching';
 
 const log = createChildLogger({ module: 'signals' });
 
@@ -76,6 +77,9 @@ export async function logProfileView(viewerId: string, viewedId: string): Promis
   if (recent) return;
 
   await prisma.profileView.create({ data: { viewerId, viewedId } });
+
+  // Fire-and-forget implicit signal (Phase-E)
+  void applyImplicitSignal(viewerId, viewedId, 'PROFILE_VIEW');
 
   log.info('logProfileView — recorded', { viewerId, viewedId });
 }

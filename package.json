@@ -25,7 +25,7 @@
     "db:migrate": "prisma migrate dev --schema=libs/db/prisma/schema.prisma",
     "db:push": "prisma db push --schema=libs/db/prisma/schema.prisma",
     "db:studio": "prisma studio --schema=libs/db/prisma/schema.prisma",
-    "db:seed": "ts-node -r tsconfig-paths/register libs/db/src/seed.ts",
+    "db:seed": "node -r tsx/cjs -r tsconfig-paths/register libs/db/src/seed.ts",
     "dev": "npm run docker:up && npx ts-node -e \"setTimeout(()=>{},2000)\" && npm run db:generate"
   },
   "devDependencies": {
@@ -61,6 +61,7 @@
     "supertest": "^7.2.2",
     "ts-jest": "^29.2.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.2",
     "tsconfig-paths": "^4.2.0",
     "tslib": "^2.3.0",
     "typescript": "~5.5.4"

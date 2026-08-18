@@ -216,6 +216,10 @@ export interface ScoreBreakdown {
   profileViewMomentum?: number;
   /** Optional — average trust score / 100 for both users (ALG-009). */
   trustLayerDepth?: number;
+  /** Optional — vibe personality compatibility: Euclidean distance in 5-dim vibe space (Phase-D). */
+  vibeCompatibility?: number;
+  /** Optional — Pearson correlation across numerically-encoded answer vectors (Phase-F). */
+  pearsonAnswerFit?: number;
 }
 
 export interface ConnectionDto {

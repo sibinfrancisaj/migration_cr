@@ -27,3 +27,15 @@ export {
   createNotificationWorker,
   enqueueNotification,
 } from './notification.worker.js';
+
+// Unsubscribe (PROD-001)
+export {
+  generateUnsubscribeToken,
+  processUnsubscribe,
+  resubscribeEmail,
+  UnsubscribeTokenInvalidError,
+} from './unsubscribe.service.js';
+
+// Notification preferences (PROD-005)
+export { getNotificationPreferences, updateNotificationPreferences } from './preferences.service.js';
+export type { NotificationPreferenceDto, UpdateNotificationPreferenceInput } from './preferences.service.js';

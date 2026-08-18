@@ -628,35 +628,67 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 
 ---
 
-## Phase 18 — Connections + Verification Gateway Wiring ⏳
+## Phase 18 — Connections + Verification Gateway Wiring ✅
 **Goal:** Wire the already-built `libs/connections` and `libs/verification` service layers into gateway routes.
 **Dependencies:** Phase 7b ✅ (service layers done) · All gateway middleware ✅
-**Estimated effort:** 2–3 days
-**Status:** Backlog — service layer complete, gateway endpoints missing
+**Status:** Complete — 38 tests (23 connections + 15 verification), all green.
 
 | Task ID   | Description                                                                 | Status |
 |-----------|-----------------------------------------------------------------------------|--------|
-| CONN-001  | `POST /api/v1/connections` — send connection request                        | ⏳     |
-| CONN-002  | `GET /api/v1/connections` — list sent/received/accepted                     | ⏳     |
-| CONN-003  | `POST /api/v1/connections/:id/accept` + `decline` + `withdraw`              | ⏳     |
-| CONN-004  | `DELETE /api/v1/connections/:id` — remove connection                        | ⏳     |
-| VER-001   | `POST /api/v1/verification` — submit ID doc + selfie                        | ⏳     |
-| VER-002   | `GET /api/v1/verification/status` — get own verification status             | ⏳     |
-| VER-003   | `GET /api/v1/verification/trust-score` — 6-layer trust score               | ⏳     |
+| CONN-001  | `POST /api/v1/connections` — send connection request                        | ✅     |
+| CONN-002  | `GET /api/v1/connections` — list sent/received/accepted                     | ✅     |
+| CONN-003  | `PUT /api/v1/connections/:id/accept` + `PUT /:id/decline` + `DELETE /:id`  | ✅     |
+| CONN-004  | `DELETE /api/v1/connections/:id` — withdraw connection                      | ✅     |
+| VER-001   | `POST /api/v1/verification` — submit ID doc + selfie                        | ✅     |
+| VER-002   | `GET /api/v1/verification/status` — get own verification status             | ✅     |
+| VER-003   | `GET /api/v1/verification/trust-score` — 6-layer trust score               | ✅     |
 
 ---
 
-## Phase 19 — Production Readiness ⏳
+## Phase 19 — Production Readiness ✅
 **Goal:** Everything needed before the app goes live with real users.
-**Status:** Backlog
+**Status:** Complete — 2026-07-27. All code tasks done; ops tasks documented.
 
 | Task ID   | Description                                                                 | Status |
 |-----------|-----------------------------------------------------------------------------|--------|
-| PROD-001  | Email unsubscribe + one-click opt-out (CAN-SPAM / legal)                   | ⏳     |
-| PROD-002  | GDPR data export + account deletion flow (`deletedAt` field exists)        | ⏳     |
-| PROD-003  | Google Vision API image moderation before S3 store                         | ⏳     |
-| PROD-004  | Subscription renewal reminder BullMQ job (3d + 1d before `expiresAt`)     | ⏳     |
-| PROD-005  | Notification preferences table + per-user channel opt-out                 | ⏳     |
-| PROD-006  | Partner preference filters on discovery feed (age range, city, religion)  | ⏳     |
-| PROD-007  | Redis Cloud HA setup (replace single Docker Redis)                         | ⏳     |
-| PROD-008  | Verify Supabase automated DB backups enabled                               | ⏳     |
+| PROD-001  | Email unsubscribe + one-click opt-out (CAN-SPAM / legal)                   | ✅     |
+| PROD-002  | GDPR data export + account deletion flow (`deletedAt` field exists)        | ✅     |
+| PROD-003  | Google Vision API image moderation before S3 store                         | ✅     |
+| PROD-004  | Subscription renewal reminder BullMQ job (3d + 1d before `expiresAt`)     | ✅     |
+| PROD-005  | Notification preferences table + per-user channel opt-out                 | ✅     |
+| PROD-006  | Partner preference filters on discovery feed (age range, city, religion)  | ✅     |
+| PROD-007  | Redis Cloud HA setup (replace single Docker Redis)                         | ⏳ ops |
+| PROD-008  | Verify Supabase automated DB backups enabled                               | ⏳ ops |
+
+---
+
+## Phase 20 — RAG / TDS Algorithm Enhancement ✅
+**Goal:** Implement full 10-step TDS-inspired smart matchmaking sequence with AI + fallback guarantees.
+**Dependencies:** libs/ai ✅ · pgvector ✅ · ProfileEmbedding ✅ · libs/matching ✅
+**Completed:** 2026-08-18
+**Status:** All tasks complete — 231 matching tests, 62 AI tests green.
+
+| Task ID   | Description                                                                                    | Status |
+|-----------|------------------------------------------------------------------------------------------------|--------|
+| RAG-001   | `libs/ai/src/fallback.ts` — `withAiFallback<T>()` generic timeout + error wrapper            | ✅     |
+| RAG-002   | `libs/ai/src/semantic-search.service.ts` — `getSemanticallySimilarUsers()` (pgvector ANN) + `mergeWithRRF()` | ✅ |
+| RAG-003   | `discover.service.ts` — RRF fusion (step 1c): AI semantic list merged into score-ranked list for users with ≥10 scores | ✅ |
+| RAG-004   | `discover.service.ts` — cold-start ANN (step 1b): pgvector fallback when scoreRows.length < 10 | ✅ |
+| RAG-005   | `ScoreBreakdown` — added `vibeCompatibility?` + `pearsonAnswerFit?` optional fields (Phase-D/F) | ✅ |
+| RAG-006   | `scoring.service.ts` — `scoreVibeCompatibility()`: Euclidean dist in 5-dim vibe space, weight 0.04 | ✅ |
+| RAG-007   | `scoring.service.ts` — `scorePearsonAnswerFit()`: Pearson-r across ordinal-encoded answers, weight 0.04 | ✅ |
+| RAG-008   | `scoring.service.ts` — importance-weighted `scoreRealLifeAnswers()` using `RealLifeAnswer.importance` | ✅ |
+| RAG-009   | `match-score.service.ts` — `getUserScoringData()` fetches `profileEmbedding.vibeScores` + `answer.importance` | ✅ |
+| RAG-010   | `implicit-signal.service.ts` — `applyImplicitSignal()` boosts `MatchScore.implicitBoost` ±0.30 cap | ✅ |
+| RAG-011   | Signal wiring: `logProfileView()`, `saveProfile()`, `sendConnectionRequest()` each fire implicit signal | ✅ |
+| RAG-012   | `ai.worker.ts` — BullMQ retry: attempts=3, exponential 60s backoff, DLQ retains 100 failed jobs | ✅ |
+| RAG-013   | Prisma schema: `MatchScore.implicitBoost Float @default(0)` + `RealLifeAnswer.importance Int @default(3)` (⚠️ run prisma db push locally) | ✅ |
+
+**Key architectural decisions:**
+- `withAiFallback()` races AI call against configurable timeout (default 3s); any failure returns fallback value deterministically.
+- RRF formula: `score(d) = Σ 1/(60 + rank_i(d))` fusing score-based and semantic ranked lists.
+- Cold-start ANN and RRF are mutually exclusive (cold-start only when < 10 score rows).
+- Semantic-only candidates get proxy scores `max(40, 85 - rank × 0.45)` so DTO builder doesn't skip them.
+- `answerImportanceToWeight()` duplicated locally in scoring.service.ts to avoid circular import with match-tuning.service.ts.
+- Pearson returns `null` when < 3 common ordinal answers; dimension omitted from breakdown in that case.
+- `applyImplicitSignal()` catches all errors and swallows them — safe for fire-and-forget callers.

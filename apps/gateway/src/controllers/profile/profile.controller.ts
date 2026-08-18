@@ -12,6 +12,7 @@ import {
   PhotoLimitExceededError,
   InvalidMimeTypeError,
 } from '@abroad-matrimony/profile';
+import { assertImageSafe, ImageModerationRejectedError } from '@abroad-matrimony/moderation';
 import type { ApiResponse, ProfileDto, RealLifeAnswerDto, StoryPromptAnswerDto, MediaDto } from '@abroad-matrimony/shared';
 import { AppError } from '../../middleware/error.middleware.js';
 import { HTTP_STATUS, ERROR_CODES } from '../../constants/index.js';
@@ -155,6 +156,8 @@ export const profileController = {
       // req.file is guaranteed by uploadSinglePhoto middleware
       const { buffer, mimetype, originalname } = req.file!;
 
+      await assertImageSafe(buffer.toString('base64'));
+
       const media = await uploadProfilePhoto({
         userId,
         buffer,
@@ -181,6 +184,10 @@ export const profileController = {
       }
       if (err instanceof InvalidMimeTypeError) {
         next(new AppError(HTTP_STATUS.BAD_REQUEST, ERROR_CODES.VALIDATION_ERROR, PROFILE_ERRORS.INVALID_MIME_TYPE));
+        return;
+      }
+      if (err instanceof ImageModerationRejectedError) {
+        next(new AppError(HTTP_STATUS.UNPROCESSABLE, ERROR_CODES.VALIDATION_ERROR, PROFILE_ERRORS.IMAGE_POLICY_VIOLATION));
         return;
       }
       next(err);

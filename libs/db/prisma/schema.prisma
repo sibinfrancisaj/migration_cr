@@ -17,10 +17,11 @@ model User {
   phone           String    @unique
   email           String?   @unique
   role            UserRole  @default(USER)
-  isPhoneVerified Boolean   @default(false)
-  isEmailVerified Boolean   @default(false)
-  isSeeded        Boolean   @default(false)
-  deletedAt       DateTime?
+  isPhoneVerified    Boolean   @default(false)
+  isEmailVerified    Boolean   @default(false)
+  isSeeded           Boolean   @default(false)
+  emailUnsubscribed  Boolean   @default(false)
+  deletedAt          DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -63,6 +64,8 @@ model User {
   groupProposals       GroupProposal[]
   profileViewsGiven    ProfileView[]         @relation("ProfileViewsGiven")
   profileViewsReceived ProfileView[]         @relation("ProfileViewsReceived")
+  notificationPreference NotificationPreference?
+  partnerPreference      PartnerPreference?
 
   @@index([phone])
   @@index([email])
@@ -171,6 +174,8 @@ model RealLifeAnswer {
   userId      String
   questionKey RealLifeQuestionKey
   value       Json
+  /// How important this question is to the user: 1 (low) – 5 (high). Phase-F.
+  importance  Int                 @default(3)
   updatedAt   DateTime            @updatedAt
 
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -296,6 +301,7 @@ model Group {
   introDrops    IntroDropLog[]
   introductions Introduction[]
   posts         GroupPost[]
+  embedding     GroupEmbedding?
 
   @@index([status])
   @@index([type])
@@ -483,6 +489,19 @@ model Introduction {
   @@map("introductions")
 }
 
+// ─── AI Group Intelligence ────────────────────────────────────────────────────
+
+model GroupEmbedding {
+  groupId   String   @id
+  summary   String?
+  embedding Unsupported("vector(1536)")?
+  updatedAt DateTime @updatedAt
+
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@map("group_embeddings")
+}
+
 // ─── AI Profile Intelligence ──────────────────────────────────────────────────
 
 model ProfileEmbedding {
@@ -492,6 +511,8 @@ model ProfileEmbedding {
   vibeScores               Json?
   compatibilityNotes       String?
   embedding                Unsupported("vector(1536)")?
+  storyEmbedding           Unsupported("vector(1536)")?
+  habitsEmbedding          Unsupported("vector(1536)")?
   recommendedContactWindow Json?
   updatedAt                DateTime @updatedAt
 
@@ -503,13 +524,15 @@ model ProfileEmbedding {
 // ─── Matching ────────────────────────────────────────────────────────────────
 
 model MatchScore {
-  id         String   @id @default(uuid())
-  userAId    String
-  userBId    String
-  totalScore Float
-  breakdown  Json
-  algorithmV String   @default("v1")
-  computedAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  userAId       String
+  userBId       String
+  totalScore    Float
+  breakdown     Json
+  algorithmV    String   @default("v1")
+  computedAt    DateTime @default(now())
+  /// Implicit signal feedback boost: clamped to [-0.30, +0.30]. Phase-E.
+  implicitBoost Float    @default(0)
 
   @@unique([userAId, userBId, algorithmV])
   @@index([userAId])
@@ -777,16 +800,18 @@ model Membership {
   provider           PaymentProvider
   providerSubId      String?          @unique
   status             MembershipStatus @default(ACTIVE)
-  currentPeriodStart DateTime?
-  expiresAt          DateTime?
-  cancelledAt        DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
+  currentPeriodStart       DateTime?
+  expiresAt                DateTime?
+  cancelledAt              DateTime?
+  renewalReminderSentAt    DateTime?
+  createdAt                DateTime         @default(now())
+  updatedAt                DateTime         @updatedAt
 
   user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
+  @@index([expiresAt])
   @@map("memberships")
 }
 
@@ -954,6 +979,37 @@ model EventLog {
   @@index([status])
   @@index([createdAt])
   @@map("event_logs")
+}
+
+// ─── Notification Preferences (PROD-005) ─────────────────────────────────────
+
+model NotificationPreference {
+  userId          String   @id
+  emailEnabled    Boolean  @default(true)
+  smsEnabled      Boolean  @default(true)
+  pushEnabled     Boolean  @default(true)
+  marketingEnabled Boolean @default(true)
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+// ─── Partner Preferences (PROD-006) ──────────────────────────────────────────
+
+model PartnerPreference {
+  userId     String   @id
+  ageMin     Int?
+  ageMax     Int?
+  countries  String[] @default([])
+  cities     String[] @default([])
+  religions  String[] @default([])
+  updatedAt  DateTime @updatedAt
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("partner_preferences")
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────

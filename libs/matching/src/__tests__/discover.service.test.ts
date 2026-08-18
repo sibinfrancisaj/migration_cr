@@ -1,33 +1,66 @@
-import { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge } from '../discover.service.js';
+import { getDiscoveryFeed, encodeCursor, decodeCursor, computeAge, mmrRerank } from '../discover.service.js';
 import { UserRole, MediaType, VerificationStatus } from '@abroad-matrimony/shared';
+import type { DiscoveryItemDto } from '@abroad-matrimony/shared';
 import { ALGORITHM_VERSION } from '../match-score.service.js';
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 
-const mockMatchScoreFindMany   = jest.fn();
-const mockUserFindMany         = jest.fn();
-const mockConnectionFindMany   = jest.fn();
-const mockProfileFindMany      = jest.fn();
-const mockMediaFindMany        = jest.fn();
-const mockMatchTuningFindUnique = jest.fn();
+const mockMatchScoreFindMany          = jest.fn();
+const mockUserFindMany                = jest.fn();
+const mockConnectionFindMany          = jest.fn();
+const mockProfileFindMany             = jest.fn();
+const mockMediaFindMany               = jest.fn();
+const mockMatchTuningFindUnique       = jest.fn();
+const mockPartnerPreferenceFindUnique = jest.fn();
+const mockProfileEmbeddingFindMany    = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    matchScore:   { findMany:   (...a: any[]) => mockMatchScoreFindMany(...a) },
+    matchScore:        { findMany:   (...a: any[]) => mockMatchScoreFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    user:         { findMany:   (...a: any[]) => mockUserFindMany(...a) },
+    user:              { findMany:   (...a: any[]) => mockUserFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    connection:   { findMany:   (...a: any[]) => mockConnectionFindMany(...a) },
+    connection:        { findMany:   (...a: any[]) => mockConnectionFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    profile:      { findMany:   (...a: any[]) => mockProfileFindMany(...a) },
+    profile:           { findMany:   (...a: any[]) => mockProfileFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    media:        { findMany:   (...a: any[]) => mockMediaFindMany(...a) },
+    media:             { findMany:   (...a: any[]) => mockMediaFindMany(...a) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    matchTuning:  { findUnique: (...a: any[]) => mockMatchTuningFindUnique(...a) },
+    matchTuning:       { findUnique: (...a: any[]) => mockMatchTuningFindUnique(...a) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    partnerPreference: { findUnique: (...a: any[]) => mockPartnerPreferenceFindUnique(...a) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    profileEmbedding:  { findMany:   (...a: any[]) => mockProfileEmbeddingFindMany(...a) },
   },
   PrismaClient: jest.fn(),
   Prisma: {},
+}));
+
+// ── AI mock — default: no semantic candidates (fallback path) ─────────────────
+
+const mockGetSemanticallySimilarUsers = jest.fn().mockResolvedValue([]);
+const mockMergeWithWeightedRRF        = jest.fn().mockImplementation(
+  (lists: string[][], _weights: number[]) => [...new Set(lists.flat())],
+);
+
+jest.mock('@abroad-matrimony/ai', () => ({
+  withAiFallback: async (opts: { primary: () => unknown; fallback: () => unknown }) => {
+    try { return await opts.primary(); } catch { return opts.fallback(); }
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getSemanticallySimilarUsers: (...a: any[]) => mockGetSemanticallySimilarUsers(...a),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mergeWithWeightedRRF:        (...a: any[]) => mockMergeWithWeightedRRF(...a),
+}));
+
+// ── Recommendations mock ──────────────────────────────────────────────────────
+
+const mockCollaborativeFilter = jest.fn().mockResolvedValue([]);
+
+jest.mock('@abroad-matrimony/recommendations', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  collaborativeFilter: (...a: any[]) => mockCollaborativeFilter(...a),
 }));
 
 // ── Logger mock ───────────────────────────────────────────────────────────────
@@ -87,6 +120,14 @@ function setHappyPath(): void {
   ]);
   // No tuning by default — returns empty weights
   mockMatchTuningFindUnique.mockResolvedValue(null);
+  // No partner preferences by default — no pre-filter applied
+  mockPartnerPreferenceFindUnique.mockResolvedValue(null);
+  // No semantic candidates by default — RRF path degrades to score ordering
+  mockGetSemanticallySimilarUsers.mockResolvedValue([]);
+  // No collaborative filter candidates by default
+  mockCollaborativeFilter.mockResolvedValue([]);
+  // No vibe embeddings by default — MMR falls through to score order
+  mockProfileEmbeddingFindMany.mockResolvedValue([]);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -296,6 +337,80 @@ describe('getDiscoveryFeed()', () => {
 
     const mediaArgs = mockMediaFindMany.mock.calls[0][0];
     expect(mediaArgs.where.type).toBe(MediaType.PHOTO);
+  });
+});
+
+// ── mmrRerank() ───────────────────────────────────────────────────────────────
+
+describe('mmrRerank()', () => {
+  const makeItem = (userId: string, score: number): DiscoveryItemDto => ({
+    userId,
+    name:              userId,
+    age:               30,
+    currentCity:       'London',
+    currentCountry:    'UK',
+    settlementIntent:  'STAY_ABROAD',
+    completionScore:   80,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    verificationStatus: 'APPROVED' as any,
+    totalScore:        score,
+    personalizedScore: score,
+    scoreBreakdown:    {},
+  });
+
+  it('returns original order when vibeMap has fewer than 2 entries', () => {
+    const items   = [makeItem('a', 0.9), makeItem('b', 0.7)];
+    const vibeMap = new Map<string, number[]>([['a', [8, 7, 6, 5, 4]]]);
+    expect(mmrRerank(items, vibeMap)).toEqual(items);
+  });
+
+  it('returns original list when fewer than 2 items', () => {
+    const items   = [makeItem('a', 0.9)];
+    const vibeMap = new Map<string, number[]>([['a', [8, 7, 6, 5, 4]], ['b', [1, 2, 3, 4, 5]]]);
+    expect(mmrRerank(items, vibeMap)).toEqual(items);
+  });
+
+  it('promotes a diverse lower-scored item when top-2 are vibe-similar', () => {
+    // A and B are vibe-identical (cos sim → very high) → B is penalised after A selected
+    // C has low relevance but maximally different vibe → promoted to position 2
+    const A_VIBE = [9, 9, 9, 9, 9];
+    const B_VIBE = [9, 9, 9, 9, 9]; // same as A — very similar, diversity penalty
+    const C_VIBE = [1, 1, 1, 1, 1]; // maximally different from A
+
+    const items = [
+      makeItem('A', 0.9),
+      makeItem('B', 0.7),  // similar to A
+      makeItem('C', 0.5),  // different from A
+    ];
+    const vibeMap = new Map<string, number[]>([
+      ['A', A_VIBE],
+      ['B', B_VIBE],
+      ['C', C_VIBE],
+    ]);
+
+    const result = mmrRerank(items, vibeMap, 0.5); // equal relevance / diversity weight
+    expect(result[0]!.userId).toBe('A');   // A is always first
+    // C should beat B for position 2 since B is too similar to A
+    expect(result[1]!.userId).toBe('C');
+    expect(result[2]!.userId).toBe('B');
+  });
+
+  it('items with no vibe embedding are treated as fully diverse', () => {
+    const items = [
+      makeItem('A', 0.9),
+      makeItem('B', 0.8),  // has vibe, similar to A
+      makeItem('C', 0.7),  // no vibe in map — treated as maximally diverse
+    ];
+    const vibeMap = new Map<string, number[]>([
+      ['A', [9, 9, 9, 9, 9]],
+      ['B', [9, 9, 9, 9, 9]],
+    ]);
+
+    const result = mmrRerank(items, vibeMap, 0.5);
+    expect(result[0]!.userId).toBe('A');
+    // C (no vibe) gets maxSim=0, so mmrScore = 0.5 × 0.7 = 0.35
+    // B (same vibe as A) gets high maxSim after A is selected, lower mmrScore
+    expect(result[1]!.userId).toBe('C');
   });
 });
 

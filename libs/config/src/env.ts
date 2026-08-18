@@ -92,6 +92,9 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().default('gpt-4o-mini'),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
+
+  // Google Vision image moderation (PROD-003)
+  GOOGLE_VISION_API_KEY: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

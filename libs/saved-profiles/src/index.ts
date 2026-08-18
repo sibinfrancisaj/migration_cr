@@ -1,6 +1,7 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { SavedProfileLabel } from '@abroad-matrimony/shared';
+import { applyImplicitSignal } from '@abroad-matrimony/matching';
 
 const log = createChildLogger({ module: 'saved-profiles' });
 
@@ -120,6 +121,9 @@ export async function saveProfile(
       savedUser: { include: { profile: true } },
     },
   });
+
+  // Fire-and-forget implicit signal (Phase-E)
+  void applyImplicitSignal(userId, savedUserId, 'PROFILE_SAVE');
 
   log.info('saveProfile — saved', { userId, savedUserId, label });
 

@@ -1,6 +1,6 @@
 /**
  * AI-002 tests — Profile Intelligence Service.
- * Mocks OpenAI client, DB, and config.
+ * Phase C: 3 embedding vectors (personality, story, habits) + $executeRaw for vector persistence.
  */
 
 // ── Env mock ──────────────────────────────────────────────────────────────────
@@ -17,27 +17,29 @@ jest.mock('@abroad-matrimony/logger', () => ({
 }));
 
 // ── OpenAI mock ───────────────────────────────────────────────────────────────
-const mockChatCreate = jest.fn();
+const mockChatCreate       = jest.fn();
 const mockEmbeddingsCreate = jest.fn();
 
 jest.mock('../client.js', () => ({
-  isAiConfigured: jest.fn(() => true),
-  getAiClient: jest.fn(() => ({
-    chat: { completions: { create: mockChatCreate } },
+  isAiConfigured:     jest.fn(() => true),
+  getAiClient:        jest.fn(() => ({
+    chat:       { completions: { create: mockChatCreate } },
     embeddings: { create: mockEmbeddingsCreate },
   })),
   AiNotConfiguredError: class AiNotConfiguredError extends Error {},
-  _resetAiClient: jest.fn(),
+  _resetAiClient:     jest.fn(),
 }));
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
-const mockUserFindUnique = jest.fn();
-const mockEmbeddingUpsert = jest.fn();
+const mockUserFindUnique   = jest.fn();
+const mockEmbeddingUpsert  = jest.fn();
+const mockExecuteRaw       = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
-    user: { findUnique: (...a: unknown[]) => mockUserFindUnique(...a) },
-    profileEmbedding: { upsert: (...a: unknown[]) => mockEmbeddingUpsert(...a) },
+    user:             { findUnique:  (...a: unknown[]) => mockUserFindUnique(...a) },
+    profileEmbedding: { upsert:      (...a: unknown[]) => mockEmbeddingUpsert(...a) },
+    $executeRaw:      (...a: unknown[]) => mockExecuteRaw(...a),
   },
 }));
 
@@ -55,12 +57,12 @@ const MOCK_USER = {
     bio: 'Software engineer who loves travel',
     voiceIntroTranscript: null,
   },
-  realLifeAnswers: [{ questionKey: 'DIET_AND_LIFESTYLE', value: 'vegetarian' }],
+  realLifeAnswers:    [{ questionKey: 'DIET_AND_LIFESTYLE', value: 'vegetarian' }],
   storyPromptAnswers: [{ promptKey: 'LIFE_GOALS', answer: 'I want to build a company...' }],
-  habitLogs: [{ id: 'h1' }],
-  groupMemberships: [{ group: { name: 'UK Gujaratis' } }],
-  eventRsvps: [{ id: 'rsvp-1' }],
-  promptResponses: [{ id: 'pr-1' }],
+  habitLogs:          [{ habitKey: 'EXERCISE' }],
+  groupMemberships:   [{ group: { name: 'UK Gujaratis' } }],
+  eventRsvps:         [{ id: 'rsvp-1' }],
+  promptResponses:    [{ id: 'pr-1' }],
 };
 
 const MOCK_GPT_RESPONSE = {
@@ -71,16 +73,22 @@ const MOCK_GPT_RESPONSE = {
   recommendedContactWindow: { startHour: 8, endHour: 22, timezone: 'Europe/London' },
 };
 
-beforeEach(() => {
-  jest.clearAllMocks();
+const MOCK_VECTOR = new Array(1536).fill(0.1);
+
+function setHappyPath() {
   mockUserFindUnique.mockResolvedValue(MOCK_USER);
   mockChatCreate.mockResolvedValue({
     choices: [{ message: { content: JSON.stringify(MOCK_GPT_RESPONSE) } }],
   });
-  mockEmbeddingsCreate.mockResolvedValue({
-    data: [{ embedding: new Array(1536).fill(0.1) }],
-  });
+  // Phase C: embeddings.create called 3 times (personality, story, habits)
+  mockEmbeddingsCreate.mockResolvedValue({ data: [{ embedding: MOCK_VECTOR }] });
   mockEmbeddingUpsert.mockResolvedValue({});
+  mockExecuteRaw.mockResolvedValue(1);
+}
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  setHappyPath();
 });
 
 // ── Happy path ────────────────────────────────────────────────────────────────
@@ -97,7 +105,7 @@ describe('generateProfileIntelligence()', () => {
     expect(result!.recommendedContactWindow.timezone).toBe('Europe/London');
   });
 
-  it('calls GPT with profile data', async () => {
+  it('calls GPT exactly once with profile data', async () => {
     await generateProfileIntelligence('user-aaa');
     expect(mockChatCreate).toHaveBeenCalledTimes(1);
     const [call] = mockChatCreate.mock.calls;
@@ -105,20 +113,38 @@ describe('generateProfileIntelligence()', () => {
     expect(call[0].response_format).toEqual({ type: 'json_object' });
   });
 
-  it('calls embeddings API with summary text', async () => {
+  it('calls embeddings API 3 times (Phase C: personality + story + habits)', async () => {
     await generateProfileIntelligence('user-aaa');
-    expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(1);
-    const [call] = mockEmbeddingsCreate.mock.calls;
-    expect(call[0].model).toBe('text-embedding-3-small');
-    expect(call[0].input).toBe(MOCK_GPT_RESPONSE.summary);
+    expect(mockEmbeddingsCreate).toHaveBeenCalledTimes(3);
+    // First call uses the AI summary (personality embedding)
+    expect(mockEmbeddingsCreate.mock.calls[0][0].input).toBe(MOCK_GPT_RESPONSE.summary);
   });
 
-  it('upserts ProfileEmbedding in DB', async () => {
+  it('upserts ProfileEmbedding metadata in DB', async () => {
     await generateProfileIntelligence('user-aaa');
     expect(mockEmbeddingUpsert).toHaveBeenCalledTimes(1);
     const [call] = mockEmbeddingUpsert.mock.calls;
     expect(call[0].where).toEqual({ userId: 'user-aaa' });
     expect(call[0].create.traitTags).toHaveLength(8);
+  });
+
+  it('calls $executeRaw to save vectors after upsert (Phase C)', async () => {
+    await generateProfileIntelligence('user-aaa');
+    expect(mockExecuteRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses story prompt text as input for story embedding (Phase C)', async () => {
+    await generateProfileIntelligence('user-aaa');
+    // Second call is story embedding — should contain story answer
+    const storyCall = mockEmbeddingsCreate.mock.calls[1][0];
+    expect(storyCall.input).toContain('LIFE_GOALS');
+    expect(storyCall.input).toContain('I want to build a company');
+  });
+
+  it('uses habits text as input for habits embedding (Phase C)', async () => {
+    await generateProfileIntelligence('user-aaa');
+    const habitsCall = mockEmbeddingsCreate.mock.calls[2][0];
+    expect(habitsCall.input).toContain('EXERCISE');
   });
 
   it('returns null when AI is not configured', async () => {
@@ -147,10 +173,7 @@ describe('generateProfileIntelligence()', () => {
     mockChatCreate.mockResolvedValueOnce({
       choices: [{
         message: {
-          content: JSON.stringify({
-            summary: 'Minimal response',
-            traitTags: ['family-oriented'],
-          }),
+          content: JSON.stringify({ summary: 'Minimal response', traitTags: ['family-oriented'] }),
         },
       }],
     });

@@ -36,7 +36,7 @@ export class UserProfileMissingError extends Error {
 export async function getUserScoringData(userId: string): Promise<UserScoringData> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
 
-  const [profile, answers, latestCheckIn, groupMemberships, habitLogs, promptResonates, eventRsvps, recentViewCount] = await Promise.all([
+  const [profile, answers, latestCheckIn, groupMemberships, habitLogs, promptResonates, eventRsvps, recentViewCount, profileEmbedding] = await Promise.all([
     prisma.profile.findUnique({
       where: { userId },
       select: {
@@ -50,7 +50,7 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     }),
     prisma.realLifeAnswer.findMany({
       where:  { userId },
-      select: { questionKey: true, value: true },
+      select: { questionKey: true, value: true, importance: true },
     }),
     prisma.checkIn.findFirst({
       where:   { userId },
@@ -84,6 +84,11 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     prisma.profileView.count({
       where: { viewedId: userId, viewedAt: { gte: sevenDaysAgo } },
     }),
+    // Phase-D: fetch vibe scores from AI-generated profile embedding
+    prisma.profileEmbedding.findUnique({
+      where: { userId },
+      select: { vibeScores: true },
+    }),
   ]);
 
   if (!profile) {
@@ -91,12 +96,12 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     throw new UserProfileMissingError(userId);
   }
 
-  const realLifeAnswers = new Map<RealLifeQuestionKey, string | string[]>();
+  const realLifeAnswers   = new Map<RealLifeQuestionKey, string | string[]>();
+  const answerImportance  = new Map<RealLifeQuestionKey, number>();
   for (const a of answers) {
-    realLifeAnswers.set(
-      a.questionKey as RealLifeQuestionKey,
-      a.value as string | string[],
-    );
+    const key = a.questionKey as RealLifeQuestionKey;
+    realLifeAnswers.set(key, a.value as string | string[]);
+    answerImportance.set(key, (a as { importance?: number }).importance ?? 3);
   }
 
   // HABIT-008: compute consistency rate + active keys from raw logs
@@ -118,6 +123,7 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
       verificationStatus: profile.verificationStatus,
     },
     realLifeAnswers,
+    answerImportance,
     latestCheckIn:          latestCheckIn?.submittedAt ?? null,
     groupIds:               new Set(groupMemberships.map(m => m.groupId)),
     habitConsistencyRate,
@@ -128,6 +134,10 @@ export async function getUserScoringData(userId: string): Promise<UserScoringDat
     hasVoiceIntro:     profile.voiceIntroTranscript !== null,
     recentViewCount,
     profileTrustScore: profile.trustScore ?? 0,
+    // Phase-D: AI-generated vibe scores — undefined if no embedding yet
+    vibeScores: profileEmbedding?.vibeScores
+      ? (profileEmbedding.vibeScores as { warmth: number; ambition: number; tradition: number; socialEnergy: number; openness: number })
+      : undefined,
   };
 }
 

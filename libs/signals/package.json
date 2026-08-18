@@ -8,6 +8,7 @@
     "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/matching": "*",
     "@abroad-matrimony/shared": "*"
   }
 }

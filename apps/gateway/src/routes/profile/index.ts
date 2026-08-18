@@ -18,6 +18,9 @@ import { privacyControlsSchema } from '../../schemas/trust/trust.schema.js';
 import { trustController } from '../../controllers/trust/trust.controller.js';
 import { matchTuningQuestionsSchema, tuningImpactQuerySchema } from '../../schemas/matches/matches.schema.js';
 import { matchTuningController } from '../../controllers/matches/tuning.controller.js';
+import { gdprController } from '../../controllers/profile/gdpr.controller.js';
+import { partnerPreferencesController } from '../../controllers/profile/partner-preferences.controller.js';
+import { setPartnerPreferenceSchema } from '../../schemas/profile/partner-preferences.schema.js';
 
 export const profileRouter = Router();
 
@@ -136,4 +139,21 @@ profileRouter.post(
   requireAuth,
   validateBody(matchTuningQuestionsSchema),
   matchTuningController.setQuestions,
+);
+
+// POST /api/v1/profile/export-data — GDPR data export (PROD-002)
+profileRouter.post('/export-data', requireAuth, gdprController.exportData);
+
+// DELETE /api/v1/profile — soft-delete + anonymise account (PROD-002)
+profileRouter.delete('/', requireAuth, gdprController.deleteAccount);
+
+// GET /api/v1/profile/partner-preferences — get partner preference filters (PROD-006)
+profileRouter.get('/partner-preferences', requireAuth, partnerPreferencesController.get);
+
+// PUT /api/v1/profile/partner-preferences — upsert partner preference filters (PROD-006)
+profileRouter.put(
+  '/partner-preferences',
+  requireAuth,
+  validateBody(setPartnerPreferenceSchema),
+  partnerPreferencesController.set,
 );

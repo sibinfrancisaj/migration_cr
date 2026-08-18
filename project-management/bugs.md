@@ -208,6 +208,31 @@ Affected test files and IDs:
 
 ---
 
+---
+
+### BUG-RAG-001 — Prisma schema changes from Phase 20 not yet pushed to Supabase
+**Type:** Config
+**Phase:** Phase 20 — RAG Algorithm Enhancement
+**Task:** RAG-013
+**Reported:** 2026-08-18
+**Status:** 🔴 Open — must be run locally
+
+**Problem:**
+Two new fields were added to `libs/db/prisma/schema.prisma` during Phase 20:
+- `MatchScore.implicitBoost Float @default(0)` (implicit signal feedback loop)
+- `RealLifeAnswer.importance Int @default(3)` (per-answer importance weighting)
+
+Cloud runner cannot reach Supabase (`prisma db push` is blocked).
+
+**Fix / Decision:**
+Run locally before deploying or testing against real data:
+```bash
+npx prisma db push --schema=libs/db/prisma/schema.prisma
+```
+Both fields have safe defaults (0 and 3 respectively) — existing rows are unaffected.
+
+---
+
 ```
 ### BUG-XXX — <title>
 **Type:** Bug | Design | Config | Performance | Security

@@ -1,9 +1,12 @@
 /**
  * AI-002 — Profile Intelligence Service.
  *
- * Aggregates all profile signals → GPT for personality analysis → embedding →
- * upserts ProfileEmbedding in DB.
+ * Aggregates all profile signals → GPT for personality analysis → 3 embeddings:
+ *   1. personality  — AI summary text (primary, used for RRF + vibe scores)
+ *   2. story        — concatenated story prompt answers
+ *   3. habits       — habit activity text
  *
+ * All 3 vectors are saved via $executeRaw (pgvector Unsupported columns).
  * Short-circuits (no-op) when OPENAI_API_KEY is absent.
  */
 import { prisma } from '@abroad-matrimony/db';
@@ -55,6 +58,7 @@ interface ProfileContext {
   realLifeAnswers: { questionKey: string; answer: string }[];
   storyPrompts: { promptKey: string; answer: string }[];
   voiceIntroTranscript: string | null;
+  habitKeys: string[];
   habitCount: number;
   groupNames: string[];
   eventCount: number;
@@ -78,7 +82,10 @@ async function aggregateProfileContext(userId: string): Promise<ProfileContext |
       },
       realLifeAnswers: { select: { questionKey: true, value: true } },
       storyPromptAnswers: { select: { promptKey: true, answer: true } },
-      habitLogs: { select: { id: true }, take: 1 },
+      habitLogs: {
+        select: { habitKey: true },
+        distinct: ['habitKey'],
+      },
       groupMemberships: {
         select: { group: { select: { name: true } } },
         take: 5,
@@ -94,6 +101,8 @@ async function aggregateProfileContext(userId: string): Promise<ProfileContext |
   const age = profile.dateOfBirth
     ? Math.floor((Date.now() - new Date(profile.dateOfBirth).getTime()) / (1000 * 60 * 60 * 24 * 365.25))
     : null;
+
+  const habitKeys = user.habitLogs.map((h) => String(h.habitKey));
 
   return {
     userId,
@@ -112,14 +121,15 @@ async function aggregateProfileContext(userId: string): Promise<ProfileContext |
       answer: s.answer,
     })),
     voiceIntroTranscript: profile.voiceIntroTranscript,
-    habitCount: user.habitLogs.length,
+    habitKeys,
+    habitCount: habitKeys.length,
     groupNames: user.groupMemberships.map((m) => m.group.name),
     eventCount: user.eventRsvps.length,
     promptResponseCount: user.promptResponses.length,
   };
 }
 
-// ── GPT prompt ────────────────────────────────────────────────────────────────
+// ── Text builders ─────────────────────────────────────────────────────────────
 
 function buildIntelligencePrompt(ctx: ProfileContext): string {
   const answers = ctx.realLifeAnswers
@@ -166,10 +176,50 @@ Active habit tracker: ${ctx.habitCount > 0 ? 'yes' : 'no'}
 Return ONLY the JSON object — no markdown, no explanation.`;
 }
 
+/** Text for story embedding — concatenated prompt answers. */
+function buildStoryText(ctx: ProfileContext): string {
+  if (ctx.storyPrompts.length === 0) return ctx.bio ?? ctx.name;
+  return ctx.storyPrompts.map((s) => `${s.promptKey}: ${s.answer}`).join('\n\n');
+}
+
+/** Text for habits embedding — activity signals. */
+function buildHabitsText(ctx: ProfileContext): string {
+  const habits = ctx.habitKeys.length > 0
+    ? `Active habits: ${ctx.habitKeys.join(', ')}.`
+    : 'No habit tracking yet.';
+  const voice = ctx.voiceIntroTranscript
+    ? `Voice intro: ${ctx.voiceIntroTranscript.slice(0, 300)}`
+    : '';
+  const groups = ctx.groupNames.length > 0
+    ? `Community groups: ${ctx.groupNames.join(', ')}.`
+    : '';
+  return [habits, groups, voice].filter(Boolean).join(' ');
+}
+
+// ── Vector persistence (raw SQL required for pgvector Unsupported columns) ───
+
+async function saveVectors(
+  userId: string,
+  personality: number[],
+  story: number[],
+  habits: number[],
+): Promise<void> {
+  const toSql = (v: number[]) => `[${v.join(',')}]`;
+  await prisma.$executeRaw`
+    UPDATE profile_embeddings
+    SET
+      embedding        = ${toSql(personality)}::vector,
+      "storyEmbedding" = ${toSql(story)}::vector,
+      "habitsEmbedding" = ${toSql(habits)}::vector
+    WHERE user_id = ${userId}
+  `;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 /**
  * Generates AI profile intelligence for a user and upserts the ProfileEmbedding record.
+ * Saves 3 embedding vectors (personality, story, habits) via raw SQL.
  *
  * @returns ProfileEmbeddingDto if successful, null if AI not configured or profile not found.
  */
@@ -221,11 +271,11 @@ export async function generateProfileIntelligence(userId: string): Promise<Profi
   const summary = parsed.summary ?? '';
   const traitTags = Array.isArray(parsed.traitTags) ? parsed.traitTags.slice(0, 12) : [];
   const vibeScores: VibeScores = {
-    warmth:       parsed.vibeScores?.warmth      ?? 5,
-    ambition:     parsed.vibeScores?.ambition    ?? 5,
-    tradition:    parsed.vibeScores?.tradition   ?? 5,
+    warmth:       parsed.vibeScores?.warmth       ?? 5,
+    ambition:     parsed.vibeScores?.ambition     ?? 5,
+    tradition:    parsed.vibeScores?.tradition    ?? 5,
     socialEnergy: parsed.vibeScores?.socialEnergy ?? 5,
-    openness:     parsed.vibeScores?.openness    ?? 5,
+    openness:     parsed.vibeScores?.openness     ?? 5,
   };
   const compatibilityNotes = parsed.compatibilityNotes ?? '';
   const recommendedContactWindow: ContactWindow = parsed.recommendedContactWindow ?? {
@@ -234,38 +284,48 @@ export async function generateProfileIntelligence(userId: string): Promise<Profi
     timezone: deriveTimezone(ctx.country),
   };
 
-  // ── Embedding ──────────────────────────────────────────────────────────────
-  log.info('Generating embedding vector', { userId, model: env.EMBEDDING_MODEL });
+  // ── 3 Embeddings in parallel ───────────────────────────────────────────────
+  log.info('Generating 3 embedding vectors', { userId, model: env.EMBEDDING_MODEL });
 
-  const embeddingResponse = await client.embeddings.create({
-    model: env.EMBEDDING_MODEL,
-    input: summary,
-  });
+  const storyText  = buildStoryText(ctx);
+  const habitsText = buildHabitsText(ctx);
 
-  const embedding = embeddingResponse.data[0]?.embedding ?? [];
+  const [personalityEmb, storyEmb, habitsEmb] = await Promise.all([
+    client.embeddings.create({ model: env.EMBEDDING_MODEL, input: summary }),
+    client.embeddings.create({ model: env.EMBEDDING_MODEL, input: storyText }),
+    client.embeddings.create({ model: env.EMBEDDING_MODEL, input: habitsText }),
+  ]);
 
-  // ── DB upsert ──────────────────────────────────────────────────────────────
-  // Cast typed objects to InputJsonValue for Prisma Json column compatibility
+  const personalityVector = personalityEmb.data[0]?.embedding ?? [];
+  const storyVector       = storyEmb.data[0]?.embedding ?? [];
+  const habitsVector      = habitsEmb.data[0]?.embedding ?? [];
+
+  // ── DB upsert (metadata) then vector update ────────────────────────────────
   await prisma.profileEmbedding.upsert({
     where: { userId },
     create: {
       userId,
       summary,
       traitTags,
-      vibeScores: vibeScores as unknown as Parameters<typeof prisma.profileEmbedding.create>[0]['data']['vibeScores'],
+      vibeScores:              vibeScores as unknown as Parameters<typeof prisma.profileEmbedding.create>[0]['data']['vibeScores'],
       compatibilityNotes,
       recommendedContactWindow: recommendedContactWindow as unknown as Parameters<typeof prisma.profileEmbedding.create>[0]['data']['recommendedContactWindow'],
     },
     update: {
       summary,
       traitTags,
-      vibeScores: vibeScores as unknown as Parameters<typeof prisma.profileEmbedding.update>[0]['data']['vibeScores'],
+      vibeScores:              vibeScores as unknown as Parameters<typeof prisma.profileEmbedding.update>[0]['data']['vibeScores'],
       compatibilityNotes,
       recommendedContactWindow: recommendedContactWindow as unknown as Parameters<typeof prisma.profileEmbedding.update>[0]['data']['recommendedContactWindow'],
     },
   });
 
-  log.info('ProfileEmbedding upserted', { userId, traitTagCount: traitTags.length });
+  // Save all 3 vectors via raw SQL (Unsupported pgvector columns)
+  if (personalityVector.length > 0) {
+    await saveVectors(userId, personalityVector, storyVector, habitsVector);
+  }
+
+  log.info('ProfileEmbedding upserted with 3 vectors', { userId, traitTagCount: traitTags.length });
 
   return {
     userId,
@@ -274,6 +334,6 @@ export async function generateProfileIntelligence(userId: string): Promise<Profi
     vibeScores,
     compatibilityNotes,
     recommendedContactWindow,
-    embedding,
+    embedding: personalityVector,
   };
 }

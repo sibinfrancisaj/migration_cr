@@ -21,6 +21,7 @@ import { systemConfigController } from '../../controllers/admin/system-config.co
 import { seederMonitoringController } from '../../controllers/admin/seeder-monitoring.controller.js';
 import { aiMonitoringController } from '../../controllers/admin/ai-monitoring.controller.js';
 import { aiProposalsController } from '../../controllers/admin/ai-proposals.controller.js';
+import { queueHealthController } from '../../controllers/admin/queue-health.controller.js';
 import { resolveFlagBodySchema, adminFlagsQuerySchema } from '../../schemas/admin/resolve-flag.schema.js';
 import { adminRefundBodySchema } from '../../schemas/payment/admin-refund.schema.js';
 import { z } from 'zod';
@@ -398,6 +399,15 @@ adminRouter.post('/ai/embeddings/:userId/recompute', requireAdminRole(AdminRole.
 /** POST /admin/ai/embeddings/recompute-all — MUST be before /:userId/recompute */
 adminRouter.post('/ai/embeddings/recompute-all', requireAdminRole(AdminRole.MODERATOR), aiMonitoringController.recomputeAllStale);
 
+/** GET /admin/ai/users/:userId/similar — top-N embedding-similar users (VEC-005) */
+adminRouter.get('/ai/users/:userId/similar', requireAdminRole(AdminRole.MODERATOR), validateParams(userIdParamsSchema), aiMonitoringController.findSimilarUsers);
+
+/** POST /admin/ai/groups/embed-all — regenerate embeddings for all stale groups (VEC-002) */
+adminRouter.post('/ai/groups/embed-all', requireAdminRole(AdminRole.MODERATOR), aiMonitoringController.embedAllGroups);
+
+/** POST /admin/ai/groups/:groupId/embed — embed a single group (VEC-002) */
+adminRouter.post('/ai/groups/:groupId/embed', requireAdminRole(AdminRole.MODERATOR), aiMonitoringController.embedGroup);
+
 // ─── Introduction Drop Administration (IDROP-004) ──────────────────────────────
 
 /** GET /admin/introductions/drops */
@@ -417,6 +427,11 @@ adminRouter.patch('/introductions/drops/:dropId/members', requireAdminRole(Admin
 
 /** PATCH /admin/introductions/drops/:dropId/schedule */
 adminRouter.patch('/introductions/drops/:dropId/schedule', requireAdminRole(AdminRole.MODERATOR), validateParams(dropIdParamSchema), validateBody(scheduleDropBodySchema), introductionsAdminController.scheduleDrop);
+
+// ─── Queue Health Dashboard ───────────────────────────────────────────────────
+
+/** GET /admin/system/queue-health — BullMQ queue depths + worker counts */
+adminRouter.get('/system/queue-health', requireAdminRole(AdminRole.MODERATOR), queueHealthController.getHealth);
 
 // ─── Payments (PAY-008) ───────────────────────────────────────────────────────
 
