@@ -7,9 +7,8 @@
  * Short-circuits (no-op) when OPENAI_API_KEY is absent.
  */
 import { prisma } from '@abroad-matrimony/db';
-import { getEnv } from '@abroad-matrimony/config';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { isAiConfigured, getAiClient } from './client.js';
+import { chatComplete, isAnyChatProviderConfigured } from './multi-provider.js';
 import type { IntroductionDropDraftDto } from './types/ai.types.js';
 
 const log = createChildLogger({ module: 'ai:intro-grouping' });
@@ -74,8 +73,8 @@ Return ONLY the JSON array — no markdown, no explanation.`;
 export async function proposeIntroductionDrops(
   region: string,
 ): Promise<IntroductionDropDraftDto[]> {
-  if (!isAiConfigured()) {
-    log.info('AI not configured — skipping intro drop proposal', { region });
+  if (!isAnyChatProviderConfigured()) {
+    log.info('No AI provider configured — skipping intro drop proposal', { region });
     return [];
   }
 
@@ -133,27 +132,18 @@ export async function proposeIntroductionDrops(
     gender: u.profile?.gender ?? 'UNKNOWN',
   }));
 
-  const env = getEnv();
-  const client = getAiClient();
-
-  log.info('proposeIntroductionDrops — calling GPT', {
+  log.info('proposeIntroductionDrops — calling AI (Groq → OpenAI fallback)', {
     region,
     profileCount: anonymised.length,
-    model: env.AI_MODEL,
   });
 
-  const completion = await client.chat.completions.create({
-    model: env.AI_MODEL,
-    messages: [
-      { role: 'system', content: 'You are a matchmaking curator. Always respond with valid JSON.' },
-      { role: 'user', content: buildGroupingPrompt(region, anonymised) },
-    ],
-    response_format: { type: 'json_object' },
+  const raw = await chatComplete({
+    system: 'You are a matchmaking curator. Always respond with valid JSON.',
+    messages: [{ role: 'user', content: buildGroupingPrompt(region, anonymised) }],
+    jsonMode: true,
     temperature: 0.5,
-    max_tokens: 2000,
+    maxTokens: 2000,
   });
-
-  const raw = completion.choices[0]?.message?.content ?? '[]';
 
   let groups: Array<{
     name?: string;

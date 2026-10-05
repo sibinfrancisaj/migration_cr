@@ -12,7 +12,8 @@
 import { prisma } from '@abroad-matrimony/db';
 import { getEnv } from '@abroad-matrimony/config';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { isAiConfigured, getAiClient } from './client.js';
+import { isEmbeddingsConfigured, getAiClient } from './client.js';
+import { chatComplete, isAnyChatProviderConfigured } from './multi-provider.js';
 import type { ProfileEmbeddingDto, VibeScores, ContactWindow } from './types/ai.types.js';
 
 const log = createChildLogger({ module: 'ai:profile-intelligence' });
@@ -224,8 +225,8 @@ async function saveVectors(
  * @returns ProfileEmbeddingDto if successful, null if AI not configured or profile not found.
  */
 export async function generateProfileIntelligence(userId: string): Promise<ProfileEmbeddingDto | null> {
-  if (!isAiConfigured()) {
-    log.info('AI not configured — skipping profile intelligence', { userId });
+  if (!isAnyChatProviderConfigured()) {
+    log.info('No AI provider configured — skipping profile intelligence', { userId });
     return null;
   }
 
@@ -236,23 +237,17 @@ export async function generateProfileIntelligence(userId: string): Promise<Profi
   }
 
   const env = getEnv();
-  const client = getAiClient();
 
-  // ── GPT analysis ───────────────────────────────────────────────────────────
-  log.info('Generating profile intelligence via GPT', { userId, model: env.AI_MODEL });
+  // ── Chat analysis (Groq → OpenAI fallback) ────────────────────────────────
+  log.info('Generating profile intelligence via multi-provider AI', { userId });
 
-  const completion = await client.chat.completions.create({
-    model: env.AI_MODEL,
-    messages: [
-      { role: 'system', content: 'You are a matchmaking analyst. Always respond with valid JSON.' },
-      { role: 'user', content: buildIntelligencePrompt(ctx) },
-    ],
-    response_format: { type: 'json_object' },
+  const raw = await chatComplete({
+    system: 'You are a matchmaking analyst. Always respond with valid JSON.',
+    messages: [{ role: 'user', content: buildIntelligencePrompt(ctx) }],
+    jsonMode: true,
     temperature: 0.4,
-    max_tokens: 600,
+    maxTokens: 600,
   });
-
-  const raw = completion.choices[0]?.message?.content ?? '{}';
   let parsed: {
     summary?: string;
     traitTags?: string[];
@@ -284,7 +279,18 @@ export async function generateProfileIntelligence(userId: string): Promise<Profi
     timezone: deriveTimezone(ctx.country),
   };
 
-  // ── 3 Embeddings in parallel ───────────────────────────────────────────────
+  // ── 3 Embeddings in parallel (OpenAI only — Groq has no embedding API) ───
+  if (!isEmbeddingsConfigured()) {
+    log.info('OpenAI not configured — skipping embedding vectors, saving metadata only', { userId });
+    await prisma.profileEmbedding.upsert({
+      where: { userId },
+      create: { userId, summary, traitTags, vibeScores: vibeScores as never, compatibilityNotes, recommendedContactWindow: recommendedContactWindow as never },
+      update: { summary, traitTags, vibeScores: vibeScores as never, compatibilityNotes, recommendedContactWindow: recommendedContactWindow as never },
+    });
+    return { userId, summary, traitTags, vibeScores, compatibilityNotes, recommendedContactWindow, embedding: [] };
+  }
+
+  const client = getAiClient();
   log.info('Generating 3 embedding vectors', { userId, model: env.EMBEDDING_MODEL });
 
   const storyText  = buildStoryText(ctx);

@@ -93,6 +93,17 @@ const envSchema = z.object({
   AI_MODEL: z.string().default('gpt-4o-mini'),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
 
+  // Groq (decision-log + multi-provider AI)
+  GROQ_API_KEY: z.string().optional(),
+  /** Groq chat model — default is best free-tier quality model. */
+  GROQ_MODEL: z.string().default('llama-3.3-70b-versatile'),
+  /** Groq Whisper model for voice transcription. */
+  GROQ_WHISPER_MODEL: z.string().default('whisper-large-v3'),
+
+  // Decision Log (libs/decision-log)
+  /** Retention period for decision logs in days before pruning. Default 90. */
+  DECISION_LOG_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
+
   // Google Vision image moderation (PROD-003)
   GOOGLE_VISION_API_KEY: z.string().optional(),
 });

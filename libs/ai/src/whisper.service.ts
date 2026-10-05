@@ -11,9 +11,8 @@ import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { prisma } from '@abroad-matrimony/db';
 import { getEnv } from '@abroad-matrimony/config';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { isAiConfigured, getAiClient } from './client.js';
 import { enqueueProfileIntelligence } from './enqueue-intelligence.js';
-import { toFile } from 'openai';
+import { transcribeAudio, isAnyChatProviderConfigured } from './multi-provider.js';
 
 const log = createChildLogger({ module: 'ai:whisper' });
 
@@ -57,8 +56,8 @@ async function downloadFromS3(s3Key: string): Promise<Buffer> {
  * @returns The transcript text, or empty string if AI is not configured.
  */
 export async function transcribeVoiceIntro(userId: string, s3Key: string): Promise<string> {
-  if (!isAiConfigured()) {
-    log.info('AI not configured — skipping voice intro transcription', { userId });
+  if (!isAnyChatProviderConfigured()) {
+    log.info('No AI provider configured — skipping voice intro transcription', { userId });
     return '';
   }
 
@@ -72,26 +71,17 @@ export async function transcribeVoiceIntro(userId: string, s3Key: string): Promi
     return '';
   }
 
-  const client = getAiClient();
-
-  // Determine filename from key for Whisper file type hint
   const ext = s3Key.split('.').pop() ?? 'mp3';
   const filename = `voice-intro.${ext}`;
   const mimeType = ext === 'webm' ? 'audio/webm' : ext === 'aac' ? 'audio/aac' : 'audio/mpeg';
 
-  log.info('transcribeVoiceIntro — calling Whisper API', { userId, filename });
+  log.info('transcribeVoiceIntro — calling Whisper (Groq → OpenAI fallback)', { userId, filename });
 
-  let transcript: string;
-  try {
-    const audioFile = await toFile(audioBuffer, filename, { type: mimeType });
-    const response = await client.audio.transcriptions.create({
-      model: 'whisper-1',
-      file: audioFile,
-      language: 'en',
-    });
-    transcript = response.text;
-  } catch (err) {
-    log.error('transcribeVoiceIntro — Whisper API error', { userId, err });
+  // Uses Groq whisper-large-v3 first, then OpenAI whisper-1
+  const transcript = await transcribeAudio({ audioBuffer, filename, mimeType, language: 'en' });
+
+  if (!transcript) {
+    log.error('transcribeVoiceIntro — all Whisper providers failed', { userId });
     return '';
   }
 

@@ -7,7 +7,14 @@
  */
 
 // Client + configuration
-export { isAiConfigured, getAiClient, AiNotConfiguredError, _resetAiClient } from './client.js';
+export { isAiConfigured, isEmbeddingsConfigured, getAiClient, AiNotConfiguredError, _resetAiClient } from './client.js';
+
+// Groq client
+export { isGroqConfigured, getGroqClient, GroqNotConfiguredError, _resetGroqClient } from './groq-client.js';
+
+// Multi-provider (Groq → OpenAI fallback for completions + Whisper)
+export { chatComplete, transcribeAudio, isAnyChatProviderConfigured } from './multi-provider.js';
+export type { ChatCompleteParams, TranscribeParams } from './multi-provider.js';
 
 // Fallback utility (AI-fallback pattern — ADR-017)
 export { withAiFallback } from './fallback.js';

@@ -18,12 +18,20 @@ const log = createChildLogger({ module: 'ai:client' });
 let _client: OpenAI | null = null;
 
 /**
- * Returns true when OPENAI_API_KEY is present in the environment.
- * All AI service functions MUST check this before making any OpenAI call.
+ * Returns true when OPENAI_API_KEY is present.
+ * Use `isAnyChatProviderConfigured()` (from multi-provider.ts) when Groq alone suffices.
+ * Use `isEmbeddingsConfigured()` when embeddings specifically are needed.
  */
 export function isAiConfigured(): boolean {
-  const env = getEnv();
-  return Boolean(env.OPENAI_API_KEY);
+  return Boolean(getEnv().OPENAI_API_KEY);
+}
+
+/**
+ * Returns true when OpenAI is configured for text embeddings.
+ * Groq does NOT provide an embedding API — only OpenAI is valid here.
+ */
+export function isEmbeddingsConfigured(): boolean {
+  return Boolean(getEnv().OPENAI_API_KEY);
 }
 
 /**
