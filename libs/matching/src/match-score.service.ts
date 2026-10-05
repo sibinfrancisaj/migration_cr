@@ -2,6 +2,7 @@ import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import type { MatchScoreDto } from '@abroad-matrimony/shared';
 import { RealLifeQuestionKey } from '@abroad-matrimony/shared';
+import { logMatchScoreComputed } from '@abroad-matrimony/decision-log';
 
 /** EventRsvp.status is a plain String field (no Prisma enum). Constant to avoid magic strings. */
 const RSVP_STATUS_GOING = 'GOING';
@@ -220,6 +221,18 @@ export async function computeAndSaveScore(
 
   // Best-effort cache population — errors are swallowed inside setMatchScoreCache
   await setMatchScoreCache(dto);
+
+  // Decision log — fire-and-forget, never blocks the caller
+  logMatchScoreComputed({
+    userAId:          canonicalA,
+    userBId:          canonicalB,
+    totalScore:       result.totalScore,
+    breakdown:        result.breakdown,
+    implicitBoost:    saved.implicitBoost ?? 0,
+    coreScale:        (result as { coreScale?: number }).coreScale ?? 1,
+    optionalDims:     Object.keys(result.breakdown).filter(k => !['verification','settlementIntent','realLifeAnswers','profileCompleteness','checkInRecency','ageCompatibility','groupMembership','languageMatch','faithAlignment'].includes(k)),
+    algorithmVersion: ALGORITHM_VERSION,
+  });
 
   return dto;
 }

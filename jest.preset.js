@@ -34,6 +34,7 @@ module.exports = {
     '^@abroad-matrimony/recommendations$':  '<rootDir>/../../libs/recommendations/src/index.ts',
     '^@abroad-matrimony/signals$':          '<rootDir>/../../libs/signals/src/index.ts',
     '^@abroad-matrimony/moderation$':       '<rootDir>/../../libs/moderation/src/index.ts',
+    '^@abroad-matrimony/decision-log$':     '<rootDir>/../../libs/decision-log/src/index.ts',
   },
   moduleFileExtensions: ['ts', 'js', 'json', 'node'],
 };

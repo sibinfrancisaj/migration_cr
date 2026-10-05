@@ -14,6 +14,7 @@
  */
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
+import { logIntroPairingCreated } from '@abroad-matrimony/decision-log';
 import { IntroductionDropNotFoundError } from './drop.service.js';
 
 const log = createChildLogger({ module: 'introductions:pairing' });
@@ -212,6 +213,16 @@ export async function generatePairingsForDrop(dropId: string): Promise<void> {
         existingSet.add(`${recipientId}:${matchId}`);
         existingSet.add(`${matchId}:${recipientId}`);
         totalCreated++;
+
+        // Decision log — fire-and-forget
+        logIntroPairingCreated({
+          dropId,
+          recipientId,
+          matchedUserId: matchId,
+          algorithm:     useAi ? 'pgvector' : 'match-score',
+          score:         0,
+          pairingRank:   selected.indexOf(matchId) + 1,
+        });
       } catch {
         // Unique constraint — pairing already exists, skip
       }

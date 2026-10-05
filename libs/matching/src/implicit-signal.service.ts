@@ -15,6 +15,7 @@
 
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
+import { logImplicitSignalApplied } from '@abroad-matrimony/decision-log';
 
 const log = createChildLogger({ module: 'matching:implicit-signal' });
 
@@ -70,6 +71,16 @@ export async function applyImplicitSignal(
 
     log.info('Implicit signal applied', {
       signalUserId, targetUserId, signal, delta, newBoost,
+    });
+
+    logImplicitSignalApplied({
+      signalUserId,
+      targetUserId,
+      signal,
+      delta,
+      previousBoost: existing.implicitBoost,
+      newBoost,
+      cumulativeDir: newBoost > 0 ? 'positive' : newBoost < 0 ? 'negative' : 'neutral',
     });
   } catch (err) {
     log.warn('applyImplicitSignal failed (non-fatal)', { signalUserId, targetUserId, signal, err });

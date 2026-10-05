@@ -1012,6 +1012,27 @@ model PartnerPreference {
   @@map("partner_preferences")
 }
 
+// ─── Decision Log (algorithmic explainability) ────────────────────────────────
+
+model DecisionLog {
+  id           String                   @id @default(uuid())
+  actorUserId  String
+  targetUserId String?
+  eventType    DecisionLogEventType
+  summary      String                   // rule-based 1-liner, always present
+  narrative    String?                  // Groq/OpenAI paragraph, filled async
+  data         Json
+  sessionId    String?
+  confidence   DecisionLogConfidence    @default(MEDIUM)
+  createdAt    DateTime                 @default(now())
+  prunedAt     DateTime?
+
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([targetUserId, createdAt(sort: Desc)])
+  @@index([eventType, createdAt(sort: Desc)])
+  @@map("decision_logs")
+}
+
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 enum UserRole {
@@ -1255,4 +1276,25 @@ enum StoryPromptKey {
   PARENTS_LOVE
   DEAL_BREAKER
   TYPICAL_SUNDAY
+}
+
+enum DecisionLogEventType {
+  MATCH_SCORE_COMPUTED
+  MATCH_SCORE_UPDATED
+  DISCOVERY_FEED_GENERATED
+  IMPLICIT_SIGNAL_APPLIED
+  TUNING_APPLIED
+  INTRO_DROP_RELEASED
+  INTRO_PAIRING_CREATED
+  COLLABORATIVE_FILTER_RUN
+  MMR_RERANK_APPLIED
+  SCORE_RECOMPUTE_TRIGGERED
+  NOTIFICATION_QUEUED
+  PARTNER_PREF_FILTER_APPLIED
+}
+
+enum DecisionLogConfidence {
+  HIGH
+  MEDIUM
+  LOW
 }

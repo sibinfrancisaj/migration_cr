@@ -8,6 +8,7 @@ import { applyTuningToBreakdown } from './scoring.service.js';
 import { getPartnerPreferences } from './partner-preferences.service.js';
 import { withAiFallback, getSemanticallySimilarUsers, mergeWithWeightedRRF } from '@abroad-matrimony/ai';
 import { collaborativeFilter } from '@abroad-matrimony/recommendations';
+import { logDiscoveryFeedGenerated } from '@abroad-matrimony/decision-log';
 
 // ── MMR diversity reranking ────────────────────────────────────────────────────
 
@@ -526,6 +527,19 @@ export async function getDiscoveryFeed(
     algorithmVersion,
     itemCount: finalItems.length,
     hasMore,
+  });
+
+  // Decision log — fire-and-forget, never blocks the caller
+  logDiscoveryFeedGenerated({
+    userId,
+    candidateCount:      items.length,
+    finalCount:          finalItems.length,
+    rrfActive:           rrfFusedIds !== null,
+    annColdStart:        annScoreMap.size > 0 && rrfFusedIds === null,
+    collaborativeActive: rrfFusedIds !== null,
+    mmrActive:           vibeMap.size >= 2,
+    cursorUsed:          options.cursor != null,
+    topScores:           finalItems.slice(0, 5).map(i => i.personalizedScore),
   });
 
   return { items: finalItems, nextCursor, hasMore };

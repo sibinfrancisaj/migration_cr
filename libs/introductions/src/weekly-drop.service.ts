@@ -14,6 +14,7 @@
 
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
+import { logIntroDropReleased } from '@abroad-matrimony/decision-log';
 import { getWeekKey } from './index.js';
 import { generatePairingsForDrop } from './pairing.service.js';
 
@@ -109,6 +110,16 @@ export async function createWeeklyGroupDrops(
       groupId:   group.id,
       weekKey,
       memberCount: memberPool.length,
+    });
+
+    // Decision log — fire-and-forget
+    logIntroDropReleased({
+      dropId:       drop.id,
+      dropName:     drop.name,
+      memberCount:  memberPool.length,
+      pairingCount: 0,
+      releaseAt:    releaseAt.toISOString(),
+      isWeeklyDrop: true,
     });
 
     groupIds.push(group.id);

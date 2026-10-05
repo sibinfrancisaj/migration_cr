@@ -53,7 +53,8 @@
       "@abroad-matrimony/analytics": ["libs/analytics/src/index.ts"],
       "@abroad-matrimony/recommendations": ["libs/recommendations/src/index.ts"],
       "@abroad-matrimony/signals": ["libs/signals/src/index.ts"],
-      "@abroad-matrimony/moderation": ["libs/moderation/src/index.ts"]
+      "@abroad-matrimony/moderation": ["libs/moderation/src/index.ts"],
+      "@abroad-matrimony/decision-log": ["libs/decision-log/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp", "dist"]

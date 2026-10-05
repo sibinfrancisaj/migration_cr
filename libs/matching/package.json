@@ -6,6 +6,7 @@
   "types": "src/index.ts",
   "dependencies": {
     "@abroad-matrimony/ai": "*",
+    "@abroad-matrimony/decision-log": "*",
     "@abroad-matrimony/recommendations": "*",
     "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/db": "*",

@@ -16,6 +16,7 @@
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/matching": "*",
+    "@abroad-matrimony/decision-log": "*",
     "@abroad-matrimony/moderation": "*",
     "@abroad-matrimony/shared": "*",
     "cors": "^2.8.5",

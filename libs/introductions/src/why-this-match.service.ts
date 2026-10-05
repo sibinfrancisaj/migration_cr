@@ -178,17 +178,16 @@ export async function generateWhyThisMatchLLM(
   try {
     // Dynamic import so this module compiles even when libs/ai is absent
     const ai = await import('@abroad-matrimony/ai');
-    if (!ai.isAiConfigured()) {
-      log.debug('AI not configured — returning rule-based why-this-match');
+    if (!ai.isAnyChatProviderConfigured()) {
+      log.debug('No AI provider configured — returning rule-based why-this-match');
       return ruleBased;
     }
 
-    const client = ai.getAiClient();
     const dimensionSummary = ruleBased.dimensions
       .map(d => `${d.label}: ${d.pct}%`)
       .join(', ');
 
-    // RAG context: fetch both users' AI-generated profile summaries (F-051)
+    // RAG context: fetch both users' AI-generated profile summaries
     const embeddings = await prisma.profileEmbedding.findMany({
       where: { userId: { in: [userAId, userBId] } },
       select: { userId: true, summary: true },
@@ -208,14 +207,15 @@ export async function generateWhyThisMatchLLM(
       'Return JSON with keys: headline (max 12 words) and summary (2 sentences).',
     ].join('\n');
 
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      response_format: { type: 'json_object' },
-      max_tokens: 150,
+    // Uses Groq (primary) → OpenAI (fallback) via multi-provider
+    const rawText = await ai.chatComplete({
       messages: [{ role: 'user', content: prompt }],
+      jsonMode: true,
+      maxTokens: 150,
+      temperature: 0.5,
     });
 
-    const raw = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
+    const raw = JSON.parse(rawText || '{}') as {
       headline?: string;
       summary?:  string;
     };
