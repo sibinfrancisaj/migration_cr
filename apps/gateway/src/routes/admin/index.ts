@@ -22,6 +22,7 @@ import { seederMonitoringController } from '../../controllers/admin/seeder-monit
 import { aiMonitoringController } from '../../controllers/admin/ai-monitoring.controller.js';
 import { aiProposalsController } from '../../controllers/admin/ai-proposals.controller.js';
 import { queueHealthController } from '../../controllers/admin/queue-health.controller.js';
+import { decisionLogController } from '../../controllers/admin/decision-log.controller.js';
 import { resolveFlagBodySchema, adminFlagsQuerySchema } from '../../schemas/admin/resolve-flag.schema.js';
 import { adminRefundBodySchema } from '../../schemas/payment/admin-refund.schema.js';
 import { z } from 'zod';
@@ -437,3 +438,14 @@ adminRouter.get('/system/queue-health', requireAdminRole(AdminRole.MODERATOR), q
 
 /** POST /admin/payment/refund */
 adminRouter.post('/payment/refund', requireAdminRole(AdminRole.SUPERADMIN), validateBody(adminRefundBodySchema), paymentAdminController.refund);
+
+// ─── Decision Log / Algorithmic Explainability ────────────────────────────────
+
+/** GET /admin/decision-logs/match-story?userA=&userB= — MUST be before /decision-logs */
+adminRouter.get('/decision-logs/match-story', requireAdminRole(AdminRole.MODERATOR), decisionLogController.matchStory);
+
+/** GET /admin/decision-logs/user-timeline?userId= */
+adminRouter.get('/decision-logs/user-timeline', requireAdminRole(AdminRole.MODERATOR), decisionLogController.userTimeline);
+
+/** GET /admin/decision-logs — filterable paginated list */
+adminRouter.get('/decision-logs', requireAdminRole(AdminRole.MODERATOR), decisionLogController.list);

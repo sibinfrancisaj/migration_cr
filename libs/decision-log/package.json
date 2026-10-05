@@ -1,0 +1,13 @@
+{
+  "name": "@abroad-matrimony/decision-log",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "dependencies": {
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/shared": "*",
+    "@abroad-matrimony/ai": "*"
+  }
+}
