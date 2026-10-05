@@ -1,0 +1,21 @@
+{
+  "name": "@abroad-matrimony/e2e",
+  "version": "1.0.0",
+  "description": "End-to-end API journey tests for Abroad Matrimony gateway",
+  "private": true,
+  "scripts": {
+    "test": "E2E_ENABLED=true jest --runInBand --forceExit",
+    "test:ci": "E2E_ENABLED=true jest --runInBand --forceExit --ci"
+  },
+  "dependencies": {
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/shared": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.5.0"
+  }
+}
