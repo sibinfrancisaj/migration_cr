@@ -3026,26 +3026,51 @@ paths:
                 error: { code: CONNECTION_NOT_PENDING, message: "Only PENDING connections can be accepted" }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/connections/{connectionId}/pass:
+  /api/v1/connections/{connectionId}/decline:
     put:
       tags: [Connections]
-      summary: Pass (silently decline) a connection request
+      summary: Decline a connection request
       description: |
-        Transitions a PENDING connection to PASSED. The requester is NOT notified.
-        Only the recipient may pass.
-      operationId: passConnection
+        Transitions a PENDING connection to DECLINED. The requester is NOT notified.
+        Only the recipient may decline.
+      operationId: declineConnection
       security:
         - userBearerAuth: []
       parameters:
         - $ref: '#/components/parameters/connectionIdPath'
       responses:
         '200':
-          description: Connection passed
+          description: Connection declined
           content:
             application/json:
               example:
                 success: true
-                data: { id: "conn-uuid", status: "PASSED", resolvedAt: "2026-05-29T09:05:00.000Z" }
+                data: { id: "conn-uuid", status: "DECLINED", resolvedAt: "2026-05-29T09:05:00.000Z" }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '403': { $ref: '#/components/responses/403Forbidden' }
+        '404': { $ref: '#/components/responses/404NotFound' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/connections/{connectionId}:
+    delete:
+      tags: [Connections]
+      summary: Withdraw a connection request
+      description: |
+        Cancels a PENDING outgoing connection request. Only the requester may withdraw.
+        Returns 404 if the connection is already resolved (ACCEPTED, DECLINED).
+      operationId: withdrawConnection
+      security:
+        - userBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/connectionIdPath'
+      responses:
+        '200':
+          description: Connection withdrawn
+          content:
+            application/json:
+              example:
+                success: true
+                data: { id: "conn-uuid", status: "WITHDRAWN" }
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '403': { $ref: '#/components/responses/403Forbidden' }
         '404': { $ref: '#/components/responses/404NotFound' }
@@ -3231,29 +3256,77 @@ paths:
         '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
-  /api/v1/verification/id-document:
+  /api/v1/verification/upload-url:
+    get:
+      tags: [Verification]
+      summary: Get a pre-signed S3 upload URL for a verification document
+      description: |
+        Returns a short-lived pre-signed URL the client uses to upload an ID document
+        or selfie directly to S3. After upload, pass the returned `s3Key` to
+        `POST /api/v1/verification`.
+        Rate-limited: 10 requests per hour.
+      operationId: getVerificationUploadUrl
+      security:
+        - userBearerAuth: []
+      parameters:
+        - name: fileType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [ID_DOCUMENT, SELFIE]
+        - name: mimeType
+          in: query
+          required: true
+          schema:
+            type: string
+            example: image/jpeg
+      responses:
+        '200':
+          description: Pre-signed upload URL
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  uploadUrl: "https://s3.amazonaws.com/bucket/key?X-Amz-Signature=..."
+                  s3Key:     "verification/usr-uuid/ID_DOCUMENT/uuid.jpg"
+                  expiresIn: 300
+        '400': { $ref: '#/components/responses/400BadRequest' }
+        '401': { $ref: '#/components/responses/401Unauthorized' }
+        '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/verification:
     post:
       tags: [Verification]
-      summary: Submit ID document for verification
+      summary: Submit identity verification
       description: |
-        Uploads a government-issued ID to S3 (type ID_DOCUMENT). Sets status to UNDER_REVIEW.
+        Submits pre-uploaded S3 keys for admin review. Both `idDocumentKey` and
+        `selfieKey` are required — obtain them via `GET /upload-url` first.
+        Sets status to `UNDER_REVIEW`.
         Rate-limited: 3 submissions per 24 hours.
-      operationId: submitIdDocument
+      operationId: submitVerification
       security:
         - userBearerAuth: []
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
               type: object
-              required: [document, documentType]
+              required: [idDocumentKey, selfieKey, documentType]
               properties:
-                document:     { type: string, format: binary }
-                documentType: { $ref: '#/components/schemas/IdDocumentType' }
+                idDocumentKey: { type: string, description: "S3 key returned by GET /upload-url with fileType=ID_DOCUMENT" }
+                selfieKey:     { type: string, description: "S3 key returned by GET /upload-url with fileType=SELFIE" }
+                documentType:  { $ref: '#/components/schemas/IdDocumentType' }
+            example:
+              idDocumentKey: "verification/usr-uuid/ID_DOCUMENT/uuid.jpg"
+              selfieKey:     "verification/usr-uuid/SELFIE/uuid.jpg"
+              documentType:  "PASSPORT"
       responses:
         '201':
-          description: Document submitted
+          description: Verification submitted
           content:
             application/json:
               example:
@@ -3261,46 +3334,45 @@ paths:
                 data: { verificationId: "ver-uuid", status: "UNDER_REVIEW", submittedAt: "2026-05-29T10:00:00.000Z" }
         '400': { $ref: '#/components/responses/400BadRequest' }
         '401': { $ref: '#/components/responses/401Unauthorized' }
-        '429': { $ref: '#/components/responses/429TooManyRequests' }
-        '500': { $ref: '#/components/responses/500InternalError' }
-
-  /api/v1/verification/selfie:
-    post:
-      tags: [Verification]
-      summary: Submit selfie for face verification
-      description: |
-        Uploads a selfie to S3 (type SELFIE) for admin face match against ID document.
-        Rate-limited: 3 submissions per 24 hours.
-      operationId: submitSelfie
-      security:
-        - userBearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [selfie]
-              properties:
-                selfie: { type: string, format: binary }
-      responses:
-        '201':
-          description: Selfie submitted
-          content:
-            application/json:
-              example:
-                success: true
-                data: { status: "UNDER_REVIEW", submittedAt: "2026-05-29T10:05:00.000Z" }
-        '400': { $ref: '#/components/responses/400BadRequest' }
-        '401': { $ref: '#/components/responses/401Unauthorized' }
         '409':
-          description: No ID document on file
+          description: Verification already under review or approved
           content:
             application/json:
               example:
                 success: false
-                error: { code: ID_DOCUMENT_REQUIRED, message: "Submit your ID document before uploading a selfie" }
+                error: { code: VERIFICATION_ALREADY_SUBMITTED, message: "A verification request is already pending review" }
         '429': { $ref: '#/components/responses/429TooManyRequests' }
+        '500': { $ref: '#/components/responses/500InternalError' }
+
+  /api/v1/verification/trust-score:
+    get:
+      tags: [Verification]
+      summary: Get the authenticated user's trust score
+      description: |
+        Returns a computed 0–100 trust score derived from 6 achievable trust layers:
+        phone verification, face verification, voice intro, work details, education details,
+        and profile completeness. Score is persisted to `Profile.trustScore` on each call.
+      operationId: getTrustScore
+      security:
+        - userBearerAuth: []
+      responses:
+        '200':
+          description: Trust score and breakdown
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  score:    45
+                  maxScore: 100
+                  breakdown:
+                    phone:       20
+                    face:        0
+                    voiceIntro:  15
+                    work:        0
+                    education:   0
+                    completeness: 10
+        '401': { $ref: '#/components/responses/401Unauthorized' }
         '500': { $ref: '#/components/responses/500InternalError' }
 
   # ── Introductions (Weekly Drop) ────────────────────────────────────────────
@@ -6675,7 +6747,8 @@ paths:
     post:
       tags: [Auth]
       summary: Resubscribe to marketing emails (PROD-001)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       responses:
         '200': { description: Successfully resubscribed }
         '401': { $ref: '#/components/responses/401Unauthorized' }
@@ -6685,7 +6758,8 @@ paths:
     post:
       tags: [Profile]
       summary: GDPR data export Article 15 (PROD-002)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       responses:
         '200': { description: Data export summary }
         '401': { $ref: '#/components/responses/401Unauthorized' }
@@ -6695,7 +6769,8 @@ paths:
     get:
       tags: [Profile]
       summary: Get partner preference filters (PROD-006)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       responses:
         '200': { description: Partner preference filters }
         '401': { $ref: '#/components/responses/401Unauthorized' }
@@ -6703,7 +6778,8 @@ paths:
     put:
       tags: [Profile]
       summary: Set partner preference filters (PROD-006)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       requestBody:
         required: true
         content:
@@ -6726,7 +6802,8 @@ paths:
     get:
       tags: [Notifications]
       summary: Get notification channel preferences (PROD-005)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       responses:
         '200': { description: Notification opt-out preferences }
         '401': { $ref: '#/components/responses/401Unauthorized' }
@@ -6734,7 +6811,8 @@ paths:
     put:
       tags: [Notifications]
       summary: Update notification channel preferences (PROD-005)
-      security: [{ bearerAuth: [] }]
+      security:
+        - userBearerAuth: []
       requestBody:
         required: true
         content:

@@ -2424,7 +2424,7 @@
           "response": []
         },
         {
-          "name": "Pass (Decline) Connection",
+          "name": "Decline Connection",
           "request": {
             "auth": {
               "type": "bearer",
@@ -2439,7 +2439,7 @@
             "method": "PUT",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/connections/:connectionId/pass",
+              "raw": "{{base_url}}/api/v1/connections/:connectionId/decline",
               "host": [
                 "{{base_url}}"
               ],
@@ -2448,7 +2448,43 @@
                 "v1",
                 "connections",
                 ":connectionId",
-                "pass"
+                "decline"
+              ],
+              "variable": [
+                {
+                  "key": "connectionId",
+                  "value": "{{connection_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw Connection",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/connections/:connectionId",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "connections",
+                ":connectionId"
               ],
               "variable": [
                 {
@@ -2683,7 +2719,7 @@
           "response": []
         },
         {
-          "name": "Submit ID Document",
+          "name": "Submit Verification",
           "request": {
             "auth": {
               "type": "bearer",
@@ -2698,37 +2734,30 @@
             "method": "POST",
             "header": [],
             "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "document",
-                  "type": "file",
-                  "description": "JPEG or PNG, max 10MB"
-                },
-                {
-                  "key": "documentType",
-                  "value": "PASSPORT",
-                  "type": "text"
+              "mode": "raw",
+              "raw": "{\n  \"idDocumentKey\": \"verification/{{user_id}}/ID_DOCUMENT/uuid.jpg\",\n  \"selfieKey\": \"verification/{{user_id}}/SELFIE/uuid.jpg\",\n  \"documentType\": \"PASSPORT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
-              ]
+              }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/verification/id-document",
+              "raw": "{{base_url}}/api/v1/verification",
               "host": [
                 "{{base_url}}"
               ],
               "path": [
                 "api",
                 "v1",
-                "verification",
-                "id-document"
+                "verification"
               ]
             }
           },
           "response": []
         },
         {
-          "name": "Submit Selfie",
+          "name": "Get Verification Upload URL",
           "request": {
             "auth": {
               "type": "bearer",
@@ -2740,20 +2769,10 @@
                 }
               ]
             },
-            "method": "POST",
+            "method": "GET",
             "header": [],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "selfie",
-                  "type": "file",
-                  "description": "JPEG or PNG, max 5MB"
-                }
-              ]
-            },
             "url": {
-              "raw": "{{base_url}}/api/v1/verification/selfie",
+              "raw": "{{base_url}}/api/v1/verification/upload-url?fileType=ID_DOCUMENT&mimeType=image%2Fjpeg",
               "host": [
                 "{{base_url}}"
               ],
@@ -2761,7 +2780,47 @@
                 "api",
                 "v1",
                 "verification",
-                "selfie"
+                "upload-url"
+              ],
+              "query": [
+                {
+                  "key": "fileType",
+                  "value": "ID_DOCUMENT"
+                },
+                {
+                  "key": "mimeType",
+                  "value": "image%2Fjpeg"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Trust Score",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/verification/trust-score",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "verification",
+                "trust-score"
               ]
             }
           },

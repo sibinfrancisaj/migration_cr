@@ -212,3 +212,4 @@ docs/api/openapi.yaml:
     - '#/paths/~1admin~1auth~1login/post'
     - '#/paths/~1api~1v1~1auth~1email~1link/post'
     - '#/paths/~1api~1v1~1auth~1email~1verify/post'
+    - '#/paths/~1api~1v1~1auth~1unsubscribe/get'

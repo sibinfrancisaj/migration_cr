@@ -21,13 +21,14 @@ const mockChatCreate       = jest.fn();
 const mockEmbeddingsCreate = jest.fn();
 
 jest.mock('../client.js', () => ({
-  isAiConfigured:     jest.fn(() => true),
-  getAiClient:        jest.fn(() => ({
+  isAiConfigured:         jest.fn(() => true),
+  isEmbeddingsConfigured: jest.fn(() => true),
+  getAiClient:            jest.fn(() => ({
     chat:       { completions: { create: mockChatCreate } },
     embeddings: { create: mockEmbeddingsCreate },
   })),
   AiNotConfiguredError: class AiNotConfiguredError extends Error {},
-  _resetAiClient:     jest.fn(),
+  _resetAiClient:       jest.fn(),
 }));
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
