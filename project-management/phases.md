@@ -622,3 +622,14 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 | EVT-003 | Notification handlers: connection request/accept, verification, membership  | ✅     |
 | EVT-004 | Per-user score recompute on PROFILE_UPDATED (+ BUG-011 dedupe fix)          | ✅     |
 | BUG-012 | Sync Profile.verificationStatus on submit/approve/reject + completion recalculation (branch `fix/BUG-012-verification-profile-status`) | ✅ |
+
+---
+
+## Phase 18 — Platform Hardening 🔄
+**Goal:** Make the gateway safe to run as more than one instance.
+**Status:** In progress — one feature branch per task, stacked
+
+| Task ID | Description                                                              | Status |
+|---------|--------------------------------------------------------------------------|--------|
+| F-052   | Redis-backed global rate limiter (`feat/F-052-redis-rate-limiter`, ADR-022) | ✅     |
+| F-051   | Dedicated worker app — BullMQ workers out of the gateway process          | ⏳     |

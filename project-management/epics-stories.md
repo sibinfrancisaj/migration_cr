@@ -2036,6 +2036,20 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
+## PHASE 18 — Platform Hardening 🔄
+
+### F-052 · Redis-backed global rate limiter ✅
+**AC:** the global limit is shared by all gateway instances; the window starts on the first hit and expires atomically; over the limit returns 429 with the `RATE_LIMITED` body and standard `RateLimit-*` headers; Redis down → requests pass (fail open); tests never open a Redis connection.
+- [x] `apps/gateway/src/lib/redis-rate-limit.store.ts` — `RedisRateLimitStore` (Lua INCR + PEXPIRE)
+- [x] `createApp({ rateLimitStore })`; `server.ts` passes the Redis store
+- [x] 15 tests: store unit tests + express-rate-limit integration (429, headers, two instances sharing a count, fail open, window reset)
+
+**Decision Log**
+- 2026-10-06: Wrote a ~60-line store instead of adding `rate-limit-redis` — avoids a new dependency and lockfile churn; the Lua script also closes the INCR/EXPIRE gap from F-003.
+- 2026-10-06: Fail open on Redis errors for the global limiter only; auth limiters keep their existing behaviour.
+
+---
+
 ## Design Decisions Log (Figma Analysis Session — 2026-05-28)
 
 | Decision | Choice | Rationale |

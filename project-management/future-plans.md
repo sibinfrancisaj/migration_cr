@@ -11,7 +11,7 @@
 |-------|----------------------------------------------------|----------|-------|
 | F-001 | Redis Cluster / Redis Cloud for production         | High     | Currently using single local Redis; needs HA setup before prod |
 | F-002 | Migrate from session pooler to Supabase direct URL | Medium   | DIRECT_URL currently on pooler (IPv4 constraint); upgrade when IPv6 available |
-| F-003 | Rate limiter using Lua script (atomic INCR+EXPIRE) | Medium   | Current Redis rate limiter has minor TOCTOU window; Lua script closes it |
+| F-003 | Rate limiter using Lua script (atomic INCR+EXPIRE) | Medium   | Global limiter done (ADR-022); OTP / admin / trusted-device limiters still INCR then EXPIRE — reuse the script |
 | F-004 | Distributed tracing across workers                | Low      | OTel spans currently gateway-only; extend to BullMQ workers |
 | F-005 | Health check endpoint v2 (deep health)            | Low      | Current `/health` is shallow; add Redis, DB, and queue ping |
 | F-006 | Kubernetes / Helm charts                          | Low      | Post-MVP; Docker Compose sufficient for now |
@@ -130,5 +130,5 @@
 | F-031 | Replace `yarn.lock` leftover with npm-only setup  | Low      | `yarn.lock` still in repo alongside `package-lock.json` after conversion |
 | F-032 | Per-package jest configs (vs single root config)  | Low      | Root jest.config works; per-package configs enable `nx affected` for tests |
 | F-051 | Dedicated worker app (`apps/worker`)               | Medium   | Event, matching, notification, AI and drop workers all run inside the gateway process |
-| F-052 | Redis store for express-rate-limit                 | High     | Global gateway limiter is in-memory, so limits are per instance once scaled out |
+| F-052 | Redis store for express-rate-limit                 | ✅ Done  | `RedisRateLimitStore` (ADR-022), branch `feat/F-052-redis-rate-limiter` |
 | F-053 | Reuse BullMQ Queue instances in enqueue helpers    | Low      | `enqueueNotification` / `enqueueScoreRecompute` open and close a Redis connection per call |

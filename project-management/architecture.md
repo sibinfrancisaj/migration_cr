@@ -550,6 +550,21 @@ v2 dims (max 5):  -0.10  → coreScale min 0.83
 
 ---
 
+### ADR-022 · Global Rate Limiter Backed by Redis (F-052)
+**Date:** 2026-10-06 | **Status:** Accepted
+
+**Context:** The gateway-wide `express-rate-limit` used its default in-memory store, so each instance counted separately: with N instances a client got N × `RATE_LIMIT_MAX_REQUESTS`, and a restart reset every counter.
+
+**Decision:**
+- `RedisRateLimitStore` implements the `express-rate-limit` `Store` interface. Keys: `CACHE_KEYS.RATE_LIMIT('global:<client>')`.
+- One Lua script does `INCR`, sets `PEXPIRE windowMs` on the first hit (and repairs a key that lost its TTL), and returns hits + PTTL — one round trip, no window between INCR and EXPIRE.
+- `createApp({ rateLimitStore })` takes the store by injection; `server.ts` passes the Redis store, tests omit it and get the in-memory store (no Redis connection in tests).
+- `passOnStoreError: true` — when Redis is unreachable the global limiter lets requests through. The security-sensitive limiters (OTP, admin login, trusted device) are separate and unchanged.
+
+**Consequences:** Limits hold under horizontal scaling. A Redis outage removes global throttling (not auth throttling) until Redis recovers; this is logged by express-rate-limit. The same script can replace the INCR + EXPIRE pair in the auth limiters (F-003).
+
+---
+
 ## 6. Security Architecture
 
 ### Middleware order of operations (fixed — do not reorder)

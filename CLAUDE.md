@@ -678,6 +678,13 @@ Each domain lib exports its own handler factory (`createNotificationEventHandler
 failure retries the whole event, so **handlers must be idempotent** (dedupe via jobId derived from `event.id`).
 Payload types: `libs/shared/src/types/events.ts` — IDs only, no PII.
 
+### ADR-022: Global Rate Limiter Backed by Redis
+`createApp({ rateLimitStore })` — server.ts passes `RedisRateLimitStore` (`apps/gateway/src/lib/redis-rate-limit.store.ts`),
+so the global `express-rate-limit` counter is shared across gateway instances. Fixed window via one Lua script
+(INCR + PEXPIRE on first hit — atomic). `passOnStoreError: true`: if Redis is down the limiter fails **open**
+(availability over strictness; per-route OTP/admin/trusted-device limiters still fail closed). Tests call `createApp()`
+with no store → in-memory store, no Redis connection.
+
 ---
 
 ## 8. Code Conventions
@@ -1185,7 +1192,9 @@ BUG-012 ✅ Profile.verificationStatus synced on submit/approve/reject; profile 
   (branch fix/BUG-012-verification-profile-status, stacked on feat/EVT-001-event-consumer). Backfill SQL in bugs.md — run locally.
 
 Branching: one feature branch per feature/fix; branches that touch the same files are stacked on the previous one.
-Next: F-052 (Redis-backed rate limiter), then F-051 (dedicated worker app).
+F-052 ✅ Redis-backed global rate limiter (branch feat/F-052-redis-rate-limiter, stacked on fix/BUG-012) — ADR-022.
+
+Next: F-051 (dedicated worker app — move BullMQ workers out of the gateway process).
 Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
