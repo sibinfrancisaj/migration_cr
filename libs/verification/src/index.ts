@@ -90,15 +90,22 @@ export async function submitVerification(
     throw new VerificationAlreadySubmittedError();
   }
 
-  const request = await prisma.verificationRequest.create({
-    data: {
-      userId,
-      idDocType,
-      idDocS3Key,
-      selfieS3Key,
-      status: VerificationStatus.PENDING,
-    },
-  });
+  // Resubmission after a rejection puts the profile back to PENDING (BUG-012)
+  const [request] = await prisma.$transaction([
+    prisma.verificationRequest.create({
+      data: {
+        userId,
+        idDocType,
+        idDocS3Key,
+        selfieS3Key,
+        status: VerificationStatus.PENDING,
+      },
+    }),
+    prisma.profile.updateMany({
+      where: { userId },
+      data: { verificationStatus: VerificationStatus.PENDING },
+    }),
+  ]);
 
   // Save media records
   const storage = getStorageAdapter();

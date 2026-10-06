@@ -181,13 +181,20 @@ export async function approveVerification(
     throw new VerificationAlreadyReviewedError();
   }
 
-  await prisma.verificationRequest.update({
-    where: { id: requestId },
-    data: {
-      status: VerificationStatus.APPROVED,
-      reviewedAt: new Date(),
-    },
-  });
+  // Profile.verificationStatus is what scoring, discovery and completion read (BUG-012)
+  await prisma.$transaction([
+    prisma.verificationRequest.update({
+      where: { id: requestId },
+      data: {
+        status: VerificationStatus.APPROVED,
+        reviewedAt: new Date(),
+      },
+    }),
+    prisma.profile.updateMany({
+      where: { userId: row.userId },
+      data: { verificationStatus: VerificationStatus.APPROVED },
+    }),
+  ]);
 
   log.info('approveVerification — approved', { requestId, userId: row.userId, adminId });
 
@@ -228,14 +235,20 @@ export async function rejectVerification(
     throw new VerificationAlreadyReviewedError();
   }
 
-  await prisma.verificationRequest.update({
-    where: { id: requestId },
-    data: {
-      status: VerificationStatus.REJECTED,
-      reviewedAt: new Date(),
-      reviewNote: reason,
-    },
-  });
+  await prisma.$transaction([
+    prisma.verificationRequest.update({
+      where: { id: requestId },
+      data: {
+        status: VerificationStatus.REJECTED,
+        reviewedAt: new Date(),
+        reviewNote: reason,
+      },
+    }),
+    prisma.profile.updateMany({
+      where: { userId: row.userId },
+      data: { verificationStatus: VerificationStatus.REJECTED },
+    }),
+  ]);
 
   log.info('rejectVerification — rejected', { requestId, userId: row.userId, adminId });
 

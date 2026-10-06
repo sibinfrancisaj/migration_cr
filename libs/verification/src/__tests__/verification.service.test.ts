@@ -17,6 +17,7 @@ const mockMediaCreateMany       = jest.fn();
 const mockUserFindUnique        = jest.fn();
 const mockMediaFindFirst        = jest.fn();
 const mockGetStorageAdapter     = jest.fn();
+const mockProfileUpdateMany     = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -31,6 +32,10 @@ jest.mock('@abroad-matrimony/db', () => ({
     user: {
       findUnique: (...a: unknown[]) => mockUserFindUnique(...a),
     },
+    profile: {
+      updateMany: (...a: unknown[]) => mockProfileUpdateMany(...a),
+    },
+    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
   },
 }));
 
@@ -96,6 +101,20 @@ describe('submitVerification', () => {
     expect(result.reviewedAt).toBeNull();
   });
 
+  it('resets Profile.verificationStatus to PENDING in the same transaction (BUG-012)', async () => {
+    mockVerificationFindFirst.mockResolvedValue(null);
+    mockVerificationCreate.mockResolvedValue(VERIFICATION_ROW);
+    mockMediaCreateMany.mockResolvedValue({});
+    mockProfileUpdateMany.mockResolvedValue({ count: 1 });
+
+    await submitVerification(USER_ID, 'PASSPORT', 'id.jpg', 'selfie.jpg');
+
+    expect(mockProfileUpdateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { verificationStatus: VerificationStatus.PENDING },
+    });
+  });
+
   it('publishes VERIFICATION_SUBMITTED with the request id (EVT-002)', async () => {
     mockVerificationFindFirst.mockResolvedValue(null);
     mockVerificationCreate.mockResolvedValue(VERIFICATION_ROW);
@@ -118,6 +137,7 @@ describe('submitVerification', () => {
     ).rejects.toBeInstanceOf(VerificationAlreadySubmittedError);
 
     expect(mockVerificationCreate).not.toHaveBeenCalled();
+    expect(mockProfileUpdateMany).not.toHaveBeenCalled();
     expect(mockPublish).not.toHaveBeenCalled();
   });
 });

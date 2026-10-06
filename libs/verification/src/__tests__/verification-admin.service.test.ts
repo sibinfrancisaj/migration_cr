@@ -10,6 +10,7 @@ import { CLOUD_EVENT_TYPES, VerificationStatus } from '@abroad-matrimony/shared'
 
 const mockFindUnique = jest.fn();
 const mockUpdate = jest.fn();
+const mockProfileUpdateMany = jest.fn();
 
 jest.mock('@abroad-matrimony/db', () => ({
   prisma: {
@@ -17,6 +18,10 @@ jest.mock('@abroad-matrimony/db', () => ({
       findUnique: (...a: unknown[]) => mockFindUnique(...a),
       update:     (...a: unknown[]) => mockUpdate(...a),
     },
+    profile: {
+      updateMany: (...a: unknown[]) => mockProfileUpdateMany(...a),
+    },
+    $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
   },
 }));
 
@@ -58,6 +63,7 @@ function setupPending(): void {
     .mockResolvedValueOnce({ id: REQUEST_ID, userId: USER_ID, status: VerificationStatus.PENDING })
     .mockResolvedValueOnce(DETAIL_ROW);
   mockUpdate.mockResolvedValue({});
+  mockProfileUpdateMany.mockResolvedValue({ count: 1 });
   mockAuditLog.mockResolvedValue(undefined);
 }
 
@@ -69,6 +75,21 @@ beforeEach(() => {
 // ── approveVerification ────────────────────────────────────────────────────────
 
 describe('approveVerification', () => {
+  it('sets the request and Profile.verificationStatus to APPROVED together (BUG-012)', async () => {
+    setupPending();
+
+    await approveVerification(REQUEST_ID, ADMIN_ID, '127.0.0.1');
+
+    expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: REQUEST_ID },
+      data: expect.objectContaining({ status: VerificationStatus.APPROVED }),
+    }));
+    expect(mockProfileUpdateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { verificationStatus: VerificationStatus.APPROVED },
+    });
+  });
+
   it('publishes VERIFICATION_REVIEWED with APPROVED status (EVT-002)', async () => {
     setupPending();
 
@@ -87,6 +108,7 @@ describe('approveVerification', () => {
     await expect(approveVerification(REQUEST_ID, ADMIN_ID, '127.0.0.1')).rejects.toBeInstanceOf(
       VerificationAlreadyReviewedError,
     );
+    expect(mockProfileUpdateMany).not.toHaveBeenCalled();
     expect(mockPublish).not.toHaveBeenCalled();
   });
 
@@ -103,6 +125,17 @@ describe('approveVerification', () => {
 // ── rejectVerification ─────────────────────────────────────────────────────────
 
 describe('rejectVerification', () => {
+  it('sets Profile.verificationStatus to REJECTED (BUG-012)', async () => {
+    setupPending();
+
+    await rejectVerification(REQUEST_ID, 'blurry selfie', ADMIN_ID, '127.0.0.1');
+
+    expect(mockProfileUpdateMany).toHaveBeenCalledWith({
+      where: { userId: USER_ID },
+      data: { verificationStatus: VerificationStatus.REJECTED },
+    });
+  });
+
   it('publishes VERIFICATION_REVIEWED with REJECTED status and the reason', async () => {
     setupPending();
 
