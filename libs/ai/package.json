@@ -8,6 +8,7 @@
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/queue": "*",
     "@abroad-matrimony/shared": "*",
     "@aws-sdk/client-s3": "^3.1054.0",
     "bullmq": "^5.4.0",

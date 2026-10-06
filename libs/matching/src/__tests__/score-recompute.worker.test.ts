@@ -70,6 +70,14 @@ jest.mock('bullmq', () => ({
   })),
 }));
 
+// Shared queue registry (F-053) — enqueue helpers never construct a Queue themselves
+const mockQueueAdd   = jest.fn();
+const mockQueueClose = jest.fn();
+const mockGetQueue   = jest.fn(() => ({ add: mockQueueAdd, close: mockQueueClose }));
+jest.mock('@abroad-matrimony/queue', () => ({
+  getQueue: (...args: unknown[]) => mockGetQueue(...(args as [])),
+}));
+
 // Typed references to the mocked BullMQ constructors
 const MockedWorker = jest.mocked(BullWorker);
 const MockedQueue  = jest.mocked(BullQueue);
@@ -329,25 +337,20 @@ describe('createScoreRecomputeWorker()', () => {
 describe('enqueueScoreRecompute()', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQueueAdd.mockResolvedValue({ id: 'job-1' });
   });
 
-  it('creates a Queue on the MATCHING queue name', async () => {
+  it('adds to the shared MATCHING queue instead of opening a new one (F-053)', async () => {
     await enqueueScoreRecompute('redis://localhost:6379');
 
-    expect(MockedQueue).toHaveBeenCalledWith(
-      QUEUE_NAMES.MATCHING,
-      expect.any(Object),
-    );
+    expect(mockGetQueue).toHaveBeenCalledWith(QUEUE_NAMES.MATCHING, 'redis://localhost:6379');
+    expect(MockedQueue).not.toHaveBeenCalled();
   });
 
   it('calls queue.add with the job name and provided data', async () => {
     await enqueueScoreRecompute('redis://localhost:6379', { force: true });
 
-    const queueInst = MockedQueue.mock.results[0].value as {
-      add: jest.Mock;
-      close: jest.Mock;
-    };
-    expect(queueInst.add).toHaveBeenCalledWith(
+    expect(mockQueueAdd).toHaveBeenCalledWith(
       'score-recompute',
       { force: true },
       expect.objectContaining({ jobId: 'score-recompute' }),
@@ -357,32 +360,22 @@ describe('enqueueScoreRecompute()', () => {
   it('uses the fixed jobId "score-recompute" for BullMQ deduplication', async () => {
     await enqueueScoreRecompute('redis://localhost:6379');
 
-    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
-    const opts = queueInst.add.mock.calls[0][2] as { jobId: string };
-    expect(opts.jobId).toBe('score-recompute');
+    expect(mockQueueAdd.mock.calls[0][2].jobId).toBe('score-recompute');
   });
 
-  it('always calls queue.close even when queue.add throws', async () => {
-    // Override the Queue implementation for this one test
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    MockedQueue.mockImplementationOnce((() => ({
-      add:   jest.fn().mockRejectedValue(new Error('Redis down')),
-      close: jest.fn().mockResolvedValue(undefined),
-    })) as any);
+  it('propagates add failures without closing the shared queue', async () => {
+    mockQueueAdd.mockRejectedValueOnce(new Error('Redis down'));
 
     await expect(
       enqueueScoreRecompute('redis://localhost:6379'),
     ).rejects.toThrow('Redis down');
-
-    const queueInst = MockedQueue.mock.results[0].value as { close: jest.Mock };
-    expect(queueInst.close).toHaveBeenCalledTimes(1);
+    expect(mockQueueClose).not.toHaveBeenCalled();
   });
 
   it('removes the job when it completes or fails so later enqueues are accepted (BUG-011)', async () => {
     await enqueueScoreRecompute('redis://localhost:6379');
 
-    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
-    expect(queueInst.add.mock.calls[0][2]).toEqual(
+    expect(mockQueueAdd.mock.calls[0][2]).toEqual(
       expect.objectContaining({ removeOnComplete: true, removeOnFail: true }),
     );
   });
@@ -390,15 +383,13 @@ describe('enqueueScoreRecompute()', () => {
   it('does not delay a full recompute', async () => {
     await enqueueScoreRecompute('redis://localhost:6379');
 
-    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
-    expect(queueInst.add.mock.calls[0][2].delay).toBeUndefined();
+    expect(mockQueueAdd.mock.calls[0][2].delay).toBeUndefined();
   });
 
   it('uses a per-user jobId and debounce delay when userId is set', async () => {
     await enqueueScoreRecompute('redis://localhost:6379', { userId: 'user-a' });
 
-    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
-    expect(queueInst.add).toHaveBeenCalledWith(
+    expect(mockQueueAdd).toHaveBeenCalledWith(
       'score-recompute',
       { userId: 'user-a' },
       expect.objectContaining({ jobId: 'score-recompute:user:user-a', delay: USER_RECOMPUTE_DEBOUNCE_MS }),

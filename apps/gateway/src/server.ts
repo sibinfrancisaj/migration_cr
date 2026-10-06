@@ -5,6 +5,7 @@ import { getRedisClient, closeRedisClient } from '@abroad-matrimony/cache';
 import { initEventBus, shutdownEventBus } from '@abroad-matrimony/event-bus';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
 import { startWorkers, type RunningWorkers } from '@abroad-matrimony/workers';
+import { closeQueues } from '@abroad-matrimony/queue';
 import { createApp } from './app.js';
 import { RedisRateLimitStore } from './lib/redis-rate-limit.store.js';
 
@@ -42,6 +43,7 @@ async function start(): Promise<void> {
     logger.info(`Received ${signal} — graceful shutdown`);
     server.close(async () => {
       await workers?.stop();
+      await closeQueues();
       await shutdownEventBus();
       await closeRedisClient();
       await disconnectDb();

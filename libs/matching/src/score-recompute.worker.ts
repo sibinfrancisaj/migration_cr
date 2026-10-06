@@ -1,4 +1,5 @@
-import { Queue, Worker, type Job } from 'bullmq';
+import { Worker, type Job } from 'bullmq';
+import { getQueue } from '@abroad-matrimony/queue';
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import {
@@ -242,23 +243,15 @@ export async function enqueueScoreRecompute(
   redisUrl: string,
   data: ScoreRecomputeJobData = {},
 ): Promise<void> {
-  const queue = new Queue<ScoreRecomputeJobData>(QUEUE_NAMES.MATCHING, {
-    connection: { url: redisUrl },
-  });
-
   const jobId = data.userId ? `${JOB_NAME}:user:${data.userId}` : JOB_NAME;
 
-  try {
-    await queue.add(JOB_NAME, data, {
-      jobId,
-      delay:            data.userId ? USER_RECOMPUTE_DEBOUNCE_MS : undefined,
-      attempts:         3,
-      backoff:          { type: 'exponential', delay: 60_000 },
-      removeOnComplete: true,
-      removeOnFail:     true,
-    });
-    log.info('Score recompute job enqueued', { jobId, force: data.force ?? false });
-  } finally {
-    await queue.close();
-  }
+  await getQueue<ScoreRecomputeJobData>(QUEUE_NAMES.MATCHING, redisUrl).add(JOB_NAME, data, {
+    jobId,
+    delay:            data.userId ? USER_RECOMPUTE_DEBOUNCE_MS : undefined,
+    attempts:         3,
+    backoff:          { type: 'exponential', delay: 60_000 },
+    removeOnComplete: true,
+    removeOnFail:     true,
+  });
+  log.info('Score recompute job enqueued', { jobId, force: data.force ?? false });
 }

@@ -15,6 +15,7 @@
  */
 
 import { Worker, Queue } from 'bullmq';
+import { getQueue } from '@abroad-matrimony/queue';
 import type { Job } from 'bullmq';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { QUEUE_NAMES } from '@abroad-matrimony/shared';
@@ -89,11 +90,9 @@ export async function createWeeklyDropWorker(redisUrl: string): Promise<Worker> 
  * Does NOT affect the repeatable cron schedule.
  */
 export async function triggerWeeklyDropNow(redisUrl: string): Promise<string> {
-  const queue = new Queue(QUEUE_NAMES.WEEKLY_INTROS, {
-    connection: { url: redisUrl },
-  });
-  const job = await queue.add(WEEKLY_DROP_JOB_NAME, {}, { jobId: `${WEEKLY_DROP_JOB_NAME}:manual:${Date.now()}` });
-  await queue.close();
+  const job = await getQueue(QUEUE_NAMES.WEEKLY_INTROS, redisUrl).add(
+    WEEKLY_DROP_JOB_NAME, {}, { jobId: `${WEEKLY_DROP_JOB_NAME}:manual:${Date.now()}` },
+  );
   log.info('Weekly drop triggered manually', { jobId: job.id });
   return job.id ?? '';
 }

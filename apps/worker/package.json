@@ -17,6 +17,7 @@
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/firebase": "*",
     "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/queue": "*",
     "@abroad-matrimony/workers": "*"
   },
   "devDependencies": {

@@ -4,9 +4,11 @@ import { NotificationType } from '../types/notification.types.js';
 const mockAdd = jest.fn();
 const mockClose = jest.fn();
 
-jest.mock('bullmq', () => ({
-  Queue: jest.fn().mockImplementation(() => ({ add: mockAdd, close: mockClose })),
-  Worker: jest.fn(),
+const mockGetQueue = jest.fn((..._args: unknown[]) => ({ add: mockAdd, close: mockClose }));
+
+jest.mock('bullmq', () => ({ Worker: jest.fn() }));
+jest.mock('@abroad-matrimony/queue', () => ({
+  getQueue: (...args: unknown[]) => mockGetQueue(...args),
 }));
 
 jest.mock('@abroad-matrimony/logger', () => ({
@@ -35,9 +37,14 @@ describe('enqueueNotification', () => {
     expect(mockAdd.mock.calls[0][2].jobId).toBeUndefined();
   });
 
-  it('closes the queue even when add fails', async () => {
+  it('adds to the shared NOTIFICATION queue (F-053)', async () => {
+    await enqueueNotification('redis://x', job);
+    expect(mockGetQueue).toHaveBeenCalledWith('notification', 'redis://x');
+  });
+
+  it('propagates add failures without closing the shared queue', async () => {
     mockAdd.mockRejectedValue(new Error('down'));
     await expect(enqueueNotification('redis://x', job)).rejects.toThrow('down');
-    expect(mockClose).toHaveBeenCalled();
+    expect(mockClose).not.toHaveBeenCalled();
   });
 });

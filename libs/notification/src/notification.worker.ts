@@ -1,4 +1,5 @@
-import { Queue, Worker, type Job } from 'bullmq';
+import { Worker, type Job } from 'bullmq';
+import { getQueue } from '@abroad-matrimony/queue';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { QUEUE_NAMES } from '@abroad-matrimony/shared';
 import { getEmailAdapter } from './adapters/email/index.js';
@@ -83,9 +84,7 @@ export async function processNotification(data: NotificationJobData): Promise<vo
  * Call `worker.close()` during graceful shutdown.
  */
 export function createNotificationWorker(redisUrl: string): Worker<NotificationJobData> {
-  const queue = new Queue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, {
-    connection: { url: redisUrl },
-  });
+  const queue = getQueue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, redisUrl);
 
   const worker = new Worker<NotificationJobData>(
     QUEUE_NAMES.NOTIFICATION,
@@ -143,20 +142,12 @@ export async function enqueueNotification(
   job: NotificationJobData,
   opts: { jobId?: string } = {},
 ): Promise<void> {
-  const queue = new Queue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, {
-    connection: { url: redisUrl },
+  await getQueue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, redisUrl).add('notification', job, {
+    jobId: opts.jobId,
+    attempts: 3,
+    backoff: { type: 'exponential', delay: 5_000 },
+    removeOnComplete: { count: 1000 },
+    removeOnFail:     { count: 500 },
   });
-
-  try {
-    await queue.add('notification', job, {
-      jobId: opts.jobId,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5_000 },
-      removeOnComplete: { count: 1000 },
-      removeOnFail:     { count: 500 },
-    });
-    log.info('Notification enqueued', { type: job.type });
-  } finally {
-    await queue.close();
-  }
+  log.info('Notification enqueued', { type: job.type });
 }

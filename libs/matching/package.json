@@ -9,6 +9,7 @@
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/queue": "*",
     "@abroad-matrimony/shared": "*",
     "bullmq": "*"
   }

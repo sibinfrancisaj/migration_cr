@@ -9,18 +9,19 @@
   },
   "dependencies": {
     "@abroad-matrimony/auth": "*",
-    "@abroad-matrimony/profile": "*",
     "@abroad-matrimony/cache": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
     "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/matching": "*",
+    "@abroad-matrimony/profile": "*",
+    "@abroad-matrimony/queue": "*",
     "@abroad-matrimony/shared": "*",
+    "@abroad-matrimony/workers": "*",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "express-rate-limit": "^7.4.0",
-    "helmet": "^8.0.0",
-    "@abroad-matrimony/workers": "*"
+    "helmet": "^8.0.0"
   }
 }

@@ -9,7 +9,7 @@
  *   profile created/updated, real-life answers, story prompts, habits,
  *   weekly prompt responses, voice intro saved, match tuning updated.
  */
-import { Queue } from 'bullmq';
+import { getQueue } from '@abroad-matrimony/queue';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { QUEUE_NAMES } from '@abroad-matrimony/shared';
 import type { ProfileIntelligenceJobData } from './types/ai.types.js';
@@ -33,37 +33,30 @@ export async function enqueueProfileIntelligence(
   userId: string,
   redisUrl: string,
 ): Promise<void> {
-  const queue = new Queue<ProfileIntelligenceJobData>(QUEUE_NAMES.PROFILE_INTELLIGENCE, {
-    connection: { url: redisUrl },
-  });
+  const queue = getQueue<ProfileIntelligenceJobData>(QUEUE_NAMES.PROFILE_INTELLIGENCE, redisUrl);
+  const jobId = `pi:${userId}`;
 
-  try {
-    const jobId = `pi:${userId}`;
-
-    // Remove any existing waiting job for this user so we reset the debounce timer.
-    const existing = await queue.getJob(jobId);
-    if (existing) {
-      const state = await existing.getState();
-      if (state === 'delayed' || state === 'waiting') {
-        await existing.remove();
-      }
+  // Remove any existing waiting job for this user so we reset the debounce timer.
+  const existing = await queue.getJob(jobId);
+  if (existing) {
+    const state = await existing.getState();
+    if (state === 'delayed' || state === 'waiting') {
+      await existing.remove();
     }
-
-    await queue.add(
-      'profile-intelligence',
-      { userId },
-      {
-        jobId,
-        delay: DEBOUNCE_MS,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 10_000 },
-        removeOnComplete: { count: 500 },
-        removeOnFail: { count: 100 },
-      },
-    );
-
-    log.info('enqueueProfileIntelligence — job enqueued', { userId, debounceMs: DEBOUNCE_MS });
-  } finally {
-    await queue.close();
   }
+
+  await queue.add(
+    'profile-intelligence',
+    { userId },
+    {
+      jobId,
+      delay: DEBOUNCE_MS,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 10_000 },
+      removeOnComplete: { count: 500 },
+      removeOnFail: { count: 100 },
+    },
+  );
+
+  log.info('enqueueProfileIntelligence — job enqueued', { userId, debounceMs: DEBOUNCE_MS });
 }

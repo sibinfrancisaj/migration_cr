@@ -5,6 +5,7 @@ import { getRedisClient, closeRedisClient } from '@abroad-matrimony/cache';
 import { initEventBus, shutdownEventBus } from '@abroad-matrimony/event-bus';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
 import { startWorkers, type RunningWorkers } from '@abroad-matrimony/workers';
+import { closeQueues } from '@abroad-matrimony/queue';
 import { createHealthServer } from './health.js';
 
 /**
@@ -50,6 +51,7 @@ async function start(): Promise<void> {
 
     // Let in-flight jobs finish before closing the connections they use.
     await workers.stop();
+    await closeQueues();
     await shutdownEventBus();
     await closeRedisClient();
     await disconnectDb();
