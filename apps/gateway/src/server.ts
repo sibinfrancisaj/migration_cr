@@ -11,6 +11,7 @@ import {
 } from '@abroad-matrimony/event-bus';
 import { createScoreRecomputeWorker, createMatchingEventHandlers } from '@abroad-matrimony/matching';
 import { createNotificationWorker, createNotificationEventHandlers } from '@abroad-matrimony/notification';
+import { createProfileEventHandlers } from '@abroad-matrimony/profile';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
 import { isAiConfigured, createAiWorker } from '@abroad-matrimony/ai';
 import { createWeeklyDropWorker } from '@abroad-matrimony/introductions';
@@ -38,12 +39,13 @@ async function start(): Promise<void> {
   // Start notification worker — handles EMAIL / SMS / PUSH jobs from the notification queue
   const notificationWorker: Worker = createNotificationWorker(env.REDIS_URL);
 
-  // Start CloudEvent consumer — fans domain events out to notification + matching handlers (EVT-001)
+  // Start CloudEvent consumer — fans domain events out to notification, matching and profile handlers (EVT-001)
   const eventWorker: Worker = createEventWorker(
     env.REDIS_URL,
     mergeHandlerRegistries(
       createNotificationEventHandlers(env.REDIS_URL),
       createMatchingEventHandlers(env.REDIS_URL),
+      createProfileEventHandlers(),
     ),
   );
 

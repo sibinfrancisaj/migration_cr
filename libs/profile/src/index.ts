@@ -32,6 +32,9 @@ export type { UploadProfilePhotoInput } from './media.service.js';
 // Completion score helper
 export { recalculateCompletionScore } from './score.service.js';
 
+// CloudEvent handlers (BUG-012)
+export { createProfileEventHandlers, COMPLETION_HANDLER_NAME } from './profile.event-handlers.js';
+
 // Profile extensions (pause, voice intro)
 export {
   toggleProfilePause,
