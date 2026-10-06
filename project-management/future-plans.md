@@ -59,8 +59,8 @@
 | F-020 | Notification preferences per user                 | Medium   | Currently no user-level channel opt-out; needs preferences table |
 | F-021 | Email unsubscribe link + one-click opt-out         | High     | Legal / CAN-SPAM requirement before sending marketing emails |
 | F-022 | In-app notification bell / badge count             | Medium   | `NotificationChannel.IN_APP` exists; read/unread API needed |
-| F-033 | Email for verification results                     | Medium   | EVT-003 sends push only; add Brevo template for VERIFICATION_REVIEWED |
-| F-034 | Intro drop LIVE notification                       | Medium   | Publish GROUP_INTRO_DROP when a drop reaches `releaseAt`, add handler (EVT-003 follow-up) |
+| F-049 | Email for verification results                     | Medium   | EVT-003 sends push only; add Brevo template for VERIFICATION_REVIEWED |
+| F-050 | Intro drop LIVE notification                       | Medium   | Publish GROUP_INTRO_DROP when a drop reaches `releaseAt`, add handler (EVT-003 follow-up) |
 
 ---
 
@@ -129,6 +129,6 @@
 | F-030 | Add `project.json` NX configs per lib/app         | Low      | Currently NX infers from package.json; explicit configs give more control |
 | F-031 | Replace `yarn.lock` leftover with npm-only setup  | Low      | `yarn.lock` still in repo alongside `package-lock.json` after conversion |
 | F-032 | Per-package jest configs (vs single root config)  | Low      | Root jest.config works; per-package configs enable `nx affected` for tests |
-| F-035 | Dedicated worker app (`apps/worker`)               | Medium   | Event, matching, notification, AI and drop workers all run inside the gateway process |
-| F-036 | Redis store for express-rate-limit                 | High     | Global gateway limiter is in-memory, so limits are per instance once scaled out |
-| F-037 | Reuse BullMQ Queue instances in enqueue helpers    | Low      | `enqueueNotification` / `enqueueScoreRecompute` open and close a Redis connection per call |
+| F-051 | Dedicated worker app (`apps/worker`)               | Medium   | Event, matching, notification, AI and drop workers all run inside the gateway process |
+| F-052 | Redis store for express-rate-limit                 | High     | Global gateway limiter is in-memory, so limits are per instance once scaled out |
+| F-053 | Reuse BullMQ Queue instances in enqueue helpers    | Low      | `enqueueNotification` / `enqueueScoreRecompute` open and close a Redis connection per call |
