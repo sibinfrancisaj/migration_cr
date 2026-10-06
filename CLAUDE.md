@@ -1185,7 +1185,7 @@ BUG-012 ✅ Profile.verificationStatus synced on submit/approve/reject; profile 
   (branch fix/BUG-012-verification-profile-status, stacked on feat/EVT-001-event-consumer). Backfill SQL in bugs.md — run locally.
 
 Branching: one feature branch per feature/fix; branches that touch the same files are stacked on the previous one.
-Next: F-036 (Redis-backed rate limiter), then F-035 (dedicated worker app).
+Next: F-052 (Redis-backed rate limiter), then F-051 (dedicated worker app).
 Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
