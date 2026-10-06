@@ -27,3 +27,7 @@ export {
   createNotificationWorker,
   enqueueNotification,
 } from './notification.worker.js';
+
+// CloudEvent → notification handlers (EVT-003)
+export { createNotificationEventHandlers } from './events/notification-event-handlers.js';
+export { EVENT_PUSH_TYPES, EVENT_HANDLER_NAMES } from './events/event-notification.constants.js';

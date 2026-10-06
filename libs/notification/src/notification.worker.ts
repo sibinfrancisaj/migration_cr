@@ -134,10 +134,14 @@ export function createNotificationWorker(redisUrl: string): Worker<NotificationJ
  *
  * @param redisUrl  Redis connection URL.
  * @param job       The notification to dispatch.
+ * @param opts.jobId Stable job ID — BullMQ ignores a second add with the same ID,
+ *                   so event handlers pass one derived from the CloudEvent ID to
+ *                   avoid duplicate sends when an event is retried.
  */
 export async function enqueueNotification(
   redisUrl: string,
   job: NotificationJobData,
+  opts: { jobId?: string } = {},
 ): Promise<void> {
   const queue = new Queue<NotificationJobData>(QUEUE_NAMES.NOTIFICATION, {
     connection: { url: redisUrl },
@@ -145,6 +149,7 @@ export async function enqueueNotification(
 
   try {
     await queue.add('notification', job, {
+      jobId: opts.jobId,
       attempts: 3,
       backoff: { type: 'exponential', delay: 5_000 },
       removeOnComplete: { count: 1000 },
