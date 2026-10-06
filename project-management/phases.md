@@ -621,3 +621,4 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 | EVT-002 | Publish connection, match, verification and profile events from services    | ✅     |
 | EVT-003 | Notification handlers: connection request/accept, verification, membership  | ✅     |
 | EVT-004 | Per-user score recompute on PROFILE_UPDATED (+ BUG-011 dedupe fix)          | ✅     |
+| BUG-012 | Sync Profile.verificationStatus on submit/approve/reject + completion recalculation (branch `fix/BUG-012-verification-profile-status`) | ✅ |

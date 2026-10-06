@@ -19,7 +19,7 @@
 | BUG-009 | Tech Debt  | API   | API-SPEC | openapi.yaml uses `nullable: true` (OAS 3.0 syntax) throughout; OAS 3.1 requires `type: [T, "null"]` | ⚪ Won't Fix | 2026-05-29 |
 | BUG-010 | Test       | P7b   | DB-MIG-001 | Non-hex UUID fixtures in controller tests cause Zod `z.string().uuid()` to reject valid-seeming IDs | 🟢 Fixed | 2026-05-29 |
 | BUG-011 | Bug        | EVT   | EVT-004 | `enqueueScoreRecompute` fixed jobId never removed — every recompute after the first is silently dropped | 🟢 Fixed | 2026-10-06 |
-| BUG-012 | Bug        | EVT   | EVT-002 | Approving verification never sets `Profile.verificationStatus` — completion score and trust score never credit it | 🔴 Open | 2026-10-06 |
+| BUG-012 | Bug        | EVT   | EVT-002 | Approving verification never sets `Profile.verificationStatus` — completion score and trust score never credit it | 🟢 Fixed | 2026-10-06 |
 | BUG-013 | Design     | EVT   | EVT-001 | EVENTS queue had no consumer; `enqueueNotification` had no callers — domain actions sent no notifications | 🟢 Fixed | 2026-10-06 |
 
 ---
@@ -231,13 +231,22 @@ Affected test files and IDs:
 **Phase:** EVT — found while wiring VERIFICATION_REVIEWED
 **Task:** EVT-002
 **Reported:** 2026-10-06
-**Status:** 🔴 Open
+**Status:** 🟢 Fixed (branch `fix/BUG-012-verification-profile-status`)
 
 **Problem:**
-`approveVerification()` / `rejectVerification()` (`libs/verification/src/verification-admin.service.ts`) only update the `VerificationRequest` row. `recalculateCompletionScore()` and the trust score read `Profile.verificationStatus`, which nothing sets, so an approved user never gets the 10 verification points or the verified layer.
+`approveVerification()` / `rejectVerification()` (`libs/verification/src/verification-admin.service.ts`) only updated the `VerificationRequest` row. Scoring (`scoreVerificationBonus`), discovery, introductions and `recalculateCompletionScore()` all read `Profile.verificationStatus`, which nothing set, so approved users never got the verified bonus or the 10 completion points.
 
-**Proposed fix:**
-Update `Profile.verificationStatus` in the same `$transaction` as the request, then call `recalculateCompletionScore(userId)` (which also publishes PROFILE_UPDATED). Not done in EVT-001 to keep the PR scoped.
+**Fix:**
+- Approve/reject update the request and `Profile.verificationStatus` in one `$transaction` (`updateMany`, so a user without a profile is not an error).
+- `submitVerification()` resets `Profile.verificationStatus` to `PENDING` in the same transaction (resubmission after rejection).
+- New `createProfileEventHandlers()` (libs/profile): VERIFICATION_REVIEWED → `recalculateCompletionScore(userId)`, which publishes PROFILE_UPDATED and so refreshes match scores.
+- Existing approved users are NOT backfilled — see the one-off SQL below, to be run locally.
+
+```sql
+UPDATE profiles p SET "verificationStatus" = vr.status
+FROM (SELECT DISTINCT ON ("userId") "userId", status FROM verification_requests ORDER BY "userId", "submittedAt" DESC) vr
+WHERE p."userId" = vr."userId" AND p."verificationStatus" <> vr.status;
+```
 
 ---
 

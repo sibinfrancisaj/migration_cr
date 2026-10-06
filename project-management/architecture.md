@@ -216,6 +216,9 @@ libs/event-bus/publisher.ts
           CONNECTION_SENT / ACCEPTED, VERIFICATION_REVIEWED,   PROFILE_UPDATED →
           MEMBERSHIP_ACTIVATED → enqueueNotification(PUSH,     enqueueScoreRecompute({ userId })
           jobId = eventId:handler:deviceId)                    (30s debounce, per-user jobId)
+                                     │
+                              profile handlers: VERIFICATION_REVIEWED → recalculateCompletionScore
+                              (→ PROFILE_UPDATED → per-user recompute)
 ```
 
 ### 3.4 Feature Flag Evaluation

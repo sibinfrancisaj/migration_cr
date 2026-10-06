@@ -1181,9 +1181,11 @@ EVT-001 ✅ libs/event-bus createEventWorker + handler registry + WAL cap (ADR-0
 EVT-002 ✅ CONNECTION_SENT/ACCEPTED, MATCH_CREATED, VERIFICATION_SUBMITTED/REVIEWED, PROFILE_UPDATED/COMPLETED published
 EVT-003 ✅ Push notifications for connection request/accept, verification result, membership activation
 EVT-004 ✅ Per-user score recompute on PROFILE_UPDATED (30s debounce); BUG-011 recompute dedupe fixed
-Open: BUG-012 — approving verification never sets Profile.verificationStatus.
+BUG-012 ✅ Profile.verificationStatus synced on submit/approve/reject; profile handler recalculates completion
+  (branch fix/BUG-012-verification-profile-status, stacked on feat/EVT-001-event-consumer). Backfill SQL in bugs.md — run locally.
 
-Next: fix BUG-012, then F-036 (Redis-backed rate limiter) and F-035 (dedicated worker app).
+Branching: one feature branch per feature/fix; branches that touch the same files are stacked on the previous one.
+Next: F-036 (Redis-backed rate limiter), then F-035 (dedicated worker app).
 Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
