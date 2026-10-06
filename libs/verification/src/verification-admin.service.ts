@@ -5,7 +5,12 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { auditLog } from '@abroad-matrimony/auth';
-import { VerificationStatus } from '@abroad-matrimony/shared';
+import { publish } from '@abroad-matrimony/event-bus';
+import {
+  CLOUD_EVENT_TYPES,
+  VerificationStatus,
+  type VerificationReviewedEventData,
+} from '@abroad-matrimony/shared';
 
 const log = createChildLogger({ module: 'verification:admin' });
 
@@ -195,6 +200,12 @@ export async function approveVerification(
     metadata: { userId: row.userId },
   });
 
+  await publish<VerificationReviewedEventData>(
+    CLOUD_EVENT_TYPES.VERIFICATION_REVIEWED,
+    { verificationId: requestId, userId: row.userId, status: VerificationStatus.APPROVED },
+    `user:${row.userId}`,
+  );
+
   return getVerificationAdmin(requestId);
 }
 
@@ -236,6 +247,12 @@ export async function rejectVerification(
     ipAddress,
     metadata: { userId: row.userId, reason },
   });
+
+  await publish<VerificationReviewedEventData>(
+    CLOUD_EVENT_TYPES.VERIFICATION_REVIEWED,
+    { verificationId: requestId, userId: row.userId, status: VerificationStatus.REJECTED, reason },
+    `user:${row.userId}`,
+  );
 
   return getVerificationAdmin(requestId);
 }

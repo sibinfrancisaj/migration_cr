@@ -1,6 +1,13 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { ConnectionStatus } from '@abroad-matrimony/shared';
+import { publish } from '@abroad-matrimony/event-bus';
+import {
+  CLOUD_EVENT_TYPES,
+  ConnectionStatus,
+  type ConnectionAcceptedEventData,
+  type ConnectionSentEventData,
+  type MatchCreatedEventData,
+} from '@abroad-matrimony/shared';
 
 const log = createChildLogger({ module: 'connections' });
 
@@ -174,6 +181,12 @@ export async function sendConnectionRequest(
 
   log.info('sendConnectionRequest — created', { connectionId: conn.id, senderId, receiverId });
 
+  await publish<ConnectionSentEventData>(
+    CLOUD_EVENT_TYPES.CONNECTION_SENT,
+    { connectionId: conn.id, senderId, receiverId },
+    `connection:${conn.id}`,
+  );
+
   return toConnectionDto(conn);
 }
 
@@ -250,7 +263,7 @@ export async function acceptConnection(
   });
 
   // Create a Match record
-  await prisma.match.create({
+  const match = await prisma.match.create({
     data: {
       userAId: conn.senderId,
       userBId: conn.receiverId,
@@ -263,6 +276,17 @@ export async function acceptConnection(
     userA: conn.senderId,
     userB: conn.receiverId,
   });
+
+  await publish<ConnectionAcceptedEventData>(
+    CLOUD_EVENT_TYPES.CONNECTION_ACCEPTED,
+    { connectionId, senderId: conn.senderId, receiverId: conn.receiverId, matchId: match.id },
+    `connection:${connectionId}`,
+  );
+  await publish<MatchCreatedEventData>(
+    CLOUD_EVENT_TYPES.MATCH_CREATED,
+    { matchId: match.id, userAId: conn.senderId, userBId: conn.receiverId, connectionId },
+    `match:${match.id}`,
+  );
 
   return toConnectionDto(updated);
 }

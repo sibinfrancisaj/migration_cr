@@ -1,6 +1,12 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { VerificationStatus, MediaType } from '@abroad-matrimony/shared';
+import { publish } from '@abroad-matrimony/event-bus';
+import {
+  CLOUD_EVENT_TYPES,
+  VerificationStatus,
+  MediaType,
+  type VerificationSubmittedEventData,
+} from '@abroad-matrimony/shared';
 import { getStorageAdapter } from '@abroad-matrimony/storage';
 
 const log = createChildLogger({ module: 'verification' });
@@ -108,6 +114,12 @@ export async function submitVerification(
   });
 
   log.info('submitVerification — submitted', { userId, requestId: request.id, idDocType });
+
+  await publish<VerificationSubmittedEventData>(
+    CLOUD_EVENT_TYPES.VERIFICATION_SUBMITTED,
+    { verificationId: request.id, userId },
+    `user:${userId}`,
+  );
 
   return {
     status: request.status,

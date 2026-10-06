@@ -10,7 +10,7 @@ import {
   ConnectionInvalidStatusError,
   BlockedUserError,
 } from '../index.js';
-import { ConnectionStatus } from '@abroad-matrimony/shared';
+import { CLOUD_EVENT_TYPES, ConnectionStatus } from '@abroad-matrimony/shared';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,11 @@ jest.mock('@abroad-matrimony/db', () => ({
       create: (...a: unknown[]) => mockMatchCreate(...a),
     },
   },
+}));
+
+const mockPublish = jest.fn();
+jest.mock('@abroad-matrimony/event-bus', () => ({
+  publish: (...a: unknown[]) => mockPublish(...a),
 }));
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -94,6 +99,26 @@ describe('sendConnectionRequest', () => {
     expect(result.id).toBe(CONN_ID);
     expect(result.status).toBe(ConnectionStatus.PENDING);
     expect(result.otherUser).toBeNull();
+  });
+
+  it('publishes CONNECTION_SENT after the row is created (EVT-002)', async () => {
+    mockUserBlockFindFirst.mockResolvedValue(null);
+    mockConnectionFindFirst.mockResolvedValue(null);
+    mockConnectionCreate.mockResolvedValue(makeConn());
+
+    await sendConnectionRequest(SENDER_ID, RECEIVER_ID);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.CONNECTION_SENT,
+      { connectionId: CONN_ID, senderId: SENDER_ID, receiverId: RECEIVER_ID },
+      `connection:${CONN_ID}`,
+    );
+  });
+
+  it('does not publish when the request is rejected', async () => {
+    mockUserBlockFindFirst.mockResolvedValue({ id: 'block-1' });
+    await expect(sendConnectionRequest(SENDER_ID, RECEIVER_ID)).rejects.toBeInstanceOf(BlockedUserError);
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 
   it('creates a connection without optional message', async () => {
@@ -239,6 +264,31 @@ describe('acceptConnection', () => {
       }),
     );
     expect(result.status).toBe(ConnectionStatus.ACCEPTED);
+  });
+
+  it('publishes CONNECTION_ACCEPTED and MATCH_CREATED with the new match id (EVT-002)', async () => {
+    mockConnectionFindUnique.mockResolvedValue(makeConn());
+    mockConnectionUpdate.mockResolvedValue(makeConn({ status: ConnectionStatus.ACCEPTED }));
+    mockMatchCreate.mockResolvedValue({ id: 'match-1' });
+
+    await acceptConnection(CONN_ID, RECEIVER_ID);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.CONNECTION_ACCEPTED,
+      { connectionId: CONN_ID, senderId: SENDER_ID, receiverId: RECEIVER_ID, matchId: 'match-1' },
+      `connection:${CONN_ID}`,
+    );
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.MATCH_CREATED,
+      { matchId: 'match-1', userAId: SENDER_ID, userBId: RECEIVER_ID, connectionId: CONN_ID },
+      'match:match-1',
+    );
+  });
+
+  it('does not publish when the caller is not the receiver', async () => {
+    mockConnectionFindUnique.mockResolvedValue(makeConn());
+    await expect(acceptConnection(CONN_ID, SENDER_ID)).rejects.toBeInstanceOf(ConnectionForbiddenError);
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 
   it('throws ConnectionNotFoundError when connection does not exist', async () => {

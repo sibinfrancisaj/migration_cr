@@ -1,5 +1,5 @@
 import { recalculateCompletionScore } from '../score.service.js';
-import { VerificationStatus } from '@abroad-matrimony/shared';
+import { CLOUD_EVENT_TYPES, VerificationStatus } from '@abroad-matrimony/shared';
 
 // ── DB mock ───────────────────────────────────────────────────────────────────
 
@@ -37,15 +37,24 @@ jest.mock('@abroad-matrimony/logger', () => ({
   }),
 }));
 
+// ── Event-bus mock ────────────────────────────────────────────────────────────
+
+const mockPublish = jest.fn();
+jest.mock('@abroad-matrimony/event-bus', () => ({
+  publish: (...args: unknown[]) => mockPublish(...args),
+}));
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+type ProfileRow = { verificationStatus: VerificationStatus; completionScore?: number };
+
 function setupMocks({
-  profile = { verificationStatus: VerificationStatus.PENDING } as { verificationStatus: VerificationStatus } | null,
+  profile = { verificationStatus: VerificationStatus.PENDING } as ProfileRow | null,
   rlCount    = 0,
   storyCount = 0,
   photoCount = 0,
 }: {
-  profile?:    { verificationStatus: VerificationStatus } | null;
+  profile?:    ProfileRow | null;
   rlCount?:    number;
   storyCount?: number;
   photoCount?: number;
@@ -245,5 +254,62 @@ describe('recalculateCompletionScore()', () => {
     mockProfileUpdate.mockRejectedValueOnce(new Error('Update failed'));
 
     await expect(recalculateCompletionScore(USER_ID)).rejects.toThrow('Update failed');
+  });
+
+  // ── CloudEvents (EVT-002) ─────────────────────────────────────────────────
+
+  it('publishes PROFILE_UPDATED with the new score', async () => {
+    setupMocks({ rlCount: 6 });
+
+    await recalculateCompletionScore(USER_ID);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.PROFILE_UPDATED,
+      { userId: USER_ID, completionScore: 40 },
+      `user:${USER_ID}`,
+    );
+  });
+
+  it('publishes PROFILE_COMPLETED when the score first reaches 100', async () => {
+    setupMocks({
+      profile: { verificationStatus: VerificationStatus.APPROVED, completionScore: 90 },
+      rlCount: 12, storyCount: 3, photoCount: 1,
+    });
+
+    await recalculateCompletionScore(USER_ID);
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.PROFILE_COMPLETED,
+      { userId: USER_ID },
+      `user:${USER_ID}`,
+    );
+  });
+
+  it('does not re-publish PROFILE_COMPLETED when the profile was already complete', async () => {
+    setupMocks({
+      profile: { verificationStatus: VerificationStatus.APPROVED, completionScore: 100 },
+      rlCount: 12, storyCount: 3, photoCount: 1,
+    });
+
+    await recalculateCompletionScore(USER_ID);
+
+    expect(mockPublish).toHaveBeenCalledTimes(1);
+    expect(mockPublish).toHaveBeenCalledWith(CLOUD_EVENT_TYPES.PROFILE_UPDATED, expect.anything(), expect.anything());
+  });
+
+  it('does not publish PROFILE_COMPLETED below 100', async () => {
+    setupMocks({ profile: { verificationStatus: VerificationStatus.PENDING, completionScore: 50 }, rlCount: 12, storyCount: 3, photoCount: 1 });
+
+    await recalculateCompletionScore(USER_ID);
+
+    expect(mockPublish).not.toHaveBeenCalledWith(CLOUD_EVENT_TYPES.PROFILE_COMPLETED, expect.anything(), expect.anything());
+  });
+
+  it('does not publish anything when the user has no profile', async () => {
+    setupMocks({ profile: null });
+
+    await recalculateCompletionScore(USER_ID);
+
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 });

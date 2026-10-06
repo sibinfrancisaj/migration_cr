@@ -1,6 +1,13 @@
 import { prisma } from '@abroad-matrimony/db';
 import { createChildLogger } from '@abroad-matrimony/logger';
-import { MediaType, VerificationStatus } from '@abroad-matrimony/shared';
+import { publish } from '@abroad-matrimony/event-bus';
+import {
+  CLOUD_EVENT_TYPES,
+  MediaType,
+  VerificationStatus,
+  type ProfileCompletedEventData,
+  type ProfileUpdatedEventData,
+} from '@abroad-matrimony/shared';
 
 const log = createChildLogger({ module: 'profile:score' });
 
@@ -16,6 +23,7 @@ const SCORE_WEIGHTS = {
 
 const TOTAL_RL_QUESTIONS  = 12;
 const TOTAL_STORY_PROMPTS = 3;
+const COMPLETE_SCORE      = 100;
 
 /**
  * Recomputes and persists the profile completion score for a user.
@@ -30,13 +38,16 @@ const TOTAL_STORY_PROMPTS = 3;
  * Called after: profile create, real-life answer upsert, story prompt upsert,
  * media upload, and verification status change.
  *
+ * Publishes PROFILE_UPDATED on every call, and PROFILE_COMPLETED the first time
+ * the score reaches 100.
+ *
  * @returns the updated score (0–100), or 0 if the user has no profile yet
  */
 export async function recalculateCompletionScore(userId: string): Promise<number> {
   const [profile, rlCount, storyCount, photoCount] = await Promise.all([
     prisma.profile.findUnique({
       where: { userId },
-      select: { verificationStatus: true },
+      select: { verificationStatus: true, completionScore: true },
     }),
     prisma.realLifeAnswer.count({ where: { userId } }),
     prisma.storyPromptAnswer.count({ where: { userId } }),
@@ -62,5 +73,16 @@ export async function recalculateCompletionScore(userId: string): Promise<number
   });
 
   log.info('Completion score updated', { userId, score });
+
+  // Every caller is a scoring-relevant change, so this is the one place PROFILE_UPDATED fires.
+  await publish<ProfileUpdatedEventData>(
+    CLOUD_EVENT_TYPES.PROFILE_UPDATED,
+    { userId, completionScore: score },
+    `user:${userId}`,
+  );
+  if (score >= COMPLETE_SCORE && profile.completionScore < COMPLETE_SCORE) {
+    await publish<ProfileCompletedEventData>(CLOUD_EVENT_TYPES.PROFILE_COMPLETED, { userId }, `user:${userId}`);
+  }
+
   return score;
 }

@@ -7,7 +7,7 @@ import {
   VerificationNotFoundError,
   TRUST_LAYERS,
 } from '../index.js';
-import { VerificationStatus, MediaType } from '@abroad-matrimony/shared';
+import { CLOUD_EVENT_TYPES, VerificationStatus, MediaType } from '@abroad-matrimony/shared';
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,11 @@ const VERIFICATION_ROW = {
   reviewNote: null,
 };
 
+const mockPublish = jest.fn();
+jest.mock('@abroad-matrimony/event-bus', () => ({
+  publish: (...a: unknown[]) => mockPublish(...a),
+}));
+
 // ── submitVerification ─────────────────────────────────────────────────────────
 
 describe('submitVerification', () => {
@@ -91,6 +96,20 @@ describe('submitVerification', () => {
     expect(result.reviewedAt).toBeNull();
   });
 
+  it('publishes VERIFICATION_SUBMITTED with the request id (EVT-002)', async () => {
+    mockVerificationFindFirst.mockResolvedValue(null);
+    mockVerificationCreate.mockResolvedValue(VERIFICATION_ROW);
+    mockMediaCreateMany.mockResolvedValue({});
+
+    await submitVerification(USER_ID, 'PASSPORT', 'id.jpg', 'selfie.jpg');
+
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.VERIFICATION_SUBMITTED,
+      { verificationId: VERIFICATION_ROW.id, userId: USER_ID },
+      `user:${USER_ID}`,
+    );
+  });
+
   it('throws VerificationAlreadySubmittedError when a pending request exists', async () => {
     mockVerificationFindFirst.mockResolvedValue({ id: 'existing-ver' });
 
@@ -99,6 +118,7 @@ describe('submitVerification', () => {
     ).rejects.toBeInstanceOf(VerificationAlreadySubmittedError);
 
     expect(mockVerificationCreate).not.toHaveBeenCalled();
+    expect(mockPublish).not.toHaveBeenCalled();
   });
 });
 

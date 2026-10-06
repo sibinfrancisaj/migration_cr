@@ -398,3 +398,4 @@ export interface PaymentIntentDto {
   metadata?: Record<string, unknown>;
   createdAt: Date;
 }
+export * from './events.js';

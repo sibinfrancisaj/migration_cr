@@ -7,6 +7,7 @@
     "@abroad-matrimony/ai": "*",
     "@abroad-matrimony/config": "*",
     "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/event-bus": "*",
     "@abroad-matrimony/logger": "*",
     "@abroad-matrimony/shared": "*",
     "@abroad-matrimony/storage": "*"
