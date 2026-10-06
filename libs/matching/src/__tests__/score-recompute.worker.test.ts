@@ -1,7 +1,9 @@
 import {
   processScoreRecompute,
+  processUserScoreRecompute,
   createScoreRecomputeWorker,
   enqueueScoreRecompute,
+  USER_RECOMPUTE_DEBOUNCE_MS,
 } from '../score-recompute.worker.js';
 import { Worker as BullWorker, Queue as BullQueue } from 'bullmq';
 import { CLOUD_EVENT_TYPES, QUEUE_NAMES } from '@abroad-matrimony/shared';
@@ -375,4 +377,100 @@ describe('enqueueScoreRecompute()', () => {
     const queueInst = MockedQueue.mock.results[0].value as { close: jest.Mock };
     expect(queueInst.close).toHaveBeenCalledTimes(1);
   });
+
+  it('removes the job when it completes or fails so later enqueues are accepted (BUG-011)', async () => {
+    await enqueueScoreRecompute('redis://localhost:6379');
+
+    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
+    expect(queueInst.add.mock.calls[0][2]).toEqual(
+      expect.objectContaining({ removeOnComplete: true, removeOnFail: true }),
+    );
+  });
+
+  it('does not delay a full recompute', async () => {
+    await enqueueScoreRecompute('redis://localhost:6379');
+
+    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
+    expect(queueInst.add.mock.calls[0][2].delay).toBeUndefined();
+  });
+
+  it('uses a per-user jobId and debounce delay when userId is set', async () => {
+    await enqueueScoreRecompute('redis://localhost:6379', { userId: 'user-a' });
+
+    const queueInst = MockedQueue.mock.results[0].value as { add: jest.Mock };
+    expect(queueInst.add).toHaveBeenCalledWith(
+      'score-recompute',
+      { userId: 'user-a' },
+      expect.objectContaining({ jobId: 'score-recompute:user:user-a', delay: USER_RECOMPUTE_DEBOUNCE_MS }),
+    );
+  });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// processUserScoreRecompute() (EVT-004)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('processUserScoreRecompute()', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockComputeAndSaveScore.mockResolvedValue(undefined);
+    mockPublish.mockResolvedValue(undefined);
+  });
+
+  it('loads every other profile, excluding the user themselves', async () => {
+    mockProfileFindMany.mockResolvedValue([]);
+    await processUserScoreRecompute('user-b');
+    expect(mockProfileFindMany).toHaveBeenCalledWith({
+      where:  { userId: { not: 'user-b' } },
+      select: { userId: true },
+    });
+  });
+
+  it('computes one pair per other user in canonical order', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }, { userId: 'user-c' }]);
+    const result = await processUserScoreRecompute('user-b');
+    expect(mockComputeAndSaveScore).toHaveBeenCalledWith('user-a', 'user-b');
+    expect(mockComputeAndSaveScore).toHaveBeenCalledWith('user-b', 'user-c');
+    expect(result).toEqual({ totalUsers: 3, totalPairs: 2, computed: 2, skipped: 0, errors: 0 });
+  });
+
+  it('ignores the 24h stale check (never queries recent scores)', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }]);
+    await processUserScoreRecompute('user-b');
+    expect(mockMatchScoreFindMany).not.toHaveBeenCalled();
+  });
+
+  it('counts failed pairs as errors and keeps going', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }, { userId: 'user-c' }]);
+    mockComputeAndSaveScore
+      .mockRejectedValueOnce(new UserProfileMissingError('user-a'))
+      .mockResolvedValueOnce(undefined);
+    const result = await processUserScoreRecompute('user-b');
+    expect(result.computed).toBe(1);
+    expect(result.errors).toBe(1);
+  });
+
+  it('publishes SCORE_RECOMPUTE_COMPLETED with the userId', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }]);
+    await processUserScoreRecompute('user-b');
+    expect(mockPublish).toHaveBeenCalledWith(
+      CLOUD_EVENT_TYPES.SCORE_RECOMPUTE_COMPLETED,
+      expect.objectContaining({ userId: 'user-b', computed: 1 }),
+    );
+  });
+
+  it('reports progress per pair', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }, { userId: 'user-c' }]);
+    const onProgress = jest.fn().mockResolvedValue(undefined);
+    await processUserScoreRecompute('user-b', onProgress);
+    expect(onProgress.mock.calls.map((c) => c[0])).toEqual([50, 100]);
+  });
+
+  it('is used by processScoreRecompute when job data has a userId', async () => {
+    mockProfileFindMany.mockResolvedValue([{ userId: 'user-a' }]);
+    await processScoreRecompute({ userId: 'user-b' });
+    expect(mockProfileFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: { userId: { not: 'user-b' } } }));
+    expect(mockMatchScoreFindMany).not.toHaveBeenCalled();
+  });
+});
+

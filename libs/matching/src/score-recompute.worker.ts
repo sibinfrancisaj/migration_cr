@@ -14,6 +14,12 @@ const log = createChildLogger({ module: 'matching:score-recompute' });
 /** BullMQ job name — used for deduplication via fixed jobId. */
 const JOB_NAME = 'score-recompute';
 
+/**
+ * Per-user recomputes wait this long before running, so a burst of profile
+ * edits (e.g. answering all 12 real-life questions) collapses into one job.
+ */
+export const USER_RECOMPUTE_DEBOUNCE_MS = 30_000;
+
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface ScoreRecomputeJobData {
@@ -24,6 +30,11 @@ export interface ScoreRecomputeJobData {
    * Defaults to `false`.
    */
   force?: boolean;
+  /**
+   * When set, only pairs involving this user are recomputed, always (the
+   * user's own data just changed, so the 24-hour stale check does not apply).
+   */
+  userId?: string;
 }
 
 export interface ScoreRecomputeResult {
@@ -50,6 +61,10 @@ export async function processScoreRecompute(
   data: ScoreRecomputeJobData,
   onProgress?: (pct: number) => Promise<void>,
 ): Promise<ScoreRecomputeResult> {
+  if (data.userId) {
+    return processUserScoreRecompute(data.userId, onProgress);
+  }
+
   const { force = false } = data;
 
   // ── 1. Fetch all user IDs that have a profile row ─────────────────────────
@@ -102,22 +117,10 @@ export async function processScoreRecompute(
 
       if (!force && recentPairSet.has(`${canonA}:${canonB}`)) {
         skipped++;
+      } else if (await computePairSafely(canonA, canonB)) {
+        computed++;
       } else {
-        try {
-          await computeAndSaveScore(canonA, canonB);
-          computed++;
-        } catch (err) {
-          errors++;
-          if (err instanceof UserProfileMissingError) {
-            log.warn('Pair skipped — profile missing', {
-              userAId: canonA, userBId: canonB, missingUser: err.userId,
-            });
-          } else {
-            log.error('Failed to compute pair score', {
-              userAId: canonA, userBId: canonB, err,
-            });
-          }
-        }
+        errors++;
       }
 
       done++;
@@ -131,6 +134,63 @@ export async function processScoreRecompute(
 
   log.info('Score recompute finished', result);
   await publish(CLOUD_EVENT_TYPES.SCORE_RECOMPUTE_COMPLETED, result);
+
+  return result;
+}
+
+/** Compute one pair, counting failures instead of throwing. */
+async function computePairSafely(idA: string, idB: string): Promise<boolean> {
+  const [canonA, canonB] = idA < idB ? [idA, idB] : [idB, idA];
+  try {
+    await computeAndSaveScore(canonA, canonB);
+    return true;
+  } catch (err) {
+    if (err instanceof UserProfileMissingError) {
+      log.warn('Pair skipped — profile missing', {
+        userAId: canonA, userBId: canonB, missingUser: err.userId,
+      });
+    } else {
+      log.error('Failed to compute pair score', { userAId: canonA, userBId: canonB, err });
+    }
+    return false;
+  }
+}
+
+/**
+ * Recompute every pair involving `userId` (EVT-004). Triggered by
+ * PROFILE_UPDATED so a user's matches reflect their latest answers without
+ * waiting for the next full recompute.
+ */
+export async function processUserScoreRecompute(
+  userId: string,
+  onProgress?: (pct: number) => Promise<void>,
+): Promise<ScoreRecomputeResult> {
+  const profiles = await prisma.profile.findMany({
+    where:  { userId: { not: userId } },
+    select: { userId: true },
+  });
+
+  const totalPairs = profiles.length;
+  let computed = 0, errors = 0, done = 0;
+
+  log.info('User score recompute started', { userId, totalPairs });
+
+  for (const { userId: otherId } of profiles) {
+    if (await computePairSafely(userId, otherId)) computed++;
+    else errors++;
+
+    done++;
+    if (onProgress) {
+      await onProgress(Math.round((done / totalPairs) * 100));
+    }
+  }
+
+  const result: ScoreRecomputeResult = {
+    totalUsers: totalPairs + 1, totalPairs, computed, skipped: 0, errors,
+  };
+
+  log.info('User score recompute finished', { userId, ...result });
+  await publish(CLOUD_EVENT_TYPES.SCORE_RECOMPUTE_COMPLETED, { ...result, userId });
 
   return result;
 }
@@ -173,10 +233,10 @@ export function createScoreRecomputeWorker(redisUrl: string): Worker<ScoreRecomp
 /**
  * Enqueues a score-recompute job on the MATCHING queue.
  *
- * Uses a fixed `jobId` (`"score-recompute"`) so BullMQ deduplicates the job —
- * if one is already pending/running, adding a second is a no-op for the
- * waiting state (BullMQ will not add a duplicate with the same ID when one is
- * already in the `waiting` state).
+ * Full recomputes use the fixed jobId `"score-recompute"`; per-user recomputes
+ * use `"score-recompute:user:<userId>"` with a 30s delay. BullMQ ignores an add
+ * whose jobId already exists, which collapses bursts into one job. Jobs are
+ * removed when they finish so the next enqueue is accepted (BUG-011).
  */
 export async function enqueueScoreRecompute(
   redisUrl: string,
@@ -186,13 +246,18 @@ export async function enqueueScoreRecompute(
     connection: { url: redisUrl },
   });
 
+  const jobId = data.userId ? `${JOB_NAME}:user:${data.userId}` : JOB_NAME;
+
   try {
     await queue.add(JOB_NAME, data, {
-      jobId:   JOB_NAME,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 60_000 },
+      jobId,
+      delay:            data.userId ? USER_RECOMPUTE_DEBOUNCE_MS : undefined,
+      attempts:         3,
+      backoff:          { type: 'exponential', delay: 60_000 },
+      removeOnComplete: true,
+      removeOnFail:     true,
     });
-    log.info('Score recompute job enqueued', { force: data.force ?? false });
+    log.info('Score recompute job enqueued', { jobId, force: data.force ?? false });
   } finally {
     await queue.close();
   }

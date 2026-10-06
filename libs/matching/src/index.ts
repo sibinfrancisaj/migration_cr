@@ -10,7 +10,14 @@ export type { UserScoringData, ScoreResult } from './scoring.service.js';
 export { computeAndSaveScore, getUserScoringData, UserProfileMissingError, ALGORITHM_VERSION } from './match-score.service.js';
 
 // BullMQ batch worker
-export { processScoreRecompute, createScoreRecomputeWorker, enqueueScoreRecompute } from './score-recompute.worker.js';
+export {
+  processScoreRecompute,
+  processUserScoreRecompute,
+  createScoreRecomputeWorker,
+  enqueueScoreRecompute,
+  USER_RECOMPUTE_DEBOUNCE_MS,
+} from './score-recompute.worker.js';
+export { createMatchingEventHandlers, RECOMPUTE_HANDLER_NAME } from './score-recompute.event-handlers.js';
 export type { ScoreRecomputeJobData, ScoreRecomputeResult } from './score-recompute.worker.js';
 
 // Redis cache
