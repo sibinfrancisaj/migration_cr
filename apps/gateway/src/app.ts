@@ -2,7 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
-import { rateLimit } from 'express-rate-limit';
+import { rateLimit, type Store } from 'express-rate-limit';
 import { getEnv } from '@abroad-matrimony/config';
 import { createChildLogger } from '@abroad-matrimony/logger';
 import { requestIdMiddleware } from './middleware/request-id.middleware.js';
@@ -13,7 +13,16 @@ import { registerRoutes } from './routes/index.js';
 
 const log = createChildLogger({ module: 'gateway:app' });
 
-export function createApp(): express.Application {
+export interface CreateAppOptions {
+  /**
+   * Hit-counter store for the global rate limiter. server.ts passes the Redis
+   * store so limits are shared across instances (ADR-022); omitted (tests),
+   * express-rate-limit's in-memory store is used.
+   */
+  rateLimitStore?: Store;
+}
+
+export function createApp(options: CreateAppOptions = {}): express.Application {
   const env = getEnv();
   const app = express();
 
@@ -53,6 +62,9 @@ export function createApp(): express.Application {
       max: env.RATE_LIMIT_MAX_REQUESTS,
       standardHeaders: true,
       legacyHeaders: false,
+      store: options.rateLimitStore,
+      // Redis down → let traffic through rather than take the API down (ADR-022)
+      passOnStoreError: true,
       message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
     }),
   );

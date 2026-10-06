@@ -16,6 +16,7 @@ import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-ma
 import { isAiConfigured, createAiWorker } from '@abroad-matrimony/ai';
 import { createWeeklyDropWorker } from '@abroad-matrimony/introductions';
 import { createApp } from './app.js';
+import { RedisRateLimitStore } from './lib/redis-rate-limit.store.js';
 
 async function start(): Promise<void> {
   initTelemetry();
@@ -63,7 +64,7 @@ async function start(): Promise<void> {
   const weeklyDropWorker: Worker = await createWeeklyDropWorker(env.REDIS_URL);
   logger.info('Weekly drop worker started (cron: 0 9 * * 0)');
 
-  const app = createApp();
+  const app = createApp({ rateLimitStore: new RedisRateLimitStore(getRedisClient) });
   const server = app.listen(env.PORT, () => {
     logger.info(`Gateway listening`, { port: env.PORT, env: env.NODE_ENV });
   });
