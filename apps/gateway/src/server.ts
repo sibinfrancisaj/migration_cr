@@ -1,20 +1,10 @@
-import type { Worker } from 'bullmq';
 import { getEnv } from '@abroad-matrimony/config';
 import { logger, initTelemetry, shutdownTelemetry } from '@abroad-matrimony/logger';
 import { connectDb, disconnectDb } from '@abroad-matrimony/db';
 import { getRedisClient, closeRedisClient } from '@abroad-matrimony/cache';
-import {
-  initEventBus,
-  shutdownEventBus,
-  createEventWorker,
-  mergeHandlerRegistries,
-} from '@abroad-matrimony/event-bus';
-import { createScoreRecomputeWorker, createMatchingEventHandlers } from '@abroad-matrimony/matching';
-import { createNotificationWorker, createNotificationEventHandlers } from '@abroad-matrimony/notification';
-import { createProfileEventHandlers } from '@abroad-matrimony/profile';
+import { initEventBus, shutdownEventBus } from '@abroad-matrimony/event-bus';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
-import { isAiConfigured, createAiWorker } from '@abroad-matrimony/ai';
-import { createWeeklyDropWorker } from '@abroad-matrimony/introductions';
+import { startWorkers, type RunningWorkers } from '@abroad-matrimony/workers';
 import { createApp } from './app.js';
 import { RedisRateLimitStore } from './lib/redis-rate-limit.store.js';
 
@@ -34,35 +24,14 @@ async function start(): Promise<void> {
     logger.warn('Firebase credentials not set — messaging will use MockMessagingAdapter');
   }
 
-  // Start matching worker (runs in-process; move to dedicated worker app in production)
-  const scoreWorker: Worker = createScoreRecomputeWorker(env.REDIS_URL);
-
-  // Start notification worker — handles EMAIL / SMS / PUSH jobs from the notification queue
-  const notificationWorker: Worker = createNotificationWorker(env.REDIS_URL);
-
-  // Start CloudEvent consumer — fans domain events out to notification, matching and profile handlers (EVT-001)
-  const eventWorker: Worker = createEventWorker(
-    env.REDIS_URL,
-    mergeHandlerRegistries(
-      createNotificationEventHandlers(env.REDIS_URL),
-      createMatchingEventHandlers(env.REDIS_URL),
-      createProfileEventHandlers(),
-    ),
-  );
-
-  // Start AI worker — handles profile intelligence updates (debounced 60s, concurrency 2)
-  // No-op when OPENAI_API_KEY is absent; isAiConfigured() guard avoids unnecessary connection
-  let aiWorker: Worker | null = null;
-  if (isAiConfigured()) {
-    aiWorker = createAiWorker(env.REDIS_URL);
-    logger.info('AI worker started (OpenAI configured)');
+  // BullMQ workers run here only until apps/worker is deployed (F-051 / ADR-023).
+  // With apps/worker running, set GATEWAY_RUN_WORKERS=false so jobs aren't consumed by both.
+  let workers: RunningWorkers | null = null;
+  if (env.GATEWAY_RUN_WORKERS) {
+    workers = await startWorkers(env.REDIS_URL);
   } else {
-    logger.warn('OPENAI_API_KEY not set — AI worker not started; profile intelligence disabled');
+    logger.info('GATEWAY_RUN_WORKERS=false — workers run in apps/worker');
   }
-
-  // Start weekly introduction drop worker — fires Sunday 09:00 UTC via BullMQ cron
-  const weeklyDropWorker: Worker = await createWeeklyDropWorker(env.REDIS_URL);
-  logger.info('Weekly drop worker started (cron: 0 9 * * 0)');
 
   const app = createApp({ rateLimitStore: new RedisRateLimitStore(getRedisClient) });
   const server = app.listen(env.PORT, () => {
@@ -72,11 +41,7 @@ async function start(): Promise<void> {
   async function shutdown(signal: string): Promise<void> {
     logger.info(`Received ${signal} — graceful shutdown`);
     server.close(async () => {
-      await eventWorker.close();
-      await scoreWorker.close();
-      await notificationWorker.close();
-      if (aiWorker) await aiWorker.close();
-      await weeklyDropWorker.close();
+      await workers?.stop();
       await shutdownEventBus();
       await closeRedisClient();
       await disconnectDb();

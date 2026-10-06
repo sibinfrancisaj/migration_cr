@@ -4,6 +4,16 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().default(3000),
   ADMIN_PORT: z.coerce.number().default(3001),
+  /** Health-check port for apps/worker (F-051). */
+  WORKER_PORT: z.coerce.number().default(3200),
+  /**
+   * Run BullMQ workers inside the gateway process (F-051 / ADR-023).
+   * Set to "false" when apps/worker is deployed, so jobs are not processed twice.
+   */
+  GATEWAY_RUN_WORKERS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
   API_VERSION: z.string().default('v1'),
   CORS_ORIGINS: z
     .string()
