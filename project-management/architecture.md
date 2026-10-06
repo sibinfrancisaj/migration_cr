@@ -546,7 +546,7 @@ v2 dims (max 5):  -0.10  → coreScale min 0.83
 - Event payload types live in `libs/shared/src/types/events.ts`. Payloads carry IDs only, never PII; handlers look up contact details at delivery time.
 - The in-memory WAL is capped at `WAL_MAX_BUFFER` (10,000) while Redis is down; oldest events are dropped with an error log.
 
-**Consequences:** New reactions to an event are a new handler in the owning lib, with no publisher change. The consumer runs in the gateway process for now (like the other workers); moving all workers to a dedicated worker app is tracked in future-plans.md. A slow handler delays its siblings for the same event, so handlers should only enqueue follow-up jobs, not do heavy work inline.
+**Consequences:** New reactions to an event are a new handler in the owning lib, with no publisher change. The consumer is started by `startWorkers()` in `libs/workers`, which runs in `apps/worker` and (while `GATEWAY_RUN_WORKERS=true`) in the gateway — see ADR-023. A slow handler delays its siblings for the same event, so handlers should only enqueue follow-up jobs, not do heavy work inline.
 
 ---
 
@@ -562,6 +562,20 @@ v2 dims (max 5):  -0.10  → coreScale min 0.83
 - `passOnStoreError: true` — when Redis is unreachable the global limiter lets requests through. The security-sensitive limiters (OTP, admin login, trusted device) are separate and unchanged.
 
 **Consequences:** Limits hold under horizontal scaling. A Redis outage removes global throttling (not auth throttling) until Redis recovers; this is logged by express-rate-limit. The same script can replace the INCR + EXPIRE pair in the auth limiters (F-003).
+
+---
+
+### ADR-023 · Dedicated Worker Process + Shared `libs/workers` (F-051)
+**Date:** 2026-10-06 | **Status:** Accepted
+
+**Context:** Every BullMQ worker (CloudEvent consumer, score recompute, notification, AI, weekly-drop cron) was started inside `apps/gateway/src/server.ts`. Scaling the gateway for HTTP load also multiplied worker concurrency, a slow job competed with requests for the event loop, and a gateway deploy restarted in-flight jobs.
+
+**Decision:**
+- New lib `libs/workers` exports `startWorkers(redisUrl): Promise<RunningWorkers>`. It is the single place that knows which workers exist. `RunningWorkers.stop()` closes them in reverse start order and logs (never throws) close failures.
+- New app `apps/worker`: initialises telemetry, DB, Redis, the event bus (workers publish follow-up events) and Firebase, then calls `startWorkers()`. Exposes `GET /health` on `WORKER_PORT` (default 3200) via plain `node:http` — 200 when running, 503 while starting/stopping. On SIGTERM it closes workers first (in-flight jobs finish), then connections.
+- `GATEWAY_RUN_WORKERS` (default `true`) keeps today's single-process behaviour for local dev. Deployments that run `apps/worker` set it to `false` on the gateway.
+
+**Consequences:** Gateway and workers scale and deploy independently. Running both with `GATEWAY_RUN_WORKERS=true` is safe (BullMQ distributes jobs; repeatable cron jobs dedupe by key) but doubles worker concurrency, so the flag must be set deliberately. Adding a worker means one line in `startWorkers()`.
 
 ---
 

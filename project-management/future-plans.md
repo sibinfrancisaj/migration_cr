@@ -129,6 +129,6 @@
 | F-030 | Add `project.json` NX configs per lib/app         | Low      | Currently NX infers from package.json; explicit configs give more control |
 | F-031 | Replace `yarn.lock` leftover with npm-only setup  | Low      | `yarn.lock` still in repo alongside `package-lock.json` after conversion |
 | F-032 | Per-package jest configs (vs single root config)  | Low      | Root jest.config works; per-package configs enable `nx affected` for tests |
-| F-051 | Dedicated worker app (`apps/worker`)               | Medium   | Event, matching, notification, AI and drop workers all run inside the gateway process |
+| F-051 | Dedicated worker app (`apps/worker`)               | ✅ Done  | `libs/workers` + `apps/worker` (ADR-023), branch `feat/F-051-worker-app` |
 | F-052 | Redis store for express-rate-limit                 | ✅ Done  | `RedisRateLimitStore` (ADR-022), branch `feat/F-052-redis-rate-limiter` |
 | F-053 | Reuse BullMQ Queue instances in enqueue helpers    | Low      | `enqueueNotification` / `enqueueScoreRecompute` open and close a Redis connection per call |

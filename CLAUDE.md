@@ -126,6 +126,8 @@ Backend: NX monorepo, Express API + admin API + BullMQ workers.
 migration_cr/
 ├── apps/
 │   ├── gateway/          ← Public-facing REST API (port 3000)
+│   ├── seeder/           ← Dev/staging data seeder (port 3100)
+│   ├── worker/           ← Dedicated BullMQ worker process (health on 3200) — ADR-023
 │   └── admin-api/        ← Admin REST API (port 3001) — NOT YET BUILT
 │
 ├── libs/
@@ -143,7 +145,8 @@ migration_cr/
 │   ├── groups/           ← Phase 5+ stub
 │   ├── notification/     ← NOT YET BUILT (Twilio, Brevo, Firebase adapters)
 │   ├── payment/          ← NOT YET BUILT (Stripe, Razorpay, diamond ledger)
-│   └── storage/          ← S3 upload adapter (Phase 3 — complete)
+│   ├── storage/          ← S3 upload adapter (Phase 3 — complete)
+│   └── workers/          ← startWorkers() — every BullMQ worker, shared by gateway + apps/worker
 │
 ├── docker/
 │   ├── docker-compose.yml   ← Redis 7 + Postgres 16 + Redis Commander (:8081)
@@ -674,7 +677,7 @@ app.use(express.json());
 ### ADR-021: CloudEvent Consumer — Handler Registry per Domain Lib
 `createEventWorker(redisUrl, registry)` in `libs/event-bus` consumes the `events` queue.
 Each domain lib exports its own handler factory (`createNotificationEventHandlers`, `createMatchingEventHandlers`);
-`apps/gateway/src/server.ts` merges them with `mergeHandlerRegistries()`. All handlers for an event run; any
+`libs/workers` `startWorkers()` merges them with `mergeHandlerRegistries()` (ADR-023). All handlers for an event run; any
 failure retries the whole event, so **handlers must be idempotent** (dedupe via jobId derived from `event.id`).
 Payload types: `libs/shared/src/types/events.ts` — IDs only, no PII.
 
@@ -684,6 +687,14 @@ so the global `express-rate-limit` counter is shared across gateway instances. F
 (INCR + PEXPIRE on first hit — atomic). `passOnStoreError: true`: if Redis is down the limiter fails **open**
 (availability over strictness; per-route OTP/admin/trusted-device limiters still fail closed). Tests call `createApp()`
 with no store → in-memory store, no Redis connection.
+
+### ADR-023: Dedicated Worker Process (`apps/worker`) + Shared `libs/workers`
+`startWorkers(redisUrl)` in `libs/workers` starts every BullMQ worker (events, score recompute, notification,
+AI if `OPENAI_API_KEY` set, weekly-drop cron) and returns `{ workers, stop }`; `stop()` closes them in reverse
+order and never throws. `apps/worker` (health on `WORKER_PORT`, default 3200) runs it on its own. The gateway
+also calls it while `GATEWAY_RUN_WORKERS=true` (default, keeps single-process local dev); set it to `false`
+wherever `apps/worker` is deployed, or both processes consume the same queues. **New workers go in
+`startWorkers()`, never directly in a `server.ts`.**
 
 ---
 
@@ -1194,7 +1205,10 @@ BUG-012 ✅ Profile.verificationStatus synced on submit/approve/reject; profile 
 Branching: one feature branch per feature/fix; branches that touch the same files are stacked on the previous one.
 F-052 ✅ Redis-backed global rate limiter (branch feat/F-052-redis-rate-limiter, stacked on fix/BUG-012) — ADR-022.
 
-Next: F-051 (dedicated worker app — move BullMQ workers out of the gateway process).
+F-051 ✅ Dedicated worker app (branch feat/F-051-worker-app, stacked on feat/F-052-redis-rate-limiter) — ADR-023.
+  libs/workers startWorkers() + apps/worker (health :3200). Gateway still runs workers unless GATEWAY_RUN_WORKERS=false.
+
+Next: F-053 (reuse BullMQ Queue instances), F-003 (auth limiters on the Lua script), F-049/F-050 notifications.
 Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
@@ -1476,6 +1490,10 @@ npm run db:generate
 
 # 5. Run gateway
 cd apps/gateway && npm run dev
+
+# 5b. (Optional) Run workers in their own process — ADR-023
+#     Set GATEWAY_RUN_WORKERS=false in .env first, otherwise gateway + worker both consume jobs
+cd apps/worker && npm run dev      # health: http://localhost:3200/health
 
 # 6. Run tests
 npx jest --projects libs/auth apps/gateway --no-coverage

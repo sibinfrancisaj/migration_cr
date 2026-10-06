@@ -2048,6 +2048,19 @@ presence/{userId}                  [Realtime DB — not Firestore]
 - 2026-10-06: Wrote a ~60-line store instead of adding `rate-limit-redis` — avoids a new dependency and lockfile churn; the Lua script also closes the INCR/EXPIRE gap from F-003.
 - 2026-10-06: Fail open on Redis errors for the global limiter only; auth limiters keep their existing behaviour.
 
+### F-051 · Dedicated worker app ✅
+**AC:** every BullMQ worker can run in a process separate from the gateway; the gateway can turn its workers off with one env var and keeps them on by default; the worker process exposes a health check; shutdown lets in-flight jobs finish before closing DB/Redis; a worker failing to close never blocks closing the others.
+- [x] `libs/workers` — `startWorkers()` / `RunningWorkers.stop()` (events, matching, notification, AI when configured, weekly drop)
+- [x] `apps/worker` — `server.ts` lifecycle + `health.ts` (`GET /health` on `WORKER_PORT`)
+- [x] Gateway `server.ts` uses `startWorkers()` behind `GATEWAY_RUN_WORKERS`
+- [x] `WORKER_PORT` + `GATEWAY_RUN_WORKERS` in `libs/config/src/env.ts` and `.env.example`
+- [x] 10 tests: start set with/without AI, handler-registry wiring, reverse close order, close failure isolation; health 200/503/404
+
+**Decision Log**
+- 2026-10-06: Workers live in a lib, not copied into the app, so gateway and worker cannot drift on which workers run.
+- 2026-10-06: `GATEWAY_RUN_WORKERS` defaults to `true` — no change for anyone running only the gateway locally; deployments opt in to the split.
+- 2026-10-06: Health endpoint uses `node:http`, not Express — one route, no middleware needed.
+
 ---
 
 ## Design Decisions Log (Figma Analysis Session — 2026-05-28)
