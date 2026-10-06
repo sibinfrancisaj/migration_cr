@@ -1,0 +1,28 @@
+{
+  "name": "@abroad-matrimony/worker",
+  "version": "1.0.0",
+  "description": "Dedicated BullMQ worker process for Abroad Matrimony (F-051 / ADR-023)",
+  "private": true,
+  "main": "dist/src/server.js",
+  "scripts": {
+    "dev": "ts-node -r tsconfig-paths/register src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/server.js",
+    "test": "jest --passWithNoTests"
+  },
+  "dependencies": {
+    "@abroad-matrimony/cache": "*",
+    "@abroad-matrimony/config": "*",
+    "@abroad-matrimony/db": "*",
+    "@abroad-matrimony/event-bus": "*",
+    "@abroad-matrimony/firebase": "*",
+    "@abroad-matrimony/logger": "*",
+    "@abroad-matrimony/workers": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.5.0"
+  }
+}
