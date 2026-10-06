@@ -7,6 +7,8 @@ const log = createChildLogger({ module: 'event-bus' });
 
 const WAL_FLUSH_THRESHOLD = 50;
 const WAL_FLUSH_INTERVAL_MS = 500;
+/** Upper bound on buffered events while Redis is unreachable; oldest are dropped past this. */
+export const WAL_MAX_BUFFER = 10_000;
 
 let _queue: Queue | null = null;
 const walBuffer: WalEntry[] = [];
@@ -24,6 +26,8 @@ export function initEventBus(redisUrl: string): void {
   });
 
   flushTimer = setInterval(() => void flushWal(), WAL_FLUSH_INTERVAL_MS);
+  // Don't let the flush timer alone keep the process (or a test run) alive.
+  flushTimer.unref();
 }
 
 export function buildCloudEvent<T>(type: string, data: T, subject?: string): CloudEventPayload<T> {
@@ -41,6 +45,7 @@ export function buildCloudEvent<T>(type: string, data: T, subject?: string): Clo
 export async function publish<T>(type: string, data: T, subject?: string): Promise<void> {
   const event = buildCloudEvent(type, data, subject);
   walBuffer.push({ event, queuedAt: Date.now(), attempts: 0 });
+  trimWal();
 
   if (walBuffer.length >= WAL_FLUSH_THRESHOLD) {
     await flushWal();
@@ -61,7 +66,25 @@ async function flushWal(): Promise<void> {
   } catch (err) {
     log.error('WAL flush failed — re-queuing batch', { count: batch.length, err });
     walBuffer.unshift(...batch);
+    trimWal();
   }
+}
+
+/** Drop the oldest entries when Redis has been down long enough to fill the buffer. */
+function trimWal(): void {
+  const overflow = walBuffer.length - WAL_MAX_BUFFER;
+  if (overflow > 0) {
+    const dropped = walBuffer.splice(0, overflow);
+    log.error('WAL buffer full — dropping oldest events', {
+      dropped: dropped.length,
+      types: [...new Set(dropped.map((e) => e.event.type))],
+    });
+  }
+}
+
+/** Number of events waiting to be flushed (for health checks and tests). */
+export function getWalBufferSize(): number {
+  return walBuffer.length;
 }
 
 export async function shutdownEventBus(): Promise<void> {
