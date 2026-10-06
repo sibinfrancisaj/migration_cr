@@ -134,7 +134,7 @@ migration_cr/
 │   ├── logger/           ← Winston + OpenTelemetry
 │   ├── db/               ← Prisma client singleton, schema at prisma/schema.prisma
 │   ├── cache/            ← ioredis client + helpers
-│   ├── event-bus/        ← CloudEvents publisher + in-memory WAL + BullMQ
+│   ├── event-bus/        ← CloudEvents publisher + in-memory WAL + BullMQ + event worker/handler registry
 │   ├── auth/             ← JWT issue/verify, OTP, RBAC (Phase 2 — complete)
 │   ├── matching/         ← Scoring algorithm, BullMQ worker, cache (Phase 4 — complete)
 │   ├── firebase/         ← Firebase Admin SDK singleton (Firestore, FCM, Realtime DB)
@@ -671,6 +671,13 @@ app.use(express.json());
 **Decision:** `libs/ai` wraps gpt-4o-mini (completions), text-embedding-3-small (embeddings), and Whisper (voice transcription). ProfileEmbedding model stores summary, trait tags, vibe scores, and 1536-dim vector in Supabase pgvector. All AI paths are optional no-ops when API key absent.
 **Rationale:** Demographic matching alone is insufficient for Indian diaspora matrimony. Voice intro vibes, prompt answer depth, habit consistency, and event attendance are personality signals that only semantic AI analysis can extract. pgvector is native to Supabase — zero extra infrastructure. gpt-4o-mini is 15× cheaper than gpt-4o with sufficient quality for profile analysis.
 
+### ADR-021: CloudEvent Consumer — Handler Registry per Domain Lib
+`createEventWorker(redisUrl, registry)` in `libs/event-bus` consumes the `events` queue.
+Each domain lib exports its own handler factory (`createNotificationEventHandlers`, `createMatchingEventHandlers`);
+`apps/gateway/src/server.ts` merges them with `mergeHandlerRegistries()`. All handlers for an event run; any
+failure retries the whole event, so **handlers must be idempotent** (dedupe via jobId derived from `event.id`).
+Payload types: `libs/shared/src/types/events.ts` — IDs only, no PII.
+
 ---
 
 ## 8. Code Conventions
@@ -724,6 +731,12 @@ Always `@abroad-matrimony/<lib>` path aliases. Never relative paths across lib b
 
 ### New Library Scaffold
 `package.json` (name, version, main, types, deps) + `src/index.ts` (barrel). No `project.json` needed.
+
+### Domain Events (ADR-002 / ADR-021)
+- Publish with `publish<PayloadType>(CLOUD_EVENT_TYPES.X, data, subject)` **after** the DB write succeeds — never on a validation/permission failure path.
+- Add the payload interface to `libs/shared/src/types/events.ts`; IDs only, never phone/email.
+- To react to an event, add an `EventHandler` to the owning lib's `create<Domain>EventHandlers(redisUrl)` factory and merge it in `server.ts`. Handlers only enqueue follow-up jobs and must be idempotent.
+- Lib tests that call a publishing service mock `@abroad-matrimony/event-bus` and assert `publish` args.
 
 ### Error Handling
 All Express route errors → `AppError` thrown or `next(err)`.
@@ -1163,8 +1176,15 @@ KEY DECISIONS (Phases 13–16, 2026-06-02):
   - Profile.privacySettings Json? (Phase 15)
   Both added to libs/db/prisma/schema.prisma.
 
-Next phase: Phase 5b — Connections + Verification (CONN-001–004, VER-001–003).
-Service layers already built (libs/connections, libs/verification). Gateway wiring only.
+Phase 17 ✅ Event Consumer + Notification Wiring (branch feat/EVT-001-event-consumer, 2026-10-06).
+EVT-001 ✅ libs/event-bus createEventWorker + handler registry + WAL cap (ADR-021)
+EVT-002 ✅ CONNECTION_SENT/ACCEPTED, MATCH_CREATED, VERIFICATION_SUBMITTED/REVIEWED, PROFILE_UPDATED/COMPLETED published
+EVT-003 ✅ Push notifications for connection request/accept, verification result, membership activation
+EVT-004 ✅ Per-user score recompute on PROFILE_UPDATED (30s debounce); BUG-011 recompute dedupe fixed
+Open: BUG-012 — approving verification never sets Profile.verificationStatus.
+
+Next: fix BUG-012, then F-036 (Redis-backed rate limiter) and F-035 (dedicated worker app).
+Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
 before any Phase 8a/8b/8c/8d/8e work begins. Run locally (cloud runner cannot reach Supabase).

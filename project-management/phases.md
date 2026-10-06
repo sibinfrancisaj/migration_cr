@@ -608,3 +608,16 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 - `apps/gateway/src/controllers/matches/__tests__/tuning.controller.test.ts` — 19 tests (was 7, +12 new)
 - `docs/api/openapi.yaml` — Match Tuning section replaced; 3 new paths
 - `docs/api/postman-collection.json` — Match Tuning folder updated with 5 requests
+
+---
+
+## Phase 17 — Event Consumer + Notification Wiring ✅
+**Goal:** Consume the CloudEvents queue so domain actions notify users and refresh match scores (ADR-021).
+**Status:** Complete on `feat/EVT-001-event-consumer` (2026-10-06) — awaiting local test + PR
+
+| Task ID | Description                                                                 | Status |
+|---------|-----------------------------------------------------------------------------|--------|
+| EVT-001 | `libs/event-bus` event worker + handler registry + WAL cap + tests          | ✅     |
+| EVT-002 | Publish connection, match, verification and profile events from services    | ✅     |
+| EVT-003 | Notification handlers: connection request/accept, verification, membership  | ✅     |
+| EVT-004 | Per-user score recompute on PROFILE_UPDATED (+ BUG-011 dedupe fix)          | ✅     |

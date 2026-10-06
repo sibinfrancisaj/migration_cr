@@ -206,9 +206,16 @@ libs/event-bus/publisher.ts
                                                  │
                                     BullMQ.addBulk(events)
                                                  │
-                                           Redis queue
+                                           Redis queue (events)
                                                  │
-                                    [future BullMQ worker processes]
+                              createEventWorker() — libs/event-bus/subscriber.ts
+                                                 │
+                              dispatchEvent(): registry[event.type] → handlers (allSettled)
+                                     │                                  │
+                  notification handlers                        matching handlers
+          CONNECTION_SENT / ACCEPTED, VERIFICATION_REVIEWED,   PROFILE_UPDATED →
+          MEMBERSHIP_ACTIVATED → enqueueNotification(PUSH,     enqueueScoreRecompute({ userId })
+          jobId = eventId:handler:deviceId)                    (30s debounce, per-user jobId)
 ```
 
 ### 3.4 Feature Flag Evaluation
@@ -520,6 +527,23 @@ v2 dims (max 5):  -0.10  → coreScale min 0.83
 **Simplified tuning UI (ALG-011):** `POST /api/v1/profile/match-tuning` accepts `{ settlementImportance, familyImportance }` (1–5 ratings). Importance ratings map to multipliers: 1→0.5, 2→0.75, 3→1.0, 4→1.75, 5→2.5. Stored in the existing `MatchTuning` model under `settlementIntent` and `familyInvolvement` keys.
 
 **Consequences:** Personalized re-ranking is within-page only (the DB cursor pagination is still ordered by `totalScore`). Full global re-ranking would require applying tuning at the DB query layer (e.g. stored function) — deferred to a future phase. Tuning changes trigger a background BullMQ full rescore job (ALG-013) to update the stored `totalScore` with new dimension data over time.
+
+---
+
+### ADR-021 · CloudEvent Consumer — Handler Registry in Each Domain Lib (EVT-001)
+**Date:** 2026-10-06 | **Status:** Accepted
+
+**Context:** ADR-002 built the publish side only. Events reached Redis and were never processed, so no domain action produced a notification and profile edits never refreshed match scores.
+
+**Decision:**
+- `libs/event-bus` gains `createEventWorker(redisUrl, registry)`, `dispatchEvent()` and `mergeHandlerRegistries()`. A registry maps event type → `EventHandler[]` (`{ name, handle }`).
+- Each domain lib exports a factory for its own handlers (`createNotificationEventHandlers`, `createMatchingEventHandlers`). `libs/event-bus` stays dependency-free of domain libs; the app (`apps/gateway/src/server.ts`) merges registries and starts the worker.
+- All handlers for an event run (`Promise.allSettled`); any failure rethrows `EventHandlerError` so BullMQ retries the whole job (5 attempts, exponential, set by the publisher).
+- **Handlers must be idempotent.** Notification handlers enqueue with `jobId = <eventId>:<handler>:<deviceId>` so a retry never re-sends; the matching handler relies on its per-user recompute jobId.
+- Event payload types live in `libs/shared/src/types/events.ts`. Payloads carry IDs only, never PII; handlers look up contact details at delivery time.
+- The in-memory WAL is capped at `WAL_MAX_BUFFER` (10,000) while Redis is down; oldest events are dropped with an error log.
+
+**Consequences:** New reactions to an event are a new handler in the owning lib, with no publisher change. The consumer runs in the gateway process for now (like the other workers); moving all workers to a dedicated worker app is tracked in future-plans.md. A slow handler delays its siblings for the same event, so handlers should only enqueue follow-up jobs, not do heavy work inline.
 
 ---
 

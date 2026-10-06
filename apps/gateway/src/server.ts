@@ -3,9 +3,14 @@ import { getEnv } from '@abroad-matrimony/config';
 import { logger, initTelemetry, shutdownTelemetry } from '@abroad-matrimony/logger';
 import { connectDb, disconnectDb } from '@abroad-matrimony/db';
 import { getRedisClient, closeRedisClient } from '@abroad-matrimony/cache';
-import { initEventBus, shutdownEventBus } from '@abroad-matrimony/event-bus';
-import { createScoreRecomputeWorker } from '@abroad-matrimony/matching';
-import { createNotificationWorker } from '@abroad-matrimony/notification';
+import {
+  initEventBus,
+  shutdownEventBus,
+  createEventWorker,
+  mergeHandlerRegistries,
+} from '@abroad-matrimony/event-bus';
+import { createScoreRecomputeWorker, createMatchingEventHandlers } from '@abroad-matrimony/matching';
+import { createNotificationWorker, createNotificationEventHandlers } from '@abroad-matrimony/notification';
 import { isFirebaseConfigured, initFirebase, shutdownFirebase } from '@abroad-matrimony/firebase';
 import { isAiConfigured, createAiWorker } from '@abroad-matrimony/ai';
 import { createWeeklyDropWorker } from '@abroad-matrimony/introductions';
@@ -33,6 +38,15 @@ async function start(): Promise<void> {
   // Start notification worker — handles EMAIL / SMS / PUSH jobs from the notification queue
   const notificationWorker: Worker = createNotificationWorker(env.REDIS_URL);
 
+  // Start CloudEvent consumer — fans domain events out to notification + matching handlers (EVT-001)
+  const eventWorker: Worker = createEventWorker(
+    env.REDIS_URL,
+    mergeHandlerRegistries(
+      createNotificationEventHandlers(env.REDIS_URL),
+      createMatchingEventHandlers(env.REDIS_URL),
+    ),
+  );
+
   // Start AI worker — handles profile intelligence updates (debounced 60s, concurrency 2)
   // No-op when OPENAI_API_KEY is absent; isAiConfigured() guard avoids unnecessary connection
   let aiWorker: Worker | null = null;
@@ -55,6 +69,7 @@ async function start(): Promise<void> {
   async function shutdown(signal: string): Promise<void> {
     logger.info(`Received ${signal} — graceful shutdown`);
     server.close(async () => {
+      await eventWorker.close();
       await scoreWorker.close();
       await notificationWorker.close();
       if (aiWorker) await aiWorker.close();

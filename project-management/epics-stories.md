@@ -1997,6 +1997,45 @@ presence/{userId}                  [Realtime DB — not Firestore]
 
 ---
 
+## PHASE 17 — Event Consumer + Notification Wiring (EVT) ✅ (completed 2026-10-06)
+
+> Branch `feat/EVT-001-event-consumer`. ADR-021. Fixes BUG-011, BUG-013; found BUG-012.
+
+### EVT-001 · Event worker + handler registry (`libs/event-bus`) ✅
+**AC:** events on the `events` queue are consumed; each handler for the type runs; one failing handler does not stop the others but the job is retried; events with no handlers complete; WAL cannot grow without bound while Redis is down.
+- [x] `subscriber.ts` — `EventHandler`, `EventHandlerRegistry`, `dispatchEvent()`, `mergeHandlerRegistries()`, `createEventWorker()`, `EventHandlerError`
+- [x] `publisher.ts` — `WAL_MAX_BUFFER` (10,000, drop-oldest), `getWalBufferSize()`, flush timer `unref()`
+- [x] `jest.config.ts` + 24 tests (publisher + subscriber); added to `test:unit`
+- [x] Worker started/closed in `apps/gateway/src/server.ts`
+
+### EVT-002 · Publish missing domain events ✅
+**AC:** each event fires only after its DB write succeeds; no event on validation/permission failure; payloads hold IDs only.
+- [x] `libs/shared/src/types/events.ts` — typed payloads per event
+- [x] `CONNECTION_SENT` (sendConnectionRequest), `CONNECTION_ACCEPTED` + `MATCH_CREATED` (acceptConnection)
+- [x] `VERIFICATION_SUBMITTED` (submitVerification), `VERIFICATION_REVIEWED` (approve/reject)
+- [x] `PROFILE_UPDATED` on every `recalculateCompletionScore()`; `PROFILE_COMPLETED` the first time the score reaches 100
+
+### EVT-003 · Notification handlers (`libs/notification`) ✅
+**AC:** recipient gets one push per registered device; retries never duplicate; users without push tokens are skipped; rejection reason is not sent in the push.
+- [x] `createNotificationEventHandlers(redisUrl)` — CONNECTION_SENT → receiver, CONNECTION_ACCEPTED → original sender, VERIFICATION_REVIEWED → user, MEMBERSHIP_ACTIVATED → user
+- [x] `enqueueNotification(..., { jobId })` — dedupe key `<eventId>:<handler>:<deviceId>`
+- [x] Copy + deep-link `data.type` in `events/event-notification.constants.ts`
+- [x] MESSAGE_SENT intentionally not handled — `send-message.service.ts` already pushes with presence check
+
+### EVT-004 · Per-user score recompute on profile change (`libs/matching`) ✅
+**AC:** a profile edit recomputes all of that user's pairs (ignoring the 24h stale check); a burst of edits collapses into one job.
+- [x] `ScoreRecomputeJobData.userId`; `processUserScoreRecompute()`
+- [x] `enqueueScoreRecompute` — per-user jobId + `USER_RECOMPUTE_DEBOUNCE_MS` (30s); `removeOnComplete/removeOnFail` (BUG-011)
+- [x] `createMatchingEventHandlers(redisUrl)` — PROFILE_UPDATED → per-user recompute
+
+**Decision Log**
+- 2026-10-06: Handlers live in the domain lib that owns the reaction; event-bus has no domain deps; the app merges registries (ADR-021).
+- 2026-10-06: Retry granularity is the whole event, so handlers must be idempotent (jobId dedupe) rather than splitting one job per handler.
+- 2026-10-06: Push only for v1. Email for verification results is a follow-up (needs Brevo templates).
+- 2026-10-06: GROUP_INTRO_DROP notifications deferred: drops go LIVE at `releaseAt`, so the event should fire on release, not on creation.
+
+---
+
 ## Design Decisions Log (Figma Analysis Session — 2026-05-28)
 
 | Decision | Choice | Rationale |

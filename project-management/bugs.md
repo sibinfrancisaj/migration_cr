@@ -18,6 +18,9 @@
 | BUG-008 | Test       | P6b   | AUTH-TD  | otp-verify.service.test.ts missing @abroad-matrimony/config mock after TRUSTED_DEVICE_TTL_DAYS added | 🟢 Fixed | 2026-05-28 |
 | BUG-009 | Tech Debt  | API   | API-SPEC | openapi.yaml uses `nullable: true` (OAS 3.0 syntax) throughout; OAS 3.1 requires `type: [T, "null"]` | ⚪ Won't Fix | 2026-05-29 |
 | BUG-010 | Test       | P7b   | DB-MIG-001 | Non-hex UUID fixtures in controller tests cause Zod `z.string().uuid()` to reject valid-seeming IDs | 🟢 Fixed | 2026-05-29 |
+| BUG-011 | Bug        | EVT   | EVT-004 | `enqueueScoreRecompute` fixed jobId never removed — every recompute after the first is silently dropped | 🟢 Fixed | 2026-10-06 |
+| BUG-012 | Bug        | EVT   | EVT-002 | Approving verification never sets `Profile.verificationStatus` — completion score and trust score never credit it | 🔴 Open | 2026-10-06 |
+| BUG-013 | Design     | EVT   | EVT-001 | EVENTS queue had no consumer; `enqueueNotification` had no callers — domain actions sent no notifications | 🟢 Fixed | 2026-10-06 |
 
 ---
 
@@ -205,6 +208,51 @@ Affected test files and IDs:
 - `type: 'IMAGE'` → `type: 'AUDIO'` with matching DTO and URL
 
 **Lesson:** UUID test fixtures must use only hex characters (0-9, a-f). Valid hex options: `aaaa`, `bbbb`, `cccc`, `dddd`, `eeee`, `ffff`, `0000`, `1111`, etc. Characters like `g`, `h`, `i`, `j`, `k`, `n`, `o`, `p`, `q`, `r`, `s`, `t`, `u`, `v`, `w`, `x`, `y`, `z` are NOT hex.
+
+---
+
+### BUG-011 — Score recompute jobs silently dropped after the first run
+**Type:** Bug
+**Phase:** EVT — Event consumer
+**Task:** EVT-004
+**Reported:** 2026-10-06
+**Status:** 🟢 Fixed
+
+**Problem:**
+`enqueueScoreRecompute()` adds every job with the fixed `jobId: 'score-recompute'` and no `removeOnComplete` / `removeOnFail`. BullMQ keeps finished jobs by default and ignores any add whose jobId already exists in the queue (in any state), so after the first job completed, every later enqueue (match tuning saves ALG-013, event attendance EVENT-007) was a silent no-op.
+
+**Fix:**
+`removeOnComplete: true` + `removeOnFail: true` on the job. Dedupe still works while a job is waiting/delayed/active. Per-user recomputes (EVT-004) use `score-recompute:user:<userId>` with a 30s delay so bursts of profile edits collapse.
+
+---
+
+### BUG-012 — Verification approval does not update Profile.verificationStatus
+**Type:** Bug
+**Phase:** EVT — found while wiring VERIFICATION_REVIEWED
+**Task:** EVT-002
+**Reported:** 2026-10-06
+**Status:** 🔴 Open
+
+**Problem:**
+`approveVerification()` / `rejectVerification()` (`libs/verification/src/verification-admin.service.ts`) only update the `VerificationRequest` row. `recalculateCompletionScore()` and the trust score read `Profile.verificationStatus`, which nothing sets, so an approved user never gets the 10 verification points or the verified layer.
+
+**Proposed fix:**
+Update `Profile.verificationStatus` in the same `$transaction` as the request, then call `recalculateCompletionScore(userId)` (which also publishes PROFILE_UPDATED). Not done in EVT-001 to keep the PR scoped.
+
+---
+
+### BUG-013 — Domain events were published to a queue nobody consumed
+**Type:** Design
+**Phase:** EVT — Event consumer
+**Task:** EVT-001
+**Reported:** 2026-10-06
+**Status:** 🟢 Fixed
+
+**Problem:**
+`libs/event-bus` only had a publisher (architecture.md §3.3: "future BullMQ worker"). Jobs on the `events` queue were never processed, and `enqueueNotification()` had no callers, so connection requests, acceptances, verification results and membership activation sent no notifications. Only 4 of 19 `CLOUD_EVENT_TYPES` were ever published.
+
+**Fix:**
+`createEventWorker()` + handler registry in `libs/event-bus` (ADR-021); connection/match/verification/profile events published from their services; notification and matching handlers registered in `apps/gateway/src/server.ts`.
 
 ---
 
