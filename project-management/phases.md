@@ -633,3 +633,4 @@ One schema change: `habitSummaryVisible Boolean @default(false)` on `Profile` �
 |---------|--------------------------------------------------------------------------|--------|
 | F-052   | Redis-backed global rate limiter (`feat/F-052-redis-rate-limiter`, ADR-022) | ✅     |
 | F-051   | Dedicated worker app (`feat/F-051-worker-app`, ADR-023)                     | ✅     |
+| F-053   | Shared BullMQ queue registry (`feat/F-053-reuse-queues`, ADR-024)           | ✅     |

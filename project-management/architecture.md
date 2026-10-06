@@ -579,6 +579,20 @@ v2 dims (max 5):  -0.10  → coreScale min 0.83
 
 ---
 
+### ADR-024 · Shared BullMQ Queue Registry (F-053)
+**Date:** 2026-10-06 | **Status:** Accepted
+
+**Context:** `enqueueNotification`, `enqueueScoreRecompute`, `enqueueProfileIntelligence` and `triggerWeeklyDropNow` each built a `new Queue()` and closed it after one `add`. Every enqueue (including on request paths, and once per device for push fan-out) opened and tore down a Redis connection.
+
+**Decision:**
+- New lib `libs/queue` (the `@abroad-matrimony/queue` alias was already reserved). `getQueue<T>(name, redisUrl)` lazily creates and caches one `Queue` per name + URL, with an `error` listener that logs instead of crashing.
+- `closeQueues()` closes every cached queue and never throws; gateway and worker `server.ts` call it after `workers.stop()` and before closing the Redis client.
+- The four helpers and the notification worker's quiet-window re-queue use `getQueue()`. The weekly-drop cron registration (once at startup) and the event-bus publisher singleton are unchanged.
+
+**Consequences:** One Redis connection per queue per process instead of one per job. A failed `add` now just rejects; there is nothing to close. Callers must not `close()` a registry queue.
+
+---
+
 ## 6. Security Architecture
 
 ### Middleware order of operations (fixed — do not reorder)

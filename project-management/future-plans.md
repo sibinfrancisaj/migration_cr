@@ -131,4 +131,4 @@
 | F-032 | Per-package jest configs (vs single root config)  | Low      | Root jest.config works; per-package configs enable `nx affected` for tests |
 | F-051 | Dedicated worker app (`apps/worker`)               | ✅ Done  | `libs/workers` + `apps/worker` (ADR-023), branch `feat/F-051-worker-app` |
 | F-052 | Redis store for express-rate-limit                 | ✅ Done  | `RedisRateLimitStore` (ADR-022), branch `feat/F-052-redis-rate-limiter` |
-| F-053 | Reuse BullMQ Queue instances in enqueue helpers    | Low      | `enqueueNotification` / `enqueueScoreRecompute` open and close a Redis connection per call |
+| F-053 | Reuse BullMQ Queue instances in enqueue helpers    | ✅ Done  | `libs/queue` registry (ADR-024), branch `feat/F-053-reuse-queues` |

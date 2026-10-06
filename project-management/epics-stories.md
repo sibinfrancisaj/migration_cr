@@ -2061,6 +2061,17 @@ presence/{userId}                  [Realtime DB — not Firestore]
 - 2026-10-06: `GATEWAY_RUN_WORKERS` defaults to `true` — no change for anyone running only the gateway locally; deployments opt in to the split.
 - 2026-10-06: Health endpoint uses `node:http`, not Express — one route, no middleware needed.
 
+### F-053 · Reuse BullMQ Queue instances ✅
+**AC:** enqueue helpers reuse one Queue per queue name instead of opening a connection per job; a failed add still rejects to the caller; all shared queues close on graceful shutdown; closing never throws.
+- [x] `libs/queue` — `getQueue()`, `closeQueues()`, `getOpenQueueCount()`
+- [x] `enqueueNotification`, `enqueueScoreRecompute`, `enqueueProfileIntelligence`, `triggerWeeklyDropNow` + notification quiet-window re-queue use `getQueue()`
+- [x] `closeQueues()` in gateway and worker shutdown, after `workers.stop()`
+- [x] 7 registry tests; notification + matching enqueue tests now mock `@abroad-matrimony/queue`
+
+**Decision Log**
+- 2026-10-06: Built the lib behind the already-reserved `@abroad-matrimony/queue` alias rather than putting the registry in `libs/event-bus` — queues are not events.
+- 2026-10-06: Left the weekly-drop cron registration (runs once at startup) and the event-bus publisher singleton as they are.
+
 ---
 
 ## Design Decisions Log (Figma Analysis Session — 2026-05-28)

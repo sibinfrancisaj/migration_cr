@@ -146,6 +146,7 @@ migration_cr/
 │   ├── notification/     ← NOT YET BUILT (Twilio, Brevo, Firebase adapters)
 │   ├── payment/          ← NOT YET BUILT (Stripe, Razorpay, diamond ledger)
 │   ├── storage/          ← S3 upload adapter (Phase 3 — complete)
+│   ├── queue/            ← getQueue() / closeQueues() — shared BullMQ Queue registry (ADR-024)
 │   └── workers/          ← startWorkers() — every BullMQ worker, shared by gateway + apps/worker
 │
 ├── docker/
@@ -696,6 +697,12 @@ also calls it while `GATEWAY_RUN_WORKERS=true` (default, keeps single-process lo
 wherever `apps/worker` is deployed, or both processes consume the same queues. **New workers go in
 `startWorkers()`, never directly in a `server.ts`.**
 
+### ADR-024: Shared BullMQ Queue Registry (`libs/queue`)
+`getQueue<T>(name, redisUrl)` returns one long-lived `Queue` per name + Redis URL; `closeQueues()` closes them
+all at shutdown (gateway + worker `server.ts`, after `workers.stop()`). Enqueue helpers (`enqueueNotification`,
+`enqueueScoreRecompute`, `enqueueProfileIntelligence`, `triggerWeeklyDropNow`) no longer open and close a Redis
+connection per job. Never call `close()` on a registry queue. The event-bus publisher keeps its own singleton.
+
 ---
 
 ## 8. Code Conventions
@@ -755,6 +762,11 @@ Always `@abroad-matrimony/<lib>` path aliases. Never relative paths across lib b
 - Add the payload interface to `libs/shared/src/types/events.ts`; IDs only, never phone/email.
 - To react to an event, add an `EventHandler` to the owning lib's `create<Domain>EventHandlers(redisUrl)` factory and merge it in `server.ts`. Handlers only enqueue follow-up jobs and must be idempotent.
 - Lib tests that call a publishing service mock `@abroad-matrimony/event-bus` and assert `publish` args.
+
+### Enqueuing Jobs (ADR-024)
+- Add jobs with `getQueue<JobData>(QUEUE_NAMES.X, redisUrl).add(...)` from `@abroad-matrimony/queue`.
+- ❌ `new Queue(...)` + `queue.close()` per call — opens a Redis connection per job.
+- Tests mock `@abroad-matrimony/queue` (`getQueue: () => ({ add: mockAdd })`) rather than `bullmq`'s `Queue`.
 
 ### Error Handling
 All Express route errors → `AppError` thrown or `next(err)`.
@@ -1208,7 +1220,10 @@ F-052 ✅ Redis-backed global rate limiter (branch feat/F-052-redis-rate-limiter
 F-051 ✅ Dedicated worker app (branch feat/F-051-worker-app, stacked on feat/F-052-redis-rate-limiter) — ADR-023.
   libs/workers startWorkers() + apps/worker (health :3200). Gateway still runs workers unless GATEWAY_RUN_WORKERS=false.
 
-Next: F-053 (reuse BullMQ Queue instances), F-003 (auth limiters on the Lua script), F-049/F-050 notifications.
+F-053 ✅ Shared BullMQ queue registry (branch feat/F-053-reuse-queues, stacked on feat/F-051-worker-app) — ADR-024.
+  libs/queue getQueue()/closeQueues(); enqueue helpers reuse one Queue per name.
+
+Next: F-003 (auth limiters on the ADR-022 Lua script), F-049 (verification email), F-050 (intro-drop LIVE push).
 Note: Phase 5b (connections + verification gateway wiring) is already implemented — controllers/routes exist.
 
 ⚠️ MANDATORY FIRST STEP: DB-MIGRATION-001 — all new Prisma schema changes MUST land
